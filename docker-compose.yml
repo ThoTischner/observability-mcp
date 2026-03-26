@@ -1,0 +1,165 @@
+services:
+  # --- Example Microservices ---
+  api-gateway:
+    build:
+      context: ./example-services
+    environment:
+      - SERVICE_NAME=api-gateway
+      - PORT=8080
+    ports:
+      - "8080:8080"
+    labels:
+      logging: "promtail"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - observability
+
+  payment-service:
+    build:
+      context: ./example-services
+    environment:
+      - SERVICE_NAME=payment-service
+      - PORT=8081
+    ports:
+      - "8081:8081"
+    labels:
+      logging: "promtail"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8081/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - observability
+
+  order-service:
+    build:
+      context: ./example-services
+    environment:
+      - SERVICE_NAME=order-service
+      - PORT=8082
+    ports:
+      - "8082:8082"
+    labels:
+      logging: "promtail"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8082/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - observability
+
+  # --- Observability Stack ---
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - observability
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+      payment-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+
+  loki:
+    image: grafana/loki:3.1.0
+    volumes:
+      - ./loki/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3100/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+    networks:
+      - observability
+
+  promtail:
+    image: grafana/promtail:3.1.0
+    volumes:
+      - ./promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: -config.file=/etc/promtail/config.yml
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9080/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - observability
+    depends_on:
+      loki:
+        condition: service_healthy
+
+  # --- MCP Server ---
+  mcp-server:
+    build:
+      context: ./mcp-server
+    ports:
+      - "3000:3000"
+    environment:
+      - PROMETHEUS_URL=http://prometheus:9090
+      - LOKI_URL=http://loki:3100
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/sources"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - observability
+    depends_on:
+      prometheus:
+        condition: service_healthy
+      loki:
+        condition: service_healthy
+
+  # --- AI Agent ---
+  agent:
+    build:
+      context: ./agent
+    environment:
+      - MCP_URL=http://mcp-server:3000/mcp
+      - OLLAMA_URL=http://host.docker.internal:11434
+      - OLLAMA_MODEL=llama3.1:8b
+      - CHECK_INTERVAL=30000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: on-failure
+    networks:
+      - observability
+    depends_on:
+      mcp-server:
+        condition: service_healthy
+
+volumes:
+  loki-data:
+
+networks:
+  observability:
+    driver: bridge

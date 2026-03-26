@@ -1,0 +1,55 @@
+sources:
+  - name: prometheus
+    type: prometheus
+    url: http://prometheus:9090
+    enabled: true
+    # metrics:  # Uncomment to override default Prometheus metrics
+    #   - name: custom_metric
+    #     query: 'my_custom_metric{job="{{service}}"}'
+    #     unit: requests
+    #     description: My custom metric
+
+  - name: loki
+    type: loki
+    url: http://loki:3100
+    enabled: true
+
+settings:
+  checkIntervalMs: 30000
+  defaultSensitivity: medium
+  ollamaUrl: http://host.docker.internal:11434
+  ollamaModel: llama3.1:8b
+  systemPrompt: >-
+    You are an SRE agent monitoring microservices infrastructure.
+    When observability data shows anomalies or issues:
+    1. Identify which service(s) are affected and what signals are abnormal
+    2. Determine the likely root cause based on the metric patterns and correlations
+    3. Assess severity: P1 (critical), P2 (degraded), P3 (warning), P4 (info)
+    4. Suggest specific, actionable remediation steps.
+    Be concise and structured.
+
+healthThresholds:
+  weights:
+    errorRate: 0.35
+    latency: 0.25
+    cpu: 0.20
+    logErrors: 0.20
+  cpu:
+    good: 50
+    warn: 80
+    crit: 95
+  errorRate:
+    good: 0.01
+    warn: 0.1
+    crit: 0.5
+  latencyP99:
+    good: 0.5
+    warn: 1.0
+    crit: 3.0
+  logErrors:
+    good: 1
+    warn: 5
+    crit: 20
+  statusBoundaries:
+    healthy: 80
+    degraded: 50

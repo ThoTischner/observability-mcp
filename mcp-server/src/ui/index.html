@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Observability MCP Gateway</title>
+  <style>
+    :root {
+      --bg: #0f1117; --surface: #161b22; --surface2: #1c2128; --border: #30363d;
+      --text: #e1e4e8; --text2: #8b949e; --accent: #58a6ff; --green: #3fb950;
+      --red: #f85149; --yellow: #d29922; --purple: #d2a8ff; --radius: 8px;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); }
+    .header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 16px; }
+    .header h1 { font-size: 18px; font-weight: 600; }
+    .badge { padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+    .badge-ok { background: var(--green); color: #fff; }
+    .badge-err { background: var(--red); color: #fff; }
+    .nav { display: flex; gap: 2px; margin-left: 24px; }
+    .nav-btn { background: none; border: none; color: var(--text2); padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; }
+    .nav-btn:hover { background: var(--surface2); color: var(--text); }
+    .nav-btn.active { background: var(--surface2); color: var(--accent); }
+    .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+    .page { display: none; } .page.active { display: block; }
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+    .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; text-align: center; }
+    .stat-card .value { font-size: 28px; font-weight: 700; color: var(--accent); }
+    .stat-card .label { font-size: 12px; color: var(--text2); margin-top: 4px; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; }
+    .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+    .card-header h2 { font-size: 15px; font-weight: 600; }
+    .source-row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 8px; transition: border-color 0.15s; }
+    .source-row:hover { border-color: var(--accent); }
+    .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .dot-up { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .dot-down { background: var(--red); box-shadow: 0 0 6px var(--red); }
+    .dot-disabled { background: var(--text2); }
+    .source-info { flex: 1; min-width: 0; }
+    .source-info .name { font-weight: 600; font-size: 14px; }
+    .source-info .url { color: var(--text2); font-size: 12px; font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .source-actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; margin-left: 6px; }
+    .tag-metrics { color: var(--accent); background: #1f6feb1a; border: 1px solid #1f6feb33; }
+    .tag-logs { color: var(--purple); background: #8957e51a; border: 1px solid #8957e533; }
+    .tag-type { color: var(--text2); background: var(--surface2); border: 1px solid var(--border); }
+    .tag-latency { color: var(--text2); font-size: 11px; }
+    .service-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 6px; }
+    .service-row .name { font-weight: 600; font-size: 14px; }
+    .btn { padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; border: 1px solid var(--border); transition: all 0.15s; }
+    .btn-primary { background: #238636; border-color: #238636; color: #fff; } .btn-primary:hover { background: #2ea043; }
+    .btn-ghost { background: none; color: var(--text2); } .btn-ghost:hover { background: var(--surface2); color: var(--text); }
+    .btn-danger { background: none; color: var(--red); border-color: transparent; } .btn-danger:hover { background: #f851491a; }
+    .btn-sm { padding: 4px 10px; font-size: 12px; }
+    .btn-icon { background: none; border: none; color: var(--text2); cursor: pointer; padding: 4px 8px; border-radius: 4px; font-size: 16px; } .btn-icon:hover { background: var(--surface2); color: var(--text); }
+    .toggle { position: relative; width: 36px; height: 20px; cursor: pointer; }
+    .toggle input { display: none; }
+    .toggle .slider { position: absolute; inset: 0; background: var(--border); border-radius: 10px; transition: 0.2s; }
+    .toggle .slider::before { content: ''; position: absolute; width: 16px; height: 16px; left: 2px; top: 2px; background: var(--text); border-radius: 50%; transition: 0.2s; }
+    .toggle input:checked + .slider { background: var(--green); }
+    .toggle input:checked + .slider::before { transform: translateX(16px); }
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100; align-items: center; justify-content: center; }
+    .modal-overlay.open { display: flex; }
+    .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; width: 520px; max-width: 90vw; max-height: 90vh; overflow-y: auto; }
+    .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+    .modal-header h3 { font-size: 16px; font-weight: 600; }
+    .modal-body { padding: 20px; }
+    .modal-footer { display: flex; justify-content: flex-end; gap: 8px; padding: 16px 20px; border-top: 1px solid var(--border); }
+    .form-group { margin-bottom: 16px; }
+    .form-group label { display: block; font-size: 13px; font-weight: 500; color: var(--text2); margin-bottom: 6px; }
+    .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 14px; font-family: inherit; }
+    .form-group input:focus, .form-group select:focus, .form-group textarea:focus { outline: none; border-color: var(--accent); }
+    .form-group select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%238b949e'%3E%3Cpath d='M6 8L1 3h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; }
+    .form-group textarea { resize: vertical; min-height: 80px; font-family: monospace; font-size: 13px; }
+    .form-hint { font-size: 11px; color: var(--text2); margin-top: 4px; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .form-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+    .test-result { padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-top: 12px; display: none; }
+    .test-result.show { display: block; }
+    .test-result.success { background: #238636aa; border: 1px solid var(--green); }
+    .test-result.failure { background: #f851491a; border: 1px solid var(--red); color: var(--red); }
+    .endpoint-bar { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 10px 16px; font-family: monospace; font-size: 13px; color: var(--accent); margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between; }
+    .empty { color: var(--text2); text-align: center; padding: 32px; }
+    .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    /* Tabs inside settings */
+    .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
+    .tab-btn { background: none; border: none; border-bottom: 2px solid transparent; color: var(--text2); padding: 10px 18px; cursor: pointer; font-size: 13px; font-weight: 500; }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab-content { display: none; } .tab-content.active { display: block; }
+    /* Threshold cards */
+    .threshold-group { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+    .threshold-card { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 14px; }
+    .threshold-card h4 { font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+    /* Metric table */
+    .metric-table { width: 100%; border-collapse: collapse; }
+    .metric-table th { text-align: left; font-size: 12px; color: var(--text2); font-weight: 500; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+    .metric-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 13px; }
+    .metric-table .query { font-family: monospace; font-size: 11px; color: var(--text2); max-width: 400px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .metric-table tr:hover td { background: var(--surface2); }
+    .toast { position: fixed; bottom: 24px; right: 24px; background: var(--green); color: #fff; padding: 10px 20px; border-radius: 8px; font-size: 13px; font-weight: 500; opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 200; }
+    .toast.show { opacity: 1; }
+    /* Health cards */
+    .health-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+    .health-card .hc-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    .health-card .hc-name { font-size: 16px; font-weight: 600; }
+    .health-card .hc-score { font-size: 28px; font-weight: 700; }
+    .health-card .hc-score.healthy { color: var(--green); }
+    .health-card .hc-score.degraded { color: var(--yellow); }
+    .health-card .hc-score.critical { color: var(--red); }
+    .health-card .hc-status { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
+    .hc-status.healthy { background: #23863633; color: var(--green); }
+    .hc-status.degraded { background: #d2992233; color: var(--yellow); }
+    .hc-status.critical { background: #f8514933; color: var(--red); }
+    .hc-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+    .hc-metric { background: var(--bg); border-radius: 6px; padding: 8px 10px; }
+    .hc-metric .label { font-size: 11px; color: var(--text2); }
+    .hc-metric .val { font-size: 15px; font-weight: 600; margin-top: 2px; }
+    .hc-anomalies { margin-top: 12px; }
+    .hc-anomaly { background: #f851491a; border: 1px solid #f8514933; border-radius: 6px; padding: 8px 10px; margin-top: 6px; font-size: 12px; color: var(--red); }
+    .hc-correlation { background: #d2a8ff1a; border: 1px solid #8957e533; border-radius: 6px; padding: 8px 10px; margin-top: 6px; font-size: 12px; color: var(--purple); }
+    @media (max-width: 768px) { .stats { grid-template-columns: repeat(2, 1fr); } .threshold-group { grid-template-columns: 1fr; } .form-row, .form-row-3 { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Observability MCP</h1>
+    <span class="badge badge-ok" id="status-badge">Loading...</span>
+    <div class="nav">
+      <button class="nav-btn active" data-page="dashboard" onclick="showPage('dashboard')">Dashboard</button>
+      <button class="nav-btn" data-page="sources" onclick="showPage('sources')">Sources</button>
+      <button class="nav-btn" data-page="services" onclick="showPage('services')">Services</button>
+      <button class="nav-btn" data-page="health" onclick="showPage('health')">Health</button>
+      <button class="nav-btn" data-page="settings" onclick="showPage('settings')">Settings</button>
+    </div>
+    <div style="flex:1"></div>
+    <button class="btn btn-ghost btn-sm" onclick="refresh()">Refresh</button>
+  </div>
+
+  <div class="container">
+    <!-- ===== Dashboard ===== -->
+    <div class="page active" id="page-dashboard">
+      <div class="stats">
+        <div class="stat-card"><div class="value" id="stat-sources">-</div><div class="label">Data Sources</div></div>
+        <div class="stat-card"><div class="value" id="stat-sources-up">-</div><div class="label">Sources UP</div></div>
+        <div class="stat-card"><div class="value" id="stat-services">-</div><div class="label">Services</div></div>
+        <div class="stat-card"><div class="value" id="stat-tools">6</div><div class="label">MCP Tools</div></div>
+      </div>
+      <div class="endpoint-bar">
+        <span>MCP Endpoint: <strong id="mcp-url">http://localhost:3000/mcp</strong></span>
+        <button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText(document.getElementById('mcp-url').textContent);toast('Copied!')">Copy</button>
+      </div>
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div class="card"><div class="card-header"><h2>Sources</h2><button class="btn btn-primary btn-sm" onclick="showPage('sources');openAddModal()">+ Add Source</button></div><div id="dash-sources"><div class="empty">Loading...</div></div></div>
+        <div class="card"><div class="card-header"><h2>Services</h2></div><div id="dash-services"><div class="empty">Loading...</div></div></div>
+      </div>
+    </div>
+
+    <!-- ===== Sources ===== -->
+    <div class="page" id="page-sources">
+      <div class="card">
+        <div class="card-header"><h2>Data Sources</h2><button class="btn btn-primary btn-sm" onclick="openAddModal()">+ Add Source</button></div>
+        <div id="sources-list"><div class="empty">Loading...</div></div>
+      </div>
+    </div>
+
+    <!-- ===== Services ===== -->
+    <div class="page" id="page-services">
+      <div class="card"><div class="card-header"><h2>Discovered Services</h2></div><div id="services-list"><div class="empty">Loading...</div></div></div>
+    </div>
+
+    <!-- ===== Health ===== -->
+    <div class="page" id="page-health">
+      <div id="health-cards" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px;">
+        <div class="empty">Loading health data...</div>
+      </div>
+    </div>
+
+    <!-- ===== Settings ===== -->
+    <div class="page" id="page-settings">
+      <div class="card" style="padding:0;">
+        <div class="tabs">
+          <button class="tab-btn active" onclick="showTab('general')">General</button>
+          <button class="tab-btn" onclick="showTab('health')">Health Scoring</button>
+          <button class="tab-btn" onclick="showTab('metrics')">Custom Metrics</button>
+        </div>
+
+        <!-- General Tab -->
+        <div class="tab-content active" id="tab-general" style="padding:20px;">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Check Interval (ms)</label>
+              <input type="number" id="set-interval" min="5000" step="1000">
+              <div class="form-hint">How often the agent scans for anomalies</div>
+            </div>
+            <div class="form-group">
+              <label>Default Sensitivity</label>
+              <select id="set-sensitivity">
+                <option value="low">Low (>3 sigma, major only)</option>
+                <option value="medium">Medium (>2 sigma)</option>
+                <option value="high">High (>1.5 sigma, subtle)</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Ollama URL</label>
+              <input type="text" id="set-ollama-url">
+            </div>
+            <div class="form-group">
+              <label>Ollama Model</label>
+              <input type="text" id="set-ollama-model">
+              <div class="form-hint">e.g. llama3.1:8b, mistral:7b, gemma2:9b</div>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>System Prompt</label>
+            <textarea id="set-prompt" rows="6"></textarea>
+            <div class="form-hint">Instructions for the LLM when analyzing anomalies</div>
+          </div>
+          <div style="display:flex; gap:8px; justify-content:flex-end;">
+            <button class="btn btn-ghost btn-sm" onclick="resetSettings()">Reset to Defaults</button>
+            <button class="btn btn-primary btn-sm" onclick="saveSettings()">Save Settings</button>
+          </div>
+        </div>
+
+        <!-- Health Scoring Tab -->
+        <div class="tab-content" id="tab-health" style="padding:20px;">
+          <p style="font-size:13px; color:var(--text2); margin-bottom:16px;">Configure how service health scores are calculated. Weights must sum to 1.0.</p>
+          <h3 style="font-size:14px; margin-bottom:12px;">Weights</h3>
+          <div class="form-row" style="margin-bottom:20px;">
+            <div class="form-group"><label>Error Rate</label><input type="number" id="hw-errorRate" min="0" max="1" step="0.05"></div>
+            <div class="form-group"><label>Latency</label><input type="number" id="hw-latency" min="0" max="1" step="0.05"></div>
+            <div class="form-group"><label>CPU</label><input type="number" id="hw-cpu" min="0" max="1" step="0.05"></div>
+            <div class="form-group"><label>Log Errors</label><input type="number" id="hw-logErrors" min="0" max="1" step="0.05"></div>
+          </div>
+          <h3 style="font-size:14px; margin-bottom:12px;">Thresholds</h3>
+          <div class="threshold-group">
+            <div class="threshold-card">
+              <h4>CPU (%)</h4>
+              <div class="form-row-3">
+                <div class="form-group"><label>Good &le;</label><input type="number" id="ht-cpu-good"></div>
+                <div class="form-group"><label>Warn &le;</label><input type="number" id="ht-cpu-warn"></div>
+                <div class="form-group"><label>Crit &le;</label><input type="number" id="ht-cpu-crit"></div>
+              </div>
+            </div>
+            <div class="threshold-card">
+              <h4>Error Rate (req/s)</h4>
+              <div class="form-row-3">
+                <div class="form-group"><label>Good &le;</label><input type="number" id="ht-err-good" step="0.01"></div>
+                <div class="form-group"><label>Warn &le;</label><input type="number" id="ht-err-warn" step="0.01"></div>
+                <div class="form-group"><label>Crit &le;</label><input type="number" id="ht-err-crit" step="0.01"></div>
+              </div>
+            </div>
+            <div class="threshold-card">
+              <h4>Latency P99 (seconds)</h4>
+              <div class="form-row-3">
+                <div class="form-group"><label>Good &le;</label><input type="number" id="ht-lat-good" step="0.1"></div>
+                <div class="form-group"><label>Warn &le;</label><input type="number" id="ht-lat-warn" step="0.1"></div>
+                <div class="form-group"><label>Crit &le;</label><input type="number" id="ht-lat-crit" step="0.1"></div>
+              </div>
+            </div>
+            <div class="threshold-card">
+              <h4>Log Errors (/min)</h4>
+              <div class="form-row-3">
+                <div class="form-group"><label>Good &le;</label><input type="number" id="ht-log-good"></div>
+                <div class="form-group"><label>Warn &le;</label><input type="number" id="ht-log-warn"></div>
+                <div class="form-group"><label>Crit &le;</label><input type="number" id="ht-log-crit"></div>
+              </div>
+            </div>
+          </div>
+          <h3 style="font-size:14px; margin-bottom:12px;">Status Boundaries</h3>
+          <div class="form-row" style="margin-bottom:20px;">
+            <div class="form-group"><label>Healthy above score</label><input type="number" id="ht-bound-healthy" min="0" max="100"></div>
+            <div class="form-group"><label>Degraded above score</label><input type="number" id="ht-bound-degraded" min="0" max="100"></div>
+          </div>
+          <div style="display:flex; gap:8px; justify-content:flex-end;">
+            <button class="btn btn-ghost btn-sm" onclick="resetHealth()">Reset to Defaults</button>
+            <button class="btn btn-primary btn-sm" onclick="saveHealth()">Save Thresholds</button>
+          </div>
+        </div>
+
+        <!-- Source Metrics Tab -->
+        <div class="tab-content" id="tab-metrics" style="padding:20px;">
+          <p style="font-size:13px; color:var(--text2); margin-bottom:16px;">Each data source has its own metric definitions with backend-specific queries (PromQL, LogQL, etc.). Use <code style="background:var(--bg);padding:1px 5px;border-radius:3px;">{{service}}</code> as placeholder for the service/job name.</p>
+          <div style="display:flex; align-items:center; gap:12px; margin-bottom:16px;">
+            <label style="font-size:13px; color:var(--text2); white-space:nowrap;">Source:</label>
+            <select id="metrics-source-select" onchange="loadSourceMetrics(this.value)" style="flex:1; padding:8px 12px; background:var(--bg); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:14px; appearance:none; background-image:url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%238b949e'%3E%3Cpath d='M6 8L1 3h10z'/%3E%3C/svg%3E&quot;); background-repeat:no-repeat; background-position:right 12px center;"></select>
+            <button class="btn btn-primary btn-sm" onclick="openMetricModal()">+ Add Metric</button>
+            <button class="btn btn-ghost btn-sm" onclick="resetSourceMetrics()">Reset to Defaults</button>
+          </div>
+          <table class="metric-table">
+            <thead><tr><th>Name</th><th>Unit</th><th>Query</th><th>Description</th><th></th></tr></thead>
+            <tbody id="metrics-tbody"><tr><td colspan="5" class="empty">Select a source above</td></tr></tbody>
+          </table>
+          <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px;">
+            <button class="btn btn-primary btn-sm" onclick="saveSourceMetrics()">Save Metrics</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Source Modal -->
+  <div class="modal-overlay" id="source-modal">
+    <div class="modal">
+      <div class="modal-header"><h3 id="modal-title">Add Source</h3><button class="btn-icon" onclick="closeModal('source-modal')">&times;</button></div>
+      <div class="modal-body">
+        <input type="hidden" id="modal-mode" value="add"><input type="hidden" id="modal-original-name" value="">
+        <div class="form-group"><label>Name</label><input type="text" id="src-name" placeholder="e.g. prometheus-prod"><div class="form-hint">Unique identifier</div></div>
+        <div class="form-group"><label>Type</label><select id="src-type"></select></div>
+        <div class="form-group"><label>URL</label><input type="text" id="src-url" placeholder="e.g. http://prometheus:9090"></div>
+        <div class="form-group" style="display:flex;align-items:center;gap:10px;"><label style="margin:0">Enabled</label><label class="toggle"><input type="checkbox" id="src-enabled" checked><span class="slider"></span></label></div>
+        <div class="test-result" id="test-result"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" id="test-btn" onclick="testConnection()">Test Connection</button>
+        <button class="btn btn-ghost" onclick="closeModal('source-modal')">Cancel</button>
+        <button class="btn btn-primary" id="save-btn" onclick="saveSource()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Confirm Modal -->
+  <div class="modal-overlay" id="delete-modal">
+    <div class="modal" style="width:380px;">
+      <div class="modal-header"><h3>Delete</h3><button class="btn-icon" onclick="closeModal('delete-modal')">&times;</button></div>
+      <div class="modal-body"><p>Are you sure you want to delete <strong id="delete-name"></strong>?</p></div>
+      <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('delete-modal')">Cancel</button><button class="btn btn-danger" onclick="confirmDelete()">Delete</button></div>
+    </div>
+  </div>
+
+  <!-- Metric Modal -->
+  <div class="modal-overlay" id="metric-modal">
+    <div class="modal">
+      <div class="modal-header"><h3 id="metric-modal-title">Add Metric</h3><button class="btn-icon" onclick="closeModal('metric-modal')">&times;</button></div>
+      <div class="modal-body">
+        <input type="hidden" id="metric-mode" value="add"><input type="hidden" id="metric-original-name" value="">
+        <div class="form-group"><label>Name</label><input type="text" id="met-name" placeholder="e.g. queue_depth"><div class="form-hint">Friendly name used in MCP tool calls</div></div>
+        <div class="form-group"><label>Query</label><textarea id="met-query" rows="3" placeholder='e.g. my_queue_depth{job="{{service}}"}'></textarea><div class="form-hint">Backend-specific query. Use {{service}} as the service/job placeholder.</div></div>
+        <div class="form-row">
+          <div class="form-group"><label>Unit</label><input type="text" id="met-unit" placeholder="e.g. messages, percent, bytes"></div>
+          <div class="form-group"><label>Description</label><input type="text" id="met-desc" placeholder="What this metric measures"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeModal('metric-modal')">Cancel</button>
+        <button class="btn btn-primary" onclick="saveMetric()">Save Metric</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast-el"></div>
+
+<script>
+let sourcesData=[], servicesData=[], supportedTypes=[], settings={}, healthThresholds={}, defaults={};
+let deleteTarget=null, deleteType=null;
+// Per-source metrics state
+let selectedMetricsSource='', sourceMetrics=[], sourceMetricDefaults=[];
+
+function toast(msg) { const t=document.getElementById('toast-el'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2000); }
+
+// --- Nav ---
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('page-'+name).classList.add('active');
+  document.querySelector(`.nav-btn[data-page="${name}"]`).classList.add('active');
+  if(name==='settings') loadSettingsData();
+  if(name==='health') loadHealthData();
+}
+function showTab(name) {
+  document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  event.target.classList.add('active');
+  if(name==='metrics') populateMetricsSourceSelect();
+}
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+// --- Data Loading ---
+async function loadSources() { try { sourcesData=await(await fetch('/api/sources')).json(); renderSources(); updateStats(); } catch(e){} }
+async function loadServices() { try { const d=await(await fetch('/api/services')).json(); servicesData=d.services||[]; renderServices(); updateStats(); } catch(e){} }
+async function loadTypes() { try { supportedTypes=await(await fetch('/api/source-types')).json(); } catch(e){ supportedTypes=['prometheus','loki']; } }
+async function loadSettingsData() {
+  try { [settings, healthThresholds, defaults] = await Promise.all([
+    (await fetch('/api/settings')).json(), (await fetch('/api/health-thresholds')).json(),
+    (await fetch('/api/settings/defaults')).json()
+  ]); populateSettingsForm(); populateHealthForm(); populateMetricsSourceSelect(); } catch(e){ console.error(e); }
+}
+function updateStats() {
+  document.getElementById('stat-sources').textContent=sourcesData.length;
+  document.getElementById('stat-sources-up').textContent=sourcesData.filter(s=>s.status==='up').length;
+  document.getElementById('stat-services').textContent=servicesData.length;
+  const allUp=sourcesData.length>0&&sourcesData.filter(s=>s.enabled).every(s=>s.status==='up');
+  const b=document.getElementById('status-badge');
+  b.textContent=sourcesData.length===0?'No sources':allUp?'All systems operational':'Issues detected';
+  b.className='badge '+(allUp?'badge-ok':'badge-err');
+}
+
+// --- Render Sources ---
+function renderSources() {
+  const html = sourcesData.length===0 ? '<div class="empty">No sources configured.</div>' : sourcesData.map(s=>{
+    const sc=!s.enabled?'dot-disabled':s.status==='up'?'dot-up':'dot-down';
+    return `<div class="source-row"><div class="dot ${sc}"></div><div class="source-info"><div class="name">${esc(s.name)}<span class="tag tag-type">${esc(s.type)}</span>${s.signalType?`<span class="tag tag-${s.signalType}">${s.signalType}</span>`:''}</div><div class="url">${esc(s.url)}</div></div>${s.latencyMs?`<span class="tag-latency">${s.latencyMs}ms</span>`:''}<div class="source-actions"><label class="toggle"><input type="checkbox" ${s.enabled?'checked':''} onchange="toggleSource('${esc(s.name)}')"><span class="slider"></span></label><button class="btn-icon" onclick="openEditModal('${esc(s.name)}')">&#9998;</button><button class="btn-icon" onclick="openDeleteConfirm('source','${esc(s.name)}')">&#128465;</button></div></div>`;
+  }).join('');
+  document.getElementById('sources-list').innerHTML=html;
+  document.getElementById('dash-sources').innerHTML=html;
+}
+function renderServices() {
+  const html = servicesData.length===0 ? '<div class="empty">No services discovered.</div>' : servicesData.map(s=>`<div class="service-row"><div><span class="name">${esc(s.name)}</span>${s.signalTypes.map(t=>`<span class="tag tag-${t}">${t}</span>`).join('')}</div><span style="color:var(--text2);font-size:12px">${s.sources.join(', ')}</span></div>`).join('');
+  document.getElementById('services-list').innerHTML=html;
+  document.getElementById('dash-services').innerHTML=html;
+}
+
+// --- Source CRUD ---
+function openAddModal() {
+  document.getElementById('modal-title').textContent='Add Source'; document.getElementById('modal-mode').value='add';
+  document.getElementById('modal-original-name').value=''; document.getElementById('src-name').value='';
+  document.getElementById('src-url').value=''; document.getElementById('src-enabled').checked=true;
+  document.getElementById('src-name').disabled=false; hideTestResult();
+  const sel=document.getElementById('src-type'); sel.innerHTML=supportedTypes.map(t=>`<option value="${t}">${t}</option>`).join('');
+  document.getElementById('source-modal').classList.add('open');
+}
+function openEditModal(name) {
+  const s=sourcesData.find(x=>x.name===name); if(!s)return;
+  document.getElementById('modal-title').textContent='Edit Source'; document.getElementById('modal-mode').value='edit';
+  document.getElementById('modal-original-name').value=name; document.getElementById('src-name').value=s.name;
+  document.getElementById('src-name').disabled=true; document.getElementById('src-url').value=s.url;
+  document.getElementById('src-enabled').checked=s.enabled; hideTestResult();
+  const sel=document.getElementById('src-type'); sel.innerHTML=supportedTypes.map(t=>`<option value="${t}" ${t===s.type?'selected':''}>${t}</option>`).join('');
+  document.getElementById('source-modal').classList.add('open');
+}
+async function saveSource() {
+  const mode=document.getElementById('modal-mode').value;
+  const src={name:document.getElementById('src-name').value.trim(),type:document.getElementById('src-type').value,url:document.getElementById('src-url').value.trim(),enabled:document.getElementById('src-enabled').checked};
+  if(!src.name||!src.url){alert('Name and URL are required');return;}
+  const btn=document.getElementById('save-btn'); btn.disabled=true; btn.textContent='Saving...';
+  try {
+    let res; if(mode==='add') res=await fetch('/api/sources',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(src)});
+    else res=await fetch('/api/sources/'+encodeURIComponent(document.getElementById('modal-original-name').value),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(src)});
+    const d=await res.json(); if(!res.ok){alert(d.error);return;} closeModal('source-modal'); toast('Source saved'); await refresh();
+  } catch(e){alert(e);} finally{btn.disabled=false;btn.textContent='Save';}
+}
+async function testConnection() {
+  const btn=document.getElementById('test-btn'),r=document.getElementById('test-result');
+  btn.disabled=true;btn.innerHTML='<span class="spinner"></span> Testing...';r.style.display='none';
+  try{const res=await fetch('/api/sources/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'test',type:document.getElementById('src-type').value,url:document.getElementById('src-url').value})});
+  const d=await res.json();r.style.display='block';r.className='test-result show '+(d.status==='up'?'success':'failure');r.textContent=d.status==='up'?`Connected (${d.latencyMs}ms)`:`Failed: ${d.message}`;
+  }catch(e){r.style.display='block';r.className='test-result show failure';r.textContent='Error: '+e;}
+  finally{btn.disabled=false;btn.textContent='Test Connection';}
+}
+function hideTestResult(){const r=document.getElementById('test-result');r.className='test-result';r.style.display='none';}
+async function toggleSource(name){await fetch('/api/sources/'+encodeURIComponent(name)+'/toggle',{method:'PATCH'});toast('Toggled');await refresh();}
+
+// --- Delete ---
+function openDeleteConfirm(type,name){deleteType=type;deleteTarget=name;document.getElementById('delete-name').textContent=name;document.getElementById('delete-modal').classList.add('open');}
+async function confirmDelete(){
+  if(!deleteTarget)return;
+  if(deleteType==='source') await fetch('/api/sources/'+encodeURIComponent(deleteTarget),{method:'DELETE'});
+  else if(deleteType==='metric') { sourceMetrics=sourceMetrics.filter(m=>m.name!==deleteTarget); renderMetricsTable(); }
+  closeModal('delete-modal'); toast('Deleted');
+  if(deleteType==='source') await refresh();
+  deleteTarget=null;deleteType=null;
+}
+
+// --- Settings: General ---
+function populateSettingsForm() {
+  document.getElementById('set-interval').value=settings.checkIntervalMs||30000;
+  document.getElementById('set-sensitivity').value=settings.defaultSensitivity||'medium';
+  document.getElementById('set-ollama-url').value=settings.ollamaUrl||'';
+  document.getElementById('set-ollama-model').value=settings.ollamaModel||'';
+  document.getElementById('set-prompt').value=settings.systemPrompt||'';
+}
+async function saveSettings() {
+  const body={checkIntervalMs:parseInt(document.getElementById('set-interval').value),defaultSensitivity:document.getElementById('set-sensitivity').value,ollamaUrl:document.getElementById('set-ollama-url').value,ollamaModel:document.getElementById('set-ollama-model').value,systemPrompt:document.getElementById('set-prompt').value};
+  await fetch('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  toast('Settings saved');
+}
+async function resetSettings() { settings=defaults.settings; populateSettingsForm(); toast('Reset to defaults (save to persist)'); }
+
+// --- Settings: Health ---
+function populateHealthForm() {
+  const h=healthThresholds; if(!h.weights)return;
+  document.getElementById('hw-errorRate').value=h.weights.errorRate;
+  document.getElementById('hw-latency').value=h.weights.latency;
+  document.getElementById('hw-cpu').value=h.weights.cpu;
+  document.getElementById('hw-logErrors').value=h.weights.logErrors;
+  document.getElementById('ht-cpu-good').value=h.cpu.good; document.getElementById('ht-cpu-warn').value=h.cpu.warn; document.getElementById('ht-cpu-crit').value=h.cpu.crit;
+  document.getElementById('ht-err-good').value=h.errorRate.good; document.getElementById('ht-err-warn').value=h.errorRate.warn; document.getElementById('ht-err-crit').value=h.errorRate.crit;
+  document.getElementById('ht-lat-good').value=h.latencyP99.good; document.getElementById('ht-lat-warn').value=h.latencyP99.warn; document.getElementById('ht-lat-crit').value=h.latencyP99.crit;
+  document.getElementById('ht-log-good').value=h.logErrors.good; document.getElementById('ht-log-warn').value=h.logErrors.warn; document.getElementById('ht-log-crit').value=h.logErrors.crit;
+  document.getElementById('ht-bound-healthy').value=h.statusBoundaries.healthy; document.getElementById('ht-bound-degraded').value=h.statusBoundaries.degraded;
+}
+async function saveHealth() {
+  const body={
+    weights:{errorRate:parseFloat(document.getElementById('hw-errorRate').value),latency:parseFloat(document.getElementById('hw-latency').value),cpu:parseFloat(document.getElementById('hw-cpu').value),logErrors:parseFloat(document.getElementById('hw-logErrors').value)},
+    cpu:{good:parseFloat(document.getElementById('ht-cpu-good').value),warn:parseFloat(document.getElementById('ht-cpu-warn').value),crit:parseFloat(document.getElementById('ht-cpu-crit').value)},
+    errorRate:{good:parseFloat(document.getElementById('ht-err-good').value),warn:parseFloat(document.getElementById('ht-err-warn').value),crit:parseFloat(document.getElementById('ht-err-crit').value)},
+    latencyP99:{good:parseFloat(document.getElementById('ht-lat-good').value),warn:parseFloat(document.getElementById('ht-lat-warn').value),crit:parseFloat(document.getElementById('ht-lat-crit').value)},
+    logErrors:{good:parseFloat(document.getElementById('ht-log-good').value),warn:parseFloat(document.getElementById('ht-log-warn').value),crit:parseFloat(document.getElementById('ht-log-crit').value)},
+    statusBoundaries:{healthy:parseFloat(document.getElementById('ht-bound-healthy').value),degraded:parseFloat(document.getElementById('ht-bound-degraded').value)}
+  };
+  const ws=body.weights; const sum=ws.errorRate+ws.latency+ws.cpu+ws.logErrors;
+  if(Math.abs(sum-1)>0.01){alert(`Weights must sum to 1.0 (currently ${sum.toFixed(2)})`);return;}
+  await fetch('/api/health-thresholds',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  healthThresholds=body; toast('Health thresholds saved');
+}
+async function resetHealth() { healthThresholds=defaults.healthThresholds; populateHealthForm(); toast('Reset to defaults (save to persist)'); }
+
+// --- Settings: Source Metrics ---
+function populateMetricsSourceSelect() {
+  const sel=document.getElementById('metrics-source-select');
+  const enabledSources=sourcesData.filter(s=>s.enabled);
+  if(enabledSources.length===0){sel.innerHTML='<option value="">No sources available</option>';sourceMetrics=[];renderMetricsTable();return;}
+  sel.innerHTML=enabledSources.map(s=>`<option value="${esc(s.name)}" ${s.name===selectedMetricsSource?'selected':''}>${esc(s.name)} (${esc(s.type)})</option>`).join('');
+  if(!selectedMetricsSource||!enabledSources.find(s=>s.name===selectedMetricsSource)) selectedMetricsSource=enabledSources[0].name;
+  sel.value=selectedMetricsSource;
+  loadSourceMetrics(selectedMetricsSource);
+}
+async function loadSourceMetrics(name) {
+  selectedMetricsSource=name;
+  try {
+    const d=await(await fetch('/api/sources/'+encodeURIComponent(name)+'/metrics')).json();
+    sourceMetrics=d.metrics||[];
+    sourceMetricDefaults=d.defaults||[];
+    renderMetricsTable();
+  } catch(e){ sourceMetrics=[]; sourceMetricDefaults=[]; renderMetricsTable(); }
+}
+function renderMetricsTable() {
+  const tbody=document.getElementById('metrics-tbody');
+  if(!sourceMetrics||sourceMetrics.length===0){tbody.innerHTML='<tr><td colspan="5" class="empty">No metrics defined for this source.</td></tr>';return;}
+  tbody.innerHTML=sourceMetrics.map(m=>`<tr>
+    <td><strong>${esc(m.name)}</strong></td>
+    <td><span class="tag tag-type">${esc(m.unit||'-')}</span></td>
+    <td class="query" title="${esc(m.query)}">${esc(m.query)}</td>
+    <td style="color:var(--text2)">${esc(m.description||'')}</td>
+    <td style="white-space:nowrap"><button class="btn-icon" onclick="openEditMetric('${esc(m.name)}')">&#9998;</button><button class="btn-icon" onclick="openDeleteConfirm('metric','${esc(m.name)}')">&#128465;</button></td>
+  </tr>`).join('');
+}
+async function saveSourceMetrics() {
+  if(!selectedMetricsSource)return;
+  await fetch('/api/sources/'+encodeURIComponent(selectedMetricsSource)+'/metrics',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({metrics:sourceMetrics})});
+  toast('Metrics saved for '+selectedMetricsSource);
+}
+async function resetSourceMetrics() {
+  if(!selectedMetricsSource)return;
+  await fetch('/api/sources/'+encodeURIComponent(selectedMetricsSource)+'/metrics',{method:'DELETE'});
+  toast('Reset to connector defaults');
+  await loadSourceMetrics(selectedMetricsSource);
+}
+function openMetricModal() {
+  if(!selectedMetricsSource){alert('Select a source first');return;}
+  document.getElementById('metric-modal-title').textContent='Add Metric'; document.getElementById('metric-mode').value='add';
+  document.getElementById('metric-original-name').value='';
+  document.getElementById('met-name').value=''; document.getElementById('met-name').disabled=false;
+  document.getElementById('met-query').value=''; document.getElementById('met-unit').value=''; document.getElementById('met-desc').value='';
+  document.getElementById('metric-modal').classList.add('open');
+}
+function openEditMetric(name) {
+  const m=sourceMetrics.find(x=>x.name===name); if(!m)return;
+  document.getElementById('metric-modal-title').textContent='Edit Metric'; document.getElementById('metric-mode').value='edit';
+  document.getElementById('metric-original-name').value=name;
+  document.getElementById('met-name').value=m.name; document.getElementById('met-name').disabled=true;
+  document.getElementById('met-query').value=m.query; document.getElementById('met-unit').value=m.unit||''; document.getElementById('met-desc').value=m.description||'';
+  document.getElementById('metric-modal').classList.add('open');
+}
+function saveMetric() {
+  const mode=document.getElementById('metric-mode').value;
+  const m={name:document.getElementById('met-name').value.trim(),query:document.getElementById('met-query').value.trim(),unit:document.getElementById('met-unit').value.trim(),description:document.getElementById('met-desc').value.trim()};
+  if(!m.name||!m.query){alert('Name and Query are required');return;}
+  if(mode==='add'){
+    if(sourceMetrics.some(x=>x.name===m.name)){alert('Metric "'+m.name+'" already exists');return;}
+    sourceMetrics.push(m);
+  } else {
+    const idx=sourceMetrics.findIndex(x=>x.name===document.getElementById('metric-original-name').value);
+    if(idx>=0) sourceMetrics[idx]=m;
+  }
+  closeModal('metric-modal'); renderMetricsTable(); toast('Metric updated (save to persist)');
+}
+
+// --- Health Dashboard ---
+let healthData={};
+let healthInterval=null;
+async function loadHealthData() {
+  try {
+    healthData=await(await fetch('/api/health')).json();
+    renderHealthCards();
+  } catch(e){ document.getElementById('health-cards').innerHTML='<div class="empty">Failed to load health data.</div>'; }
+  if(!healthInterval) healthInterval=setInterval(()=>{ if(document.getElementById('page-health').classList.contains('active')) loadHealthData(); },15000);
+}
+function renderHealthCards() {
+  const el=document.getElementById('health-cards');
+  const services=Object.keys(healthData);
+  if(services.length===0){el.innerHTML='<div class="empty">No services to show. Wait for metrics to accumulate.</div>';return;}
+  el.innerHTML=services.map(name=>{
+    const h=healthData[name]; if(h.error) return `<div class="health-card"><div class="hc-header"><span class="hc-name">${esc(name)}</span></div><div class="empty">${esc(h.error)}</div></div>`;
+    const s=h.status||'healthy';
+    const m=h.signals?.metrics||{};
+    const l=h.signals?.logs||{};
+    return `<div class="health-card">
+      <div class="hc-header">
+        <div><span class="hc-name">${esc(name)}</span> <span class="hc-status ${s}">${s}</span></div>
+        <span class="hc-score ${s}">${h.score ?? '-'}</span>
+      </div>
+      <div class="hc-metrics">
+        <div class="hc-metric"><div class="label">CPU</div><div class="val">${typeof m.cpu==='number'?m.cpu.toFixed(1)+'%':'-'}</div></div>
+        <div class="hc-metric"><div class="label">Memory</div><div class="val">${typeof m.memory==='number'?m.memory.toFixed(0)+' MB':'-'}</div></div>
+        <div class="hc-metric"><div class="label">Error Rate</div><div class="val">${typeof m.errorRate==='number'?m.errorRate.toFixed(3)+'/s':'-'}</div></div>
+        <div class="hc-metric"><div class="label">Latency P99</div><div class="val">${typeof m.latencyP99==='number'?(m.latencyP99*1000).toFixed(0)+'ms':'-'}</div></div>
+        <div class="hc-metric"><div class="label">Log Errors</div><div class="val">${typeof l.errorRate==='number'?l.errorRate:'-'}</div></div>
+        <div class="hc-metric"><div class="label">Top Error</div><div class="val" style="font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${l.topErrors&&l.topErrors[0]?esc(l.topErrors[0]):'-'}</div></div>
+      </div>
+      ${(h.anomalies&&h.anomalies.length>0)?'<div class="hc-anomalies">'+h.anomalies.map(a=>`<div class="hc-anomaly">${esc(a.description)}</div>`).join('')+'</div>':''}
+      ${(h.correlations&&h.correlations.length>0)?h.correlations.map(c=>`<div class="hc-correlation">${esc(c)}</div>`).join(''):''}
+    </div>`;
+  }).join('');
+}
+
+// --- Utils ---
+function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
+async function refresh(){await Promise.all([loadSources(),loadServices()]);}
+(async()=>{await loadTypes();await refresh();setInterval(refresh,15000);})();
+</script>
+</body>
+</html>
