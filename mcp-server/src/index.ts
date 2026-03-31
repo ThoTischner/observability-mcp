@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import express from "express";
 import { randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -160,6 +161,8 @@ async function main() {
         type: c.type,
         url: c.url,
         enabled: c.enabled,
+        auth: c.auth ? { type: c.auth.type } : undefined,
+        tls: c.tls || undefined,
         signalType: connector?.signalType || null,
         status: health[c.name]?.status || (c.enabled ? "down" : "disabled"),
         latencyMs: health[c.name]?.latencyMs || null,
@@ -176,7 +179,7 @@ async function main() {
 
   // Add a new source
   app.post("/api/sources", async (req, res) => {
-    const { name, type, url, enabled } = req.body;
+    const { name, type, url, enabled, auth, tls } = req.body;
     if (!name || !type || !url) {
       res.status(400).json({ error: "name, type, and url are required" });
       return;
@@ -188,7 +191,7 @@ async function main() {
       res.status(409).json({ error: `Source "${name}" already exists` });
       return;
     }
-    const source = { name, type, url, enabled: enabled !== false };
+    const source = { name, type, url, enabled: enabled !== false, auth, tls };
     await registry.addSource(source);
     saveConfig(config = { ...config, sources: registry.getSourceConfigs() });
     res.status(201).json({ ok: true, source });
@@ -197,7 +200,7 @@ async function main() {
   // Update an existing source
   app.put("/api/sources/:name", async (req, res) => {
     const oldName = req.params.name;
-    const { name, type, url, enabled } = req.body;
+    const { name, type, url, enabled, auth, tls } = req.body;
     const existing = registry.getSourceConfigs().find((s) => s.name === oldName);
     if (!existing) {
       res.status(404).json({ error: `Source "${oldName}" not found` });
@@ -213,6 +216,8 @@ async function main() {
       type: type || existing.type,
       url: newUrl,
       enabled: enabled !== undefined ? enabled : existing.enabled,
+      auth: auth !== undefined ? auth : existing.auth,
+      tls: tls !== undefined ? tls : existing.tls,
     };
     await registry.updateSource(oldName, source);
     saveConfig(config = { ...config, sources: registry.getSourceConfigs() });
@@ -234,7 +239,7 @@ async function main() {
 
   // Test a source connection (without saving)
   app.post("/api/sources/test", async (req, res) => {
-    const { name, type, url, enabled } = req.body;
+    const { name, type, url, enabled, auth, tls } = req.body;
     if (!type || !url) {
       res.status(400).json({ error: "type and url are required" });
       return;
@@ -246,6 +251,8 @@ async function main() {
       type,
       url,
       enabled: enabled !== false,
+      auth,
+      tls,
     });
     res.json(result);
   });

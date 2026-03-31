@@ -1,0 +1,35 @@
+{
+  "$schema": "https://registry.modelcontextprotocol.io/v0.1/server.schema.json",
+  "name": "io.github.ThoTischner/observability-mcp",
+  "description": "Unified observability gateway for AI agents — one MCP server for Prometheus, Loki, and any backend with cross-signal anomaly detection",
+  "repository": {
+    "url": "https://github.com/ThoTischner/observability-mcp",
+    "source": "github"
+  },
+  "version": "1.0.0",
+  "packages": [
+    {
+      "registry_name": "npm",
+      "name": "observability-mcp"
+    }
+  ],
+  "transport": "streamable-http",
+  "environmentVariables": [
+    {
+      "name": "PORT",
+      "description": "HTTP port for the MCP endpoint and Web UI (default: 3000)"
+    },
+    {
+      "name": "PROMETHEUS_URL",
+      "description": "Prometheus URL(s), comma-separated for multiple (e.g. http://prom1:9090,http://prom2:9090)"
+    },
+    {
+      "name": "LOKI_URL",
+      "description": "Loki URL(s), comma-separated for multiple (e.g. http://loki1:3100,http://loki2:3100)"
+    },
+    {
+      "name": "CONFIG_PATH",
+      "description": "Path to sources.yaml config file (default: ~/.observability-mcp/sources.yaml)"
+    }
+  ]
+}

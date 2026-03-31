@@ -1,22 +1,21 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import yaml from "js-yaml";
 import type { Config, SourceConfig, GeneralSettings, HealthThresholds } from "../types.js";
 
-const CONFIG_PATH = process.env.CONFIG_PATH || "./config/sources.yaml";
+function resolveConfigPath(): string {
+  if (process.env.CONFIG_PATH) return process.env.CONFIG_PATH;
+  const localPath = "./config/sources.yaml";
+  if (existsSync(localPath)) return localPath;
+  return join(homedir(), ".observability-mcp", "sources.yaml");
+}
+
+const CONFIG_PATH = resolveConfigPath();
 
 export const DEFAULT_SETTINGS: GeneralSettings = {
   checkIntervalMs: 30000,
   defaultSensitivity: "medium",
-  ollamaUrl: "http://host.docker.internal:11434",
-  ollamaModel: "llama3.1:8b",
-  systemPrompt: `You are an SRE agent monitoring microservices infrastructure. When observability data shows anomalies or issues:
-
-1. Identify which service(s) are affected and what signals are abnormal
-2. Determine the likely root cause based on the metric patterns and correlations
-3. Assess severity: P1 (critical, user-facing outage), P2 (degraded, partial impact), P3 (warning, needs attention), P4 (informational)
-4. Suggest specific, actionable remediation steps
-
-Be concise and structured. Use the available MCP tools to gather more data if needed.`,
 };
 
 export const DEFAULT_HEALTH_THRESHOLDS: HealthThresholds = {
@@ -43,26 +42,31 @@ export function loadConfig(): Config {
   }
 }
 
+function parseUrlList(envVar: string | undefined, type: string): SourceConfig[] {
+  if (!envVar) return [];
+  return envVar.split(",").map((url, i, arr) => ({
+    name: arr.length === 1 ? type : `${type}-${i + 1}`,
+    type,
+    url: url.trim(),
+    enabled: true,
+  }));
+}
+
 function buildConfigFromEnv(): Config {
-  const sources: SourceConfig[] = [];
-  if (process.env.PROMETHEUS_URL) {
-    sources.push({ name: "prometheus", type: "prometheus", url: process.env.PROMETHEUS_URL, enabled: true });
-  }
-  if (process.env.LOKI_URL) {
-    sources.push({ name: "loki", type: "loki", url: process.env.LOKI_URL, enabled: true });
-  }
+  const sources: SourceConfig[] = [
+    ...parseUrlList(process.env.PROMETHEUS_URL, "prometheus"),
+    ...parseUrlList(process.env.LOKI_URL, "loki"),
+  ];
   return {
     sources,
-    settings: {
-      ...DEFAULT_SETTINGS,
-      ollamaUrl: process.env.OLLAMA_URL || DEFAULT_SETTINGS.ollamaUrl,
-      ollamaModel: process.env.OLLAMA_MODEL || DEFAULT_SETTINGS.ollamaModel,
-    },
+    settings: { ...DEFAULT_SETTINGS },
     healthThresholds: DEFAULT_HEALTH_THRESHOLDS,
   };
 }
 
 export function saveConfig(config: Config): void {
+  const dir = dirname(CONFIG_PATH);
+  mkdirSync(dir, { recursive: true });
   const yamlStr = yaml.dump(config, { indent: 2, lineWidth: 200 });
   writeFileSync(CONFIG_PATH, yamlStr, "utf-8");
 }

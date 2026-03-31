@@ -17,16 +17,6 @@ sources:
 settings:
   checkIntervalMs: 30000
   defaultSensitivity: medium
-  ollamaUrl: http://host.docker.internal:11434
-  ollamaModel: llama3.1:8b
-  systemPrompt: >-
-    You are an SRE agent monitoring microservices infrastructure.
-    When observability data shows anomalies or issues:
-    1. Identify which service(s) are affected and what signals are abnormal
-    2. Determine the likely root cause based on the metric patterns and correlations
-    3. Assess severity: P1 (critical), P2 (degraded), P3 (warning), P4 (info)
-    4. Suggest specific, actionable remediation steps.
-    Be concise and structured.
 
 healthThresholds:
   weights:

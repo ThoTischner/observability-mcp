@@ -1,6 +1,8 @@
+import { Agent } from "node:https";
 import type { ObservabilityConnector } from "./interface.js";
 import type {
   SourceConfig,
+  SourceAuth,
   ConnectorHealth,
   ServiceInfo,
   MetricInfo,
@@ -11,6 +13,7 @@ import type {
   Trend,
   SignalType,
 } from "../types.js";
+import { buildTlsAgent } from "./tls.js";
 
 const DEFAULT_PROMETHEUS_METRICS: MetricDefinition[] = [
   { name: "cpu", query: 'service_cpu_usage_percent{job="{{service}}"}', unit: "percent", description: "CPU usage percentage" },
@@ -27,11 +30,15 @@ export class PrometheusConnector implements ObservabilityConnector {
   readonly signalType: SignalType = "metrics";
   name = "";
   private baseUrl = "";
+  private auth?: SourceAuth;
+  private tlsAgent?: Agent;
   private metrics: MetricDefinition[] = [];
 
   async connect(config: SourceConfig): Promise<void> {
     this.name = config.name;
     this.baseUrl = config.url.replace(/\/$/, "");
+    this.auth = config.auth;
+    this.tlsAgent = buildTlsAgent(config);
     // Use source-level metrics if provided, otherwise connector defaults
     this.metrics = config.metrics && config.metrics.length > 0
       ? config.metrics
@@ -53,7 +60,7 @@ export class PrometheusConnector implements ObservabilityConnector {
   async healthCheck(): Promise<ConnectorHealth> {
     const start = Date.now();
     try {
-      const res = await fetch(`${this.baseUrl}/-/ready`);
+      const res = await fetch(`${this.baseUrl}/-/ready`, this.fetchOptions());
       return {
         status: res.ok ? "up" : "down",
         latencyMs: Date.now() - start,
@@ -182,11 +189,35 @@ export class PrometheusConnector implements ObservabilityConnector {
     return "stable";
   }
 
+  private buildAuthHeaders(): Record<string, string> {
+    if (!this.auth || this.auth.type === "none") return {};
+    if (this.auth.type === "bearer" && this.auth.token) {
+      return { Authorization: `Bearer ${this.auth.token}` };
+    }
+    if (this.auth.type === "basic" && this.auth.username) {
+      const encoded = Buffer.from(`${this.auth.username}:${this.auth.password || ""}`).toString("base64");
+      return { Authorization: `Basic ${encoded}` };
+    }
+    return {};
+  }
+
+  private fetchOptions(): RequestInit {
+    const opts: RequestInit = { headers: this.buildAuthHeaders() };
+    if (this.tlsAgent) {
+      // @ts-expect-error Node.js extension for native fetch
+      opts.dispatcher = this.tlsAgent;
+    }
+    return opts;
+  }
+
   private async apiGet<T>(path: string, timeoutMs = 10000): Promise<T> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const res = await fetch(`${this.baseUrl}${path}`, { signal: controller.signal });
+      const res = await fetch(`${this.baseUrl}${path}`, {
+        ...this.fetchOptions(),
+        signal: controller.signal,
+      });
       if (!res.ok) throw new Error(`Prometheus API error: ${res.status} ${res.statusText}`);
       return res.json() as Promise<T>;
     } catch (err) {

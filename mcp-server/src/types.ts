@@ -14,20 +14,35 @@ export interface MetricDefinition {
   description: string;    // what this metric measures
 }
 
+export interface SourceAuth {
+  type: "none" | "basic" | "bearer";
+  username?: string;       // for basic auth
+  password?: string;       // for basic auth
+  token?: string;          // for bearer token
+}
+
+export interface SourceTls {
+  skipVerify?: boolean;    // skip all TLS verification (insecure)
+  caCert?: string;         // path to custom CA certificate PEM file
+  clientCert?: string;     // path to client certificate PEM file (mTLS)
+  clientKey?: string;      // path to client private key PEM file (mTLS)
+}
+
 export interface SourceConfig {
   name: string;
   type: string;           // "prometheus", "loki", etc.
   url: string;
   enabled: boolean;
+  auth?: SourceAuth;       // optional authentication
+  tls?: SourceTls;         // TLS configuration
+  /** @deprecated Use tls.skipVerify instead */
+  tlsSkipVerify?: boolean;
   metrics?: MetricDefinition[];  // per-source metric definitions (overrides connector defaults)
 }
 
 export interface GeneralSettings {
   checkIntervalMs: number;
   defaultSensitivity: "low" | "medium" | "high";
-  ollamaUrl: string;
-  ollamaModel: string;
-  systemPrompt: string;
 }
 
 export interface HealthThresholds {

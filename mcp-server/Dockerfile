@@ -3,7 +3,7 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm install
 COPY . .
-RUN npx tsc && cp -r src/ui dist/ui
+RUN npm run build
 RUN chown -R node:node /app
 USER node
 EXPOSE 3000

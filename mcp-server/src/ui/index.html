@@ -203,22 +203,6 @@
               </select>
             </div>
           </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label>Ollama URL</label>
-              <input type="text" id="set-ollama-url">
-            </div>
-            <div class="form-group">
-              <label>Ollama Model</label>
-              <input type="text" id="set-ollama-model">
-              <div class="form-hint">e.g. llama3.1:8b, mistral:7b, gemma2:9b</div>
-            </div>
-          </div>
-          <div class="form-group">
-            <label>System Prompt</label>
-            <textarea id="set-prompt" rows="6"></textarea>
-            <div class="form-hint">Instructions for the LLM when analyzing anomalies</div>
-          </div>
           <div style="display:flex; gap:8px; justify-content:flex-end;">
             <button class="btn btn-ghost btn-sm" onclick="resetSettings()">Reset to Defaults</button>
             <button class="btn btn-primary btn-sm" onclick="saveSettings()">Save Settings</button>
@@ -311,6 +295,18 @@
         <div class="form-group"><label>Name</label><input type="text" id="src-name" placeholder="e.g. prometheus-prod"><div class="form-hint">Unique identifier</div></div>
         <div class="form-group"><label>Type</label><select id="src-type"></select></div>
         <div class="form-group"><label>URL</label><input type="text" id="src-url" placeholder="e.g. http://prometheus:9090"></div>
+        <div class="form-group"><label>Authentication</label><select id="src-auth-type" onchange="toggleAuthFields()"><option value="none">None</option><option value="basic">Basic Auth</option><option value="bearer">Bearer Token</option></select></div>
+        <div id="auth-basic-fields" style="display:none">
+          <div class="form-group"><label>Username</label><input type="text" id="src-auth-username" placeholder="username"></div>
+          <div class="form-group"><label>Password</label><input type="password" id="src-auth-password" placeholder="password"></div>
+        </div>
+        <div id="auth-bearer-fields" style="display:none">
+          <div class="form-group"><label>Token</label><input type="password" id="src-auth-token" placeholder="Bearer token"></div>
+        </div>
+        <div class="form-group" style="display:flex;align-items:center;gap:10px;"><label style="margin:0">Skip TLS Verify</label><label class="toggle"><input type="checkbox" id="src-tls-skip"><span class="slider"></span></label><span class="form-hint" style="margin:0;font-size:11px">Accept any certificate (insecure)</span></div>
+        <div class="form-group"><label>CA Certificate Path</label><input type="text" id="src-tls-ca" placeholder="/path/to/ca.pem"><div class="form-hint">Custom CA for self-signed certs (safer than skip verify)</div></div>
+        <div class="form-group"><label>Client Certificate Path</label><input type="text" id="src-tls-cert" placeholder="/path/to/client.pem"><div class="form-hint">For mutual TLS (mTLS)</div></div>
+        <div class="form-group"><label>Client Key Path</label><input type="text" id="src-tls-key" placeholder="/path/to/client-key.pem"></div>
         <div class="form-group" style="display:flex;align-items:center;gap:10px;"><label style="margin:0">Enabled</label><label class="toggle"><input type="checkbox" id="src-enabled" checked><span class="slider"></span></label></div>
         <div class="test-result" id="test-result"></div>
       </div>
@@ -414,12 +410,67 @@ function renderServices() {
   document.getElementById('dash-services').innerHTML=html;
 }
 
+// --- TLS helpers ---
+function resetTlsFields() {
+  document.getElementById('src-tls-skip').checked=false;
+  document.getElementById('src-tls-ca').value='';
+  document.getElementById('src-tls-cert').value='';
+  document.getElementById('src-tls-key').value='';
+}
+function getTlsFromForm() {
+  const skip=document.getElementById('src-tls-skip').checked;
+  const ca=document.getElementById('src-tls-ca').value.trim();
+  const cert=document.getElementById('src-tls-cert').value.trim();
+  const key=document.getElementById('src-tls-key').value.trim();
+  if(!skip&&!ca&&!cert) return undefined;
+  const tls={};
+  if(skip) tls.skipVerify=true;
+  if(ca) tls.caCert=ca;
+  if(cert) tls.clientCert=cert;
+  if(key) tls.clientKey=key;
+  return tls;
+}
+function setTlsInForm(tls) {
+  resetTlsFields();
+  if(!tls) return;
+  document.getElementById('src-tls-skip').checked=tls.skipVerify||false;
+  document.getElementById('src-tls-ca').value=tls.caCert||'';
+  document.getElementById('src-tls-cert').value=tls.clientCert||'';
+  document.getElementById('src-tls-key').value=tls.clientKey||'';
+}
+
 // --- Source CRUD ---
+function toggleAuthFields() {
+  const t=document.getElementById('src-auth-type').value;
+  document.getElementById('auth-basic-fields').style.display=t==='basic'?'block':'none';
+  document.getElementById('auth-bearer-fields').style.display=t==='bearer'?'block':'none';
+}
+function resetAuthFields() {
+  document.getElementById('src-auth-type').value='none';
+  document.getElementById('src-auth-username').value='';
+  document.getElementById('src-auth-password').value='';
+  document.getElementById('src-auth-token').value='';
+  toggleAuthFields();
+}
+function getAuthFromForm() {
+  const t=document.getElementById('src-auth-type').value;
+  if(t==='none') return undefined;
+  if(t==='basic') return {type:'basic',username:document.getElementById('src-auth-username').value,password:document.getElementById('src-auth-password').value};
+  if(t==='bearer') return {type:'bearer',token:document.getElementById('src-auth-token').value};
+}
+function setAuthInForm(auth) {
+  if(!auth||auth.type==='none') { resetAuthFields(); return; }
+  document.getElementById('src-auth-type').value=auth.type;
+  if(auth.type==='basic') { document.getElementById('src-auth-username').value=auth.username||''; document.getElementById('src-auth-password').value=auth.password||''; }
+  if(auth.type==='bearer') { document.getElementById('src-auth-token').value=auth.token||''; }
+  toggleAuthFields();
+}
 function openAddModal() {
   document.getElementById('modal-title').textContent='Add Source'; document.getElementById('modal-mode').value='add';
   document.getElementById('modal-original-name').value=''; document.getElementById('src-name').value='';
   document.getElementById('src-url').value=''; document.getElementById('src-enabled').checked=true;
-  document.getElementById('src-name').disabled=false; hideTestResult();
+  resetTlsFields();
+  document.getElementById('src-name').disabled=false; resetAuthFields(); hideTestResult();
   const sel=document.getElementById('src-type'); sel.innerHTML=supportedTypes.map(t=>`<option value="${t}">${t}</option>`).join('');
   document.getElementById('source-modal').classList.add('open');
 }
@@ -428,13 +479,13 @@ function openEditModal(name) {
   document.getElementById('modal-title').textContent='Edit Source'; document.getElementById('modal-mode').value='edit';
   document.getElementById('modal-original-name').value=name; document.getElementById('src-name').value=s.name;
   document.getElementById('src-name').disabled=true; document.getElementById('src-url').value=s.url;
-  document.getElementById('src-enabled').checked=s.enabled; hideTestResult();
+  document.getElementById('src-enabled').checked=s.enabled; setTlsInForm(s.tls); setAuthInForm(s.auth); hideTestResult();
   const sel=document.getElementById('src-type'); sel.innerHTML=supportedTypes.map(t=>`<option value="${t}" ${t===s.type?'selected':''}>${t}</option>`).join('');
   document.getElementById('source-modal').classList.add('open');
 }
 async function saveSource() {
   const mode=document.getElementById('modal-mode').value;
-  const src={name:document.getElementById('src-name').value.trim(),type:document.getElementById('src-type').value,url:document.getElementById('src-url').value.trim(),enabled:document.getElementById('src-enabled').checked};
+  const src={name:document.getElementById('src-name').value.trim(),type:document.getElementById('src-type').value,url:document.getElementById('src-url').value.trim(),enabled:document.getElementById('src-enabled').checked,auth:getAuthFromForm(),tls:getTlsFromForm()};
   if(!src.name||!src.url){alert('Name and URL are required');return;}
   const btn=document.getElementById('save-btn'); btn.disabled=true; btn.textContent='Saving...';
   try {
@@ -446,7 +497,7 @@ async function saveSource() {
 async function testConnection() {
   const btn=document.getElementById('test-btn'),r=document.getElementById('test-result');
   btn.disabled=true;btn.innerHTML='<span class="spinner"></span> Testing...';r.style.display='none';
-  try{const res=await fetch('/api/sources/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'test',type:document.getElementById('src-type').value,url:document.getElementById('src-url').value})});
+  try{const res=await fetch('/api/sources/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'test',type:document.getElementById('src-type').value,url:document.getElementById('src-url').value,auth:getAuthFromForm(),tls:getTlsFromForm()})});
   const d=await res.json();r.style.display='block';r.className='test-result show '+(d.status==='up'?'success':'failure');r.textContent=d.status==='up'?`Connected (${d.latencyMs}ms)`:`Failed: ${d.message}`;
   }catch(e){r.style.display='block';r.className='test-result show failure';r.textContent='Error: '+e;}
   finally{btn.disabled=false;btn.textContent='Test Connection';}
@@ -469,12 +520,9 @@ async function confirmDelete(){
 function populateSettingsForm() {
   document.getElementById('set-interval').value=settings.checkIntervalMs||30000;
   document.getElementById('set-sensitivity').value=settings.defaultSensitivity||'medium';
-  document.getElementById('set-ollama-url').value=settings.ollamaUrl||'';
-  document.getElementById('set-ollama-model').value=settings.ollamaModel||'';
-  document.getElementById('set-prompt').value=settings.systemPrompt||'';
 }
 async function saveSettings() {
-  const body={checkIntervalMs:parseInt(document.getElementById('set-interval').value),defaultSensitivity:document.getElementById('set-sensitivity').value,ollamaUrl:document.getElementById('set-ollama-url').value,ollamaModel:document.getElementById('set-ollama-model').value,systemPrompt:document.getElementById('set-prompt').value};
+  const body={checkIntervalMs:parseInt(document.getElementById('set-interval').value),defaultSensitivity:document.getElementById('set-sensitivity').value};
   await fetch('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   toast('Settings saved');
 }

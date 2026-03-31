@@ -1,14 +1,12 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
-// Initial config from env (overridden by API settings on each loop)
+// Config from env vars
 const MCP_URL = process.env.MCP_URL || "http://mcp-server:3000/mcp";
 const SETTINGS_URL = MCP_URL.replace("/mcp", "/api/settings");
-const INITIAL_OLLAMA_URL = process.env.OLLAMA_URL || "http://host.docker.internal:11434";
-const INITIAL_MODEL = process.env.OLLAMA_MODEL || "llama3.1:8b";
-const INITIAL_INTERVAL = parseInt(process.env.CHECK_INTERVAL || "30000");
-
-const DEFAULT_SYSTEM_PROMPT = `You are an SRE agent monitoring microservices infrastructure. When observability data shows anomalies or issues:
+const OLLAMA_URL = process.env.OLLAMA_URL || "http://host.docker.internal:11434";
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "llama3.1:8b";
+const SYSTEM_PROMPT = process.env.SYSTEM_PROMPT || `You are an SRE agent monitoring microservices infrastructure. When observability data shows anomalies or issues:
 
 1. Identify which service(s) are affected and what signals are abnormal
 2. Determine the likely root cause based on the metric patterns and correlations
@@ -16,15 +14,13 @@ const DEFAULT_SYSTEM_PROMPT = `You are an SRE agent monitoring microservices inf
 4. Suggest specific, actionable remediation steps
 
 Be concise and structured. Use the available MCP tools to gather more data if needed.`;
+const INITIAL_INTERVAL = parseInt(process.env.CHECK_INTERVAL || "30000");
 
 const MAX_TOOL_ROUNDS = 3;
 const DEDUP_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-// --- Mutable settings (refreshed from API each loop) ---
-let ollamaUrl = INITIAL_OLLAMA_URL;
-let ollamaModel = INITIAL_MODEL;
+// --- Mutable settings (refreshed from MCP server API each loop) ---
 let checkInterval = INITIAL_INTERVAL;
-let systemPrompt = DEFAULT_SYSTEM_PROMPT;
 let defaultSensitivity = "medium";
 
 function log(msg: string, data?: unknown) {
@@ -42,10 +38,7 @@ async function syncSettings(): Promise<void> {
     const res = await fetch(SETTINGS_URL);
     if (!res.ok) return;
     const s = (await res.json()) as Record<string, unknown>;
-    if (s.ollamaUrl) ollamaUrl = s.ollamaUrl as string;
-    if (s.ollamaModel) ollamaModel = s.ollamaModel as string;
     if (s.checkIntervalMs) checkInterval = s.checkIntervalMs as number;
-    if (s.systemPrompt) systemPrompt = s.systemPrompt as string;
     if (s.defaultSensitivity) defaultSensitivity = s.defaultSensitivity as string;
   } catch {
     // Use current values if API unreachable
@@ -101,16 +94,16 @@ async function connectMcp(): Promise<Client> {
 // --- Ollama ---
 async function ensureModel(): Promise<boolean> {
   try {
-    const res = await fetch(`${ollamaUrl}/api/tags`);
+    const res = await fetch(`${OLLAMA_URL}/api/tags`);
     if (!res.ok) return false;
     const data = (await res.json()) as { models?: Array<{ name: string }> };
-    const found = data.models?.some((m) => m.name.startsWith(ollamaModel.split(":")[0]));
-    if (found) { log(`Model ${ollamaModel} available`); return true; }
-    log(`Pulling model ${ollamaModel}...`);
-    const pullRes = await fetch(`${ollamaUrl}/api/pull`, {
+    const found = data.models?.some((m) => m.name.startsWith(OLLAMA_MODEL.split(":")[0]));
+    if (found) { log(`Model ${OLLAMA_MODEL} available`); return true; }
+    log(`Pulling model ${OLLAMA_MODEL}...`);
+    const pullRes = await fetch(`${OLLAMA_URL}/api/pull`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: ollamaModel, stream: false }),
+      body: JSON.stringify({ name: OLLAMA_MODEL, stream: false }),
     });
     return pullRes.ok;
   } catch {
@@ -142,9 +135,9 @@ async function chatWithOllama(
   tools?: ReturnType<typeof mcpToolsToOllamaFormat>
 ): Promise<OllamaMessage | null> {
   try {
-    const body: Record<string, unknown> = { model: ollamaModel, messages, stream: false };
+    const body: Record<string, unknown> = { model: OLLAMA_MODEL, messages, stream: false };
     if (tools && tools.length > 0) body.tools = tools;
-    const res = await fetch(`${ollamaUrl}/api/chat`, {
+    const res = await fetch(`${OLLAMA_URL}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -163,7 +156,7 @@ async function main() {
 
   await waitForService(MCP_URL.replace("/mcp", "/api/sources"), "MCP Server");
   await syncSettings();
-  log(`Config: MCP=${MCP_URL} OLLAMA=${ollamaUrl} MODEL=${ollamaModel} INTERVAL=${checkInterval}ms`);
+  log(`Config: MCP=${MCP_URL} OLLAMA=${OLLAMA_URL} MODEL=${OLLAMA_MODEL} INTERVAL=${checkInterval}ms`);
 
   let client = await connectMcp();
   let { tools } = await client.listTools();
@@ -246,7 +239,7 @@ async function main() {
       if (ollamaAvailable) {
         const ollamaTools = mcpToolsToOllamaFormat(tools);
         const messages: OllamaMessage[] = [
-          { role: "system", content: systemPrompt },
+          { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: contextPrompt },
         ];
 
