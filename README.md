@@ -1,38 +1,87 @@
+<div align="center">
+
 # observability-mcp
 
-The unified observability gateway for AI agents. One MCP server that connects to any observability backend through pluggable connectors, normalizes the data, adds intelligent analysis, and provides a web UI for configuration.
+**The unified observability gateway for AI agents.**
 
-**What Grafana did for dashboards, we do for AI agents.**
+One MCP server that connects to any observability backend through pluggable connectors,
+normalizes the data, adds intelligent analysis, and provides a web UI for configuration.
+
+*What Grafana did for dashboards, we do for AI agents.*
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Docker Compose](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![MCP SDK](https://img.shields.io/badge/MCP_SDK-1.12-orange)](https://modelcontextprotocol.io)
+
+![Web UI Dashboard](docs/dashboard.png)
+
+</div>
+
+---
 
 ## Why?
 
 Every observability vendor ships its own MCP server — Prometheus, Grafana, Datadog, Elastic, each siloed. AI agents that need to reason across systems must juggle N separate servers. There is no unified abstraction layer.
 
-**observability-mcp** is that layer: a single MCP server with pluggable connectors, cross-signal analysis, and a management UI.
+**observability-mcp** is that layer.
+
+## Features
+
+- **Unified Gateway** — Single MCP endpoint for all your observability backends. Prometheus, Loki, and any future connector through one interface.
+- **Cross-Signal Analysis** — Correlates metrics and logs automatically. Detects patterns like "CPU spike + error logs = resource saturation" across signals.
+- **LLM Incident Analysis** — Agent detects anomalies via z-score analysis, then uses Ollama for multi-turn root cause analysis with severity classification (P1-P4).
+- **Web UI** — 5-page management interface for sources, services, health monitoring, and configuration. Dark theme, real-time updates.
+- **Chaos Engineering** — Built-in demo with 3 microservices and chaos injection (CPU spikes, error floods, memory leaks) — all correlated across signals.
+- **Pluggable Connectors** — Add new backends by implementing one interface. Each connector owns its native query language (PromQL, LogQL, Flux, KQL...).
 
 ## Architecture
 
+```mermaid
+graph TB
+    Agent["AI Agent<br/><small>Claude, Ollama, etc.</small>"]
+
+    subgraph MCP ["observability-mcp :3000"]
+        Tools["6 MCP Tools"]
+        Analysis["Analysis Engine<br/><small>Z-score, Health Scoring, Correlation</small>"]
+        UI["Web UI<br/><small>Dashboard, Sources, Services, Health, Settings</small>"]
+    end
+
+    subgraph Connectors ["Pluggable Connectors"]
+        Prom["Prometheus<br/><small>PromQL</small>"]
+        Loki["Loki<br/><small>LogQL</small>"]
+        Next["Your Backend<br/><small>Any query language</small>"]
+    end
+
+    subgraph Services ["Example Microservices"]
+        GW["API Gateway :8080"]
+        Pay["Payment Service :8081<br/><small>chaos injection</small>"]
+        Ord["Order Service :8082"]
+    end
+
+    Agent <-->|"MCP<br/>Streamable HTTP"| Tools
+    Tools --- Analysis
+    Tools --- UI
+    MCP --> Prom & Loki & Next
+    Prom & Loki -.->|scrape / collect| Services
+
+    style MCP fill:#1a1a2e,stroke:#58a6ff,color:#fff
+    style Connectors fill:#0d1117,stroke:#3fb950,color:#fff
+    style Services fill:#0d1117,stroke:#f0883e,color:#fff
+    style Agent fill:#58a6ff,stroke:#58a6ff,color:#000
+    style Next fill:#0d1117,stroke:#3fb950,color:#8b949e,stroke-dasharray: 5 5
 ```
-              AI Agent (Claude, Ollama, etc.)
-                         |
-                   MCP (Streamable HTTP)
-                         |
-              ┌──────────┴──────────┐
-              │   observability-mcp  │
-              │                      │
-              │  6 MCP Tools         │
-              │  Analysis Engine     │
-              │  Web UI (:3000)      │
-              │                      │
-              │  ┌────────┐┌──────┐  │
-              │  │Promethe││ Loki │  │
-              │  │  us    ││      │  │
-              │  └────────┘└──────┘  │
-              │  (pluggable)         │
-              └──────────────────────┘
-                   |           |
-              Prometheus     Loki
-              (metrics)     (logs)
+
+## How It Works
+
+```
+1. Services emit          2. Backends collect        3. MCP normalizes         4. Agent analyzes
+┌─────────────────┐      ┌──────────────────┐      ┌──────────────────┐      ┌──────────────────┐
+│ Your services    │ ──── │ Prometheus       │ ──── │ observability-   │ ──── │ LLM detects      │
+│ emit metrics     │      │ scrapes metrics   │      │ mcp unifies     │      │ anomalies,       │
+│ and logs         │      │ Loki collects    │      │ 6 tools + UI    │      │ correlates, and  │
+│                  │      │ logs via Promtail │      │                  │      │ explains          │
+└─────────────────┘      └──────────────────┘      └──────────────────┘      └──────────────────┘
 ```
 
 ## Quick Start
@@ -179,3 +228,25 @@ healthThresholds:
 - Docker and Docker Compose
 - 4GB+ RAM (8GB+ if running Ollama)
 - Ollama on host machine (optional, for AI analysis)
+
+## Contributing
+
+Contributions are welcome! The easiest way to get started:
+
+1. Fork the repo and `docker-compose up --build`
+2. Pick an issue or open one to discuss your idea
+3. Submit a PR — all code runs in Docker, no local dependencies needed
+
+Ideas: new connectors (InfluxDB, Elasticsearch, Datadog), additional analysis algorithms, UI improvements.
+
+## License
+
+MIT
+
+---
+
+<div align="center">
+
+If you find this useful, consider giving it a star — it helps others discover the project.
+
+</div>
