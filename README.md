@@ -170,6 +170,89 @@ curl -X POST http://localhost:8081/chaos/reset
 
 The agent detects anomalies within 30 seconds and produces an incident analysis (if Ollama is running).
 
+## Using with Claude Code
+
+Connect Claude Code directly to your observability stack — no agent needed. Add the MCP server to your project:
+
+```bash
+claude mcp add observability --transport http http://localhost:3000/mcp
+```
+
+Then ask Claude to investigate your infrastructure using natural language. Claude will call the MCP tools automatically.
+
+### Example: Health Check
+
+**Prompt:** *"Check the health of all services"*
+
+Claude calls `get_service_health` for each service and returns:
+
+```json
+{
+  "service": "payment-service",
+  "status": "healthy",
+  "score": 100,
+  "signals": {
+    "metrics": { "cpu": 17.2, "memory": 125.0, "errorRate": 0, "latencyP99": 0.0099 },
+    "logs": { "errorRate": 0, "topErrors": [] }
+  },
+  "anomalies": [],
+  "correlations": []
+}
+```
+
+### Example: Incident Investigation
+
+After triggering chaos (`curl -X POST http://localhost:8081/chaos/error-spike`), ask Claude: *"Are there any anomalies?"*
+
+Claude calls `detect_anomalies` and finds:
+
+```json
+{
+  "scannedServices": 3,
+  "anomalies": [
+    {
+      "metric": "cpu",
+      "severity": "high",
+      "description": "cpu is 3.4σ above baseline (18.36 → 37.31)",
+      "currentValue": 37.31,
+      "baselineValue": 18.36,
+      "deviationPercent": 103,
+      "service": "payment-service"
+    },
+    {
+      "metric": "request_rate",
+      "severity": "low",
+      "description": "request_rate is -1.8σ below baseline (0.08 → 0.04)",
+      "currentValue": 0.04,
+      "baselineValue": 0.08,
+      "deviationPercent": -55,
+      "service": "payment-service"
+    }
+  ],
+  "summary": "2 anomalies detected across 1 service(s)."
+}
+```
+
+Then ask *"Show me the error logs for payment-service"* — Claude calls `query_logs`:
+
+```json
+{
+  "service": "payment-service",
+  "summary": {
+    "total": 11,
+    "errorCount": 11,
+    "warnCount": 0,
+    "topPatterns": [
+      "Request failed: internal error during POST /payments (6x)",
+      "Request failed: internal error during POST /refunds (4x)",
+      "Request failed: internal error during GET / (1x)"
+    ]
+  }
+}
+```
+
+Claude correlates the signals: CPU spike (+114%), error logs flooding, request rate halved — and explains the incident in plain language. All without writing a single PromQL or LogQL query.
+
 ## Ollama Integration (Agent only)
 
 The **agent** (not the MCP server) uses Ollama for LLM-powered incident analysis. The MCP server itself is LLM-agnostic — it just provides tools and data.
