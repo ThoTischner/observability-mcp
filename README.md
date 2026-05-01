@@ -135,7 +135,7 @@ docker run -d \
   ghcr.io/thotischner/observability-mcp:latest
 
 # Pin a version
-docker run -p 3000:3000 ghcr.io/thotischner/observability-mcp:v1.0.0
+docker run -p 3000:3000 ghcr.io/thotischner/observability-mcp:1.1.2
 
 # With backend URLs preconfigured via env
 docker run -p 3000:3000 \
@@ -144,7 +144,7 @@ docker run -p 3000:3000 \
   ghcr.io/thotischner/observability-mcp:latest
 ```
 
-Available tags: `latest`, `main`, `vX.Y.Z`, `X.Y`, `X`, `sha-<commit>`.
+Available tags: `latest`, `main`, `X.Y.Z`, `X.Y`, `X`, `sha-<commit>` (semver tags are stripped of the leading `v`).
 
 ### docker-compose snippet
 
