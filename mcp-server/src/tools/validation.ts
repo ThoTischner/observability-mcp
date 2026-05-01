@@ -1,7 +1,11 @@
 import type { ConnectorRegistry } from "../connectors/registry.js";
 
 const DURATION_RE = /^\d+[mhd]$/;
-const SAFE_LABEL_RE = /^[a-zA-Z0-9_\-.:]+$/;
+// Slashes are valid in Prometheus label values and appear in real-world job
+// names (Grafana Cloud Integrations like "integrations/unix", k8s namespaces,
+// Docker image refs). The PromQL/LogQL injection surface is the surrounding
+// quote/backslash, which we escape separately, not these characters.
+const SAFE_LABEL_RE = /^[a-zA-Z0-9_\-.:/]+$/;
 
 export function validateDuration(duration: string): string | null {
   if (!DURATION_RE.test(duration)) {
@@ -38,7 +42,7 @@ export function sanitizeLabelValue(value: string): string | null {
 
 export function validateServiceName(service: string): string | null {
   if (!sanitizeLabelValue(service)) {
-    return `Invalid service name "${service}". Only alphanumeric characters, hyphens, underscores, dots, and colons are allowed (max 128 chars).`;
+    return `Invalid service name "${service}". Only alphanumeric characters, hyphens, underscores, dots, colons, and slashes are allowed (max 128 chars).`;
   }
   return null;
 }

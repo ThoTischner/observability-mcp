@@ -15,15 +15,60 @@ import type {
 } from "../types.js";
 import { buildTlsAgent } from "./tls.js";
 
+// Defaults target prom-client conventions, the de-facto standard for
+// Node.js/Express instrumentation and what most apps emit out of the box.
+// {{selector}} is replaced at query time with the discovered label/value
+// pair (e.g. job="my-svc"); the connector probes job → service → app →
+// service_name to find which label carries the requested service name.
+// {{service}} (literal value) is still supported for back-compat with
+// user-provided overrides.
 const DEFAULT_PROMETHEUS_METRICS: MetricDefinition[] = [
-  { name: "cpu", query: 'service_cpu_usage_percent{job="{{service}}"}', unit: "percent", description: "CPU usage percentage" },
-  { name: "memory", query: 'service_memory_usage_bytes{job="{{service}}"}', unit: "bytes", description: "Memory usage in bytes" },
-  { name: "error_rate", query: 'rate(http_requests_total{job="{{service}}",status=~"5.."}[1m])', unit: "req/s", description: "HTTP 5xx error rate" },
-  { name: "request_rate", query: 'rate(http_requests_total{job="{{service}}"}[1m])', unit: "req/s", description: "Total HTTP request rate" },
-  { name: "latency_p99", query: 'histogram_quantile(0.99, rate(http_request_duration_seconds_bucket{job="{{service}}"}[1m]))', unit: "seconds", description: "99th percentile latency" },
-  { name: "latency_p50", query: 'histogram_quantile(0.50, rate(http_request_duration_seconds_bucket{job="{{service}}"}[1m]))', unit: "seconds", description: "50th percentile latency" },
-  { name: "latency_avg", query: 'rate(http_request_duration_seconds_sum{job="{{service}}"}[1m]) / rate(http_request_duration_seconds_count{job="{{service}}"}[1m])', unit: "seconds", description: "Average request latency" },
+  {
+    name: "cpu",
+    query: 'rate(process_cpu_seconds_total{ {{selector}} }[1m]) * 100',
+    unit: "percent",
+    description: "CPU usage % (rate of process_cpu_seconds_total — prom-client default)",
+  },
+  {
+    name: "memory",
+    query: 'process_resident_memory_bytes{ {{selector}} }',
+    unit: "bytes",
+    description: "Resident memory in bytes (prom-client default)",
+  },
+  {
+    name: "request_rate",
+    query: 'sum(rate(http_requests_total{ {{selector}} }[1m]))',
+    unit: "req/s",
+    description: "HTTP request rate",
+  },
+  {
+    name: "error_rate",
+    query: 'sum(rate(http_requests_total{ {{selector}}, status=~"5.." }[1m]))',
+    unit: "req/s",
+    description: "HTTP 5xx error rate",
+  },
+  {
+    name: "latency_p99",
+    query: 'histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{ {{selector}} }[1m])) by (le))',
+    unit: "seconds",
+    description: "99th percentile latency",
+  },
+  {
+    name: "latency_p50",
+    query: 'histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket{ {{selector}} }[1m])) by (le))',
+    unit: "seconds",
+    description: "50th percentile latency",
+  },
+  {
+    name: "latency_avg",
+    query: 'sum(rate(http_request_duration_seconds_sum{ {{selector}} }[1m])) / sum(rate(http_request_duration_seconds_count{ {{selector}} }[1m]))',
+    unit: "seconds",
+    description: "Average request latency",
+  },
 ];
+
+const DEFAULT_SERVICE_LABELS = ["job", "service", "app", "service_name"];
+const LABEL_CACHE_TTL_MS = 60_000;
 
 export class PrometheusConnector implements ObservabilityConnector {
   readonly type = "prometheus";
@@ -33,16 +78,28 @@ export class PrometheusConnector implements ObservabilityConnector {
   private auth?: SourceAuth;
   private tlsAgent?: Agent;
   private metrics: MetricDefinition[] = [];
+  private serviceLabels: string[] = DEFAULT_SERVICE_LABELS;
+  private labelValuesCache = new Map<string, { values: string[]; expiresAt: number }>();
 
   async connect(config: SourceConfig): Promise<void> {
     this.name = config.name;
     this.baseUrl = config.url.replace(/\/$/, "");
     this.auth = config.auth;
     this.tlsAgent = buildTlsAgent(config);
-    // Use source-level metrics if provided, otherwise connector defaults
-    this.metrics = config.metrics && config.metrics.length > 0
-      ? config.metrics
-      : [...DEFAULT_PROMETHEUS_METRICS];
+    // Source-level overrides merge with defaults by name, so users can pin
+    // a single metric (e.g. cpu) to a custom query without re-listing the
+    // rest. To fully replace the defaults, override every metric explicitly.
+    const overrides = new Map((config.metrics || []).map((m) => [m.name, m]));
+    this.metrics = DEFAULT_PROMETHEUS_METRICS.map((d) => overrides.get(d.name) || d);
+    for (const [name, m] of overrides) {
+      if (!DEFAULT_PROMETHEUS_METRICS.some((d) => d.name === name)) {
+        this.metrics.push(m);
+      }
+    }
+    const envLabels = process.env.PROMETHEUS_SERVICE_LABELS;
+    if (envLabels) {
+      this.serviceLabels = envLabels.split(",").map((s) => s.trim()).filter(Boolean);
+    }
   }
 
   getDefaultMetrics(): MetricDefinition[] {
@@ -144,7 +201,7 @@ export class PrometheusConnector implements ObservabilityConnector {
   }
 
   async queryMetrics(params: MetricQuery): Promise<MetricResult> {
-    const promql = this.buildQuery(params.service, params.metric);
+    const { promql, label } = await this.buildQuery(params.service, params.metric);
     const { start, end, step } = this.parseTimeRange(params.duration, params.step);
 
     const data = await this.apiGet<{ data: PromQueryRangeResult }>(
@@ -170,17 +227,53 @@ export class PrometheusConnector implements ObservabilityConnector {
       unit: this.getUnit(params.metric),
       values,
       summary: this.computeSummary(rawValues),
+      resolvedSeries: promql,
+      resolvedLabel: label,
     };
   }
 
   // --- Private helpers ---
 
-  private buildQuery(service: string, metric: string): string {
+  private async buildQuery(service: string, metric: string): Promise<{ promql: string; label: string }> {
     const def = this.metrics.find((m) => m.name === metric);
-    if (def) {
-      return def.query.replace(/\{\{service\}\}/g, service);
+    const template = def?.query || `${metric}{ {{selector}} }`;
+    const escaped = service.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+
+    let promql = template;
+    let label = "job";
+    if (template.includes("{{selector}}")) {
+      label = await this.resolveServiceLabel(service);
+      const selector = `${label}="${escaped}"`;
+      promql = promql.replace(/\{\{selector\}\}/g, selector);
     }
-    return `${metric}{job="${service}"}`;
+    promql = promql.replace(/\{\{service\}\}/g, escaped);
+    return { promql, label };
+  }
+
+  private async resolveServiceLabel(service: string): Promise<string> {
+    for (const label of this.serviceLabels) {
+      const values = await this.getLabelValues(label);
+      if (values.includes(service)) return label;
+    }
+    return this.serviceLabels[0] || "job";
+  }
+
+  private async getLabelValues(label: string): Promise<string[]> {
+    const cached = this.labelValuesCache.get(label);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.values;
+    }
+    try {
+      const data = await this.apiGet<{ data: string[] }>(
+        `/api/v1/label/${encodeURIComponent(label)}/values`
+      );
+      const values = data?.data || [];
+      this.labelValuesCache.set(label, { values, expiresAt: Date.now() + LABEL_CACHE_TTL_MS });
+      return values;
+    } catch {
+      this.labelValuesCache.set(label, { values: [], expiresAt: Date.now() + LABEL_CACHE_TTL_MS });
+      return [];
+    }
   }
 
   private getUnit(metric: string): string {

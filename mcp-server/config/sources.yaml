@@ -3,11 +3,21 @@ sources:
     type: prometheus
     url: http://prometheus:9090
     enabled: true
-    # metrics:  # Uncomment to override default Prometheus metrics
-    #   - name: custom_metric
-    #     query: 'my_custom_metric{job="{{service}}"}'
-    #     unit: requests
-    #     description: My custom metric
+    # The demo services emit synthetic CPU/memory gauges that the chaos
+    # endpoints drive directly, so we override the connector defaults
+    # (which target prom-client conventions) with the demo-specific names.
+    # request_rate / error_rate / latency_* keep the prom-client defaults
+    # and apply unchanged because the demo also emits http_requests_total
+    # and http_request_duration_seconds_bucket.
+    metrics:
+      - name: cpu
+        query: 'service_cpu_usage_percent{job="{{service}}"}'
+        unit: percent
+        description: Synthetic CPU gauge driven by /chaos endpoints
+      - name: memory
+        query: 'service_memory_usage_bytes{job="{{service}}"}'
+        unit: bytes
+        description: Synthetic memory gauge driven by /chaos endpoints
 
   - name: loki
     type: loki

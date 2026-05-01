@@ -123,6 +123,8 @@ export interface MetricResult {
   unit: string;
   values: DataPoint[];
   summary: MetricSummary;
+  resolvedSeries?: string;   // The actual PromQL executed (for debugging when auto-resolved)
+  resolvedLabel?: string;    // Which label (job/service/app/...) the service was matched on
 }
 
 export interface LogEntry {
