@@ -85,10 +85,14 @@ export class LokiConnector implements ObservabilityConnector {
     const seen = new Map<string, ServiceInfo>();
     for (const label of this.serviceLabels) {
       const values = await this.getLabelValues(label);
-      for (const name of values) {
-        if (!seen.has(name)) {
-          seen.set(name, {
-            name,
+      for (const raw of values) {
+        // Docker's loki.source.docker writes container names with a leading '/'
+        // (Docker API Names[0] convention). Strip it for display so the name
+        // matches what the service-name validator and users will pass back in.
+        const display = label === "container" ? raw.replace(/^\//, "") : raw;
+        if (!seen.has(display)) {
+          seen.set(display, {
+            name: display,
             source: this.name,
             signalType: "logs" as const,
             labels: { discoveredVia: label },
@@ -103,11 +107,12 @@ export class LokiConnector implements ObservabilityConnector {
     const { start, end } = this.parseTimeRange(params.duration);
     const limit = Math.min(Math.max(params.limit || 100, 1), 1000);
 
-    // Resolve which label this service identifier lives under. Falls back to
-    // the first configured label when no exact match is found, preserving
-    // legacy behavior for callers passing labels that aren't in the cache yet.
-    const matchedLabel = await this.resolveServiceLabel(params.service);
-    const service = this.escapeLogQLValue(params.service);
+    // Resolve label + actual selector value. For the 'container' label the
+    // value stored in Loki may be '/my-app-1' while the caller passes the
+    // sanitized 'my-app-1' — return the prefixed form so the LogQL selector
+    // matches the real stream.
+    const { label: matchedLabel, value: rawValue } = await this.resolveServiceSelector(params.service);
+    const service = this.escapeLogQLValue(rawValue);
     let logql = `{${matchedLabel}="${service}"}`;
     if (params.level) {
       const level = this.escapeLogQLValue(params.level);
@@ -184,12 +189,17 @@ export class LokiConnector implements ObservabilityConnector {
     }
   }
 
-  private async resolveServiceLabel(service: string): Promise<string> {
+  private async resolveServiceSelector(service: string): Promise<{ label: string; value: string }> {
     for (const label of this.serviceLabels) {
       const values = await this.getLabelValues(label);
-      if (values.includes(service)) return label;
+      if (values.includes(service)) return { label, value: service };
+      // Container label values are Docker-prefixed with '/'. The caller can't
+      // pass that form (validator rejects '/'), so probe the prefixed variant.
+      if (label === "container" && values.includes(`/${service}`)) {
+        return { label, value: `/${service}` };
+      }
     }
-    return this.serviceLabels[0] || "service_name";
+    return { label: this.serviceLabels[0] || "service_name", value: service };
   }
 
   private parseLine(line: string): Record<string, string> {
