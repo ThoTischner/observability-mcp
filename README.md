@@ -578,6 +578,7 @@ For quick setup without a config file — the server picks these up when no `sou
 | `PORT` | HTTP port for MCP endpoint and Web UI (default: `3000`) | `8080` |
 | `PROMETHEUS_URL` | Prometheus URL(s), comma-separated for multiple | `http://prom1:9090,http://prom2:9090` |
 | `LOKI_URL` | Loki URL(s), comma-separated for multiple | `http://loki1:3100,http://loki2:3100` |
+| `LOKI_SERVICE_LABELS` | Comma-separated label names probed when discovering services and resolving log queries (default: `service_name,service,job,app,container`) | `service_name,container,job` |
 | `CONFIG_PATH` | Custom path to `sources.yaml` | `/etc/observability-mcp/sources.yaml` |
 
 ```bash

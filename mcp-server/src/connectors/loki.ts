@@ -13,6 +13,9 @@ import type {
 } from "../types.js";
 import { buildTlsAgent } from "./tls.js";
 
+const DEFAULT_SERVICE_LABELS = ["service_name", "service", "job", "app", "container"];
+const LABEL_CACHE_TTL_MS = 60_000;
+
 export class LokiConnector implements ObservabilityConnector {
   readonly type = "loki";
   readonly signalType: SignalType = "logs";
@@ -20,12 +23,18 @@ export class LokiConnector implements ObservabilityConnector {
   private baseUrl = "";
   private auth?: SourceAuth;
   private tlsAgent?: Agent;
+  private serviceLabels: string[] = DEFAULT_SERVICE_LABELS;
+  private labelValuesCache = new Map<string, { values: string[]; expiresAt: number }>();
 
   async connect(config: SourceConfig): Promise<void> {
     this.name = config.name;
     this.baseUrl = config.url.replace(/\/$/, "");
     this.auth = config.auth;
     this.tlsAgent = buildTlsAgent(config);
+    const envLabels = process.env.LOKI_SERVICE_LABELS;
+    if (envLabels) {
+      this.serviceLabels = envLabels.split(",").map((s) => s.trim()).filter(Boolean);
+    }
   }
 
   getDefaultMetrics(): MetricDefinition[] {
@@ -69,26 +78,37 @@ export class LokiConnector implements ObservabilityConnector {
   async disconnect(): Promise<void> {}
 
   async listServices(): Promise<ServiceInfo[]> {
-    try {
-      const data = await this.apiGet<{ data: string[] }>(
-        "/loki/api/v1/label/service/values"
-      );
-      return (data?.data || []).map((name) => ({
-        name,
-        source: this.name,
-        signalType: "logs" as const,
-      }));
-    } catch {
-      return [];
+    // Probe each candidate label and merge values. Loki streams may identify
+    // services via service_name, service, job, app, or container depending on
+    // the shipper configuration. Walking all candidates ensures historical
+    // streams remain reachable when label conventions change over time.
+    const seen = new Map<string, ServiceInfo>();
+    for (const label of this.serviceLabels) {
+      const values = await this.getLabelValues(label);
+      for (const name of values) {
+        if (!seen.has(name)) {
+          seen.set(name, {
+            name,
+            source: this.name,
+            signalType: "logs" as const,
+            labels: { discoveredVia: label },
+          });
+        }
+      }
     }
+    return Array.from(seen.values());
   }
 
   async queryLogs(params: LogQuery): Promise<LogResult> {
     const { start, end } = this.parseTimeRange(params.duration);
     const limit = Math.min(Math.max(params.limit || 100, 1), 1000);
 
+    // Resolve which label this service identifier lives under. Falls back to
+    // the first configured label when no exact match is found, preserving
+    // legacy behavior for callers passing labels that aren't in the cache yet.
+    const matchedLabel = await this.resolveServiceLabel(params.service);
     const service = this.escapeLogQLValue(params.service);
-    let logql = `{service="${service}"}`;
+    let logql = `{${matchedLabel}="${service}"}`;
     if (params.level) {
       const level = this.escapeLogQLValue(params.level);
       logql += ` | json | level="${level}"`;
@@ -142,6 +162,35 @@ export class LokiConnector implements ObservabilityConnector {
   }
 
   // --- Private helpers ---
+
+  private async getLabelValues(label: string): Promise<string[]> {
+    const cached = this.labelValuesCache.get(label);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.values;
+    }
+    try {
+      const data = await this.apiGet<{ data: string[] }>(
+        `/loki/api/v1/label/${encodeURIComponent(label)}/values`
+      );
+      const values = data?.data || [];
+      this.labelValuesCache.set(label, {
+        values,
+        expiresAt: Date.now() + LABEL_CACHE_TTL_MS,
+      });
+      return values;
+    } catch {
+      this.labelValuesCache.set(label, { values: [], expiresAt: Date.now() + LABEL_CACHE_TTL_MS });
+      return [];
+    }
+  }
+
+  private async resolveServiceLabel(service: string): Promise<string> {
+    for (const label of this.serviceLabels) {
+      const values = await this.getLabelValues(label);
+      if (values.includes(service)) return label;
+    }
+    return this.serviceLabels[0] || "service_name";
+  }
 
   private parseLine(line: string): Record<string, string> {
     try {
