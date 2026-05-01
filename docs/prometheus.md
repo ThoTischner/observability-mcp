@@ -16,7 +16,7 @@ For each synthetic metric the connector probes a list of candidate series and pi
 | `latency_p50` | same with quantile `0.50` | — |
 | `latency_avg` | `sum(rate(_sum[1m])) / sum(rate(_count[1m]))` | — |
 
-The probe queries `/api/v1/label/__name__/values` once per source and caches the result for 60 seconds. The selected candidate is reflected in the response's `resolvedSeries` field.
+The probe queries `/api/v1/series?match[]=<seriesName>{<label>="<service>"}` for each candidate **per service** (cached 60 s), so a Prometheus that holds both prom-client apps and node_exporter hosts in the same instance still picks the right candidate per service. The selected candidate is reflected in the response's `resolvedSeries` field.
 
 ## Dynamic label resolution
 

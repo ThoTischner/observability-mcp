@@ -110,7 +110,7 @@ export class PrometheusConnector implements ObservabilityConnector {
   private metrics: MetricDefinition[] = [];
   private serviceLabels: string[] = DEFAULT_SERVICE_LABELS;
   private labelValuesCache = new Map<string, { values: string[]; expiresAt: number }>();
-  private metricNamesCache: { values: Set<string>; expiresAt: number } | null = null;
+  private candidateCache = new Map<string, { candidate: MetricCandidate; expiresAt: number }>();
   private userOverrides = new Set<string>();
 
   async connect(config: SourceConfig): Promise<void> {
@@ -269,25 +269,27 @@ export class PrometheusConnector implements ObservabilityConnector {
   // --- Private helpers ---
 
   private async buildQuery(service: string, metric: string): Promise<{ promql: string; label: string }> {
-    // Pick the query template. For built-in metrics with no user override,
-    // probe candidate series in the backend and pick the first that exists
-    // (e.g. prom-client process_cpu_seconds_total → falls back to
-    // node_exporter node_cpu_seconds_total). User-overridden metrics use
-    // their query verbatim.
+    // Resolve the service-filter label first. Candidate probing uses this
+    // label to scope existence checks per-service rather than per-source.
+    const escaped = service.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    let label = "job";
     let template: string;
+
     if (!this.userOverrides.has(metric) && PROMETHEUS_METRIC_CANDIDATES[metric]) {
-      const candidate = await this.pickMetricCandidate(metric);
+      label = await this.resolveServiceLabel(service);
+      const candidate = await this.pickMetricCandidate(metric, label, escaped);
       template = candidate?.query || PROMETHEUS_METRIC_CANDIDATES[metric][0].query;
     } else {
       const def = this.metrics.find((m) => m.name === metric);
       template = def?.query || `${metric}{ {{selector}} }`;
     }
 
-    const escaped = service.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
     let promql = template;
-    let label = "job";
     if (template.includes("{{selector}}")) {
-      label = await this.resolveServiceLabel(service);
+      // Resolve label here for non-candidate paths that haven't done it yet.
+      if (label === "job" && !PROMETHEUS_METRIC_CANDIDATES[metric]) {
+        label = await this.resolveServiceLabel(service);
+      }
       const selector = `${label}="${escaped}"`;
       promql = promql.replace(/\{\{selector\}\}/g, selector);
     }
@@ -295,29 +297,54 @@ export class PrometheusConnector implements ObservabilityConnector {
     return { promql, label };
   }
 
-  private async pickMetricCandidate(metric: string): Promise<MetricCandidate | null> {
+  private async pickMetricCandidate(
+    metric: string,
+    label: string,
+    escapedService: string
+  ): Promise<MetricCandidate | null> {
     const candidates = PROMETHEUS_METRIC_CANDIDATES[metric];
     if (!candidates || candidates.length === 0) return null;
     if (candidates.length === 1) return candidates[0];
-    const allNames = await this.getAllMetricNames();
+
+    // Per-service cache: a source can have BOTH process_* and node_* series
+    // present (e.g. an apps stack alongside node_exporter), so probing has
+    // to check whether THIS service has the series, not whether the source
+    // has it anywhere.
+    const cacheKey = `${metric}|${label}|${escapedService}`;
+    const cached = this.candidateCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) return cached.candidate;
+
     for (const c of candidates) {
-      if (allNames.has(c.seriesName)) return c;
+      if (await this.seriesExistsForService(c.seriesName, label, escapedService)) {
+        this.candidateCache.set(cacheKey, {
+          candidate: c,
+          expiresAt: Date.now() + LABEL_CACHE_TTL_MS,
+        });
+        return c;
+      }
     }
-    return candidates[0];
+    // Nothing found — return first candidate as best-effort. Cache the
+    // negative outcome so we don't probe again for 60s.
+    const fallback = candidates[0];
+    this.candidateCache.set(cacheKey, {
+      candidate: fallback,
+      expiresAt: Date.now() + LABEL_CACHE_TTL_MS,
+    });
+    return fallback;
   }
 
-  private async getAllMetricNames(): Promise<Set<string>> {
-    if (this.metricNamesCache && this.metricNamesCache.expiresAt > Date.now()) {
-      return this.metricNamesCache.values;
-    }
+  private async seriesExistsForService(
+    seriesName: string,
+    label: string,
+    escapedService: string
+  ): Promise<boolean> {
     try {
-      const data = await this.apiGet<{ data: string[] }>("/api/v1/label/__name__/values");
-      const values = new Set(data?.data || []);
-      this.metricNamesCache = { values, expiresAt: Date.now() + LABEL_CACHE_TTL_MS };
-      return values;
+      const matchExpr = `${seriesName}{${label}="${escapedService}"}`;
+      const url = `/api/v1/series?match[]=${encodeURIComponent(matchExpr)}`;
+      const data = await this.apiGet<{ data: Array<unknown> }>(url);
+      return Array.isArray(data?.data) && data.data.length > 0;
     } catch {
-      this.metricNamesCache = { values: new Set(), expiresAt: Date.now() + LABEL_CACHE_TTL_MS };
-      return new Set();
+      return false;
     }
   }
 
