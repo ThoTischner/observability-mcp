@@ -21,6 +21,15 @@ normalizes the data, adds intelligent analysis, and provides a web UI for config
 
 ---
 
+## Try it in 10 seconds
+
+```bash
+npx @thotischner/observability-mcp
+# then open http://localhost:3000
+```
+
+The server starts with **zero sources**. Add Prometheus/Loki via Web UI or `PROMETHEUS_URL`/`LOKI_URL` env vars. See [Installation](#installation) for Docker and other options.
+
 ## Why?
 
 Every observability vendor ships its own MCP server — Prometheus, Grafana, Datadog, Elastic, each siloed. AI agents that need to reason across systems must juggle N separate servers. There is no unified abstraction layer.
@@ -176,7 +185,42 @@ You can also skip the Web UI and configure via environment variables:
 PROMETHEUS_URL=http://localhost:9090 LOKI_URL=http://localhost:3100 npx @thotischner/observability-mcp
 ```
 
-### Option B: Full Demo (Docker Compose with example services)
+### Option B: Grafana Cloud (managed Prometheus + Loki)
+
+Grafana Cloud uses **Basic Auth** with your numeric **instance ID** as username and an API token as password. Find both under *Connections → Data sources → Prometheus / Loki* in your Grafana Cloud stack.
+
+Create `~/.observability-mcp/sources.yaml`:
+
+```yaml
+sources:
+  - name: grafana-cloud-prom
+    type: prometheus
+    url: https://prometheus-prod-XX-prod-eu-west-X.grafana.net/api/prom
+    enabled: true
+    auth:
+      type: basic
+      username: "${GRAFANA_PROM_USER}"   # numeric instance ID
+      password: "${GRAFANA_TOKEN}"
+  - name: grafana-cloud-loki
+    type: loki
+    url: https://logs-prod-XXX.grafana.net
+    enabled: true
+    auth:
+      type: basic
+      username: "${GRAFANA_LOKI_USER}"   # numeric instance ID (different from prom!)
+      password: "${GRAFANA_TOKEN}"
+```
+
+Then start with env vars set:
+
+```bash
+GRAFANA_PROM_USER=123456 \
+GRAFANA_LOKI_USER=789012 \
+GRAFANA_TOKEN=glc_eyJ... \
+npx @thotischner/observability-mcp
+```
+
+### Option C: Full Demo (Docker Compose with example services)
 
 ```bash
 git clone https://github.com/ThoTischner/observability-mcp.git
@@ -237,15 +281,45 @@ curl -X POST http://localhost:8081/chaos/reset
 
 The agent detects anomalies within 30 seconds and produces an incident analysis (if Ollama is running).
 
+## Verify your setup
+
+Three quick checks after starting the server:
+
+```bash
+# 1. Server is up and reports source health
+curl http://localhost:3000/api/health
+
+# 2. Tools list is reachable through the MCP endpoint
+curl -s -X POST http://localhost:3000/mcp \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+3. Open the Web UI at **http://localhost:3000 → Sources**. Each configured source should show a green status indicator. If red, click *Test* to see the error.
+
 ## Using with Claude Code
 
-Connect Claude Code directly to your observability stack — no agent needed. Add the MCP server to your project:
+Connect Claude Code directly to your observability stack — no agent needed.
+
+**Option 1 — CLI:**
 
 ```bash
 claude mcp add observability --transport http http://localhost:3000/mcp
 ```
 
-Then ask Claude to investigate your infrastructure using natural language. Claude will call the MCP tools automatically.
+**Option 2 — `.mcp.json` in your project root** (commit-friendly):
+
+```json
+{
+  "mcpServers": {
+    "observability": {
+      "transport": { "type": "http", "url": "http://localhost:3000/mcp" }
+    }
+  }
+}
+```
+
+Verify with `claude mcp list`. Then ask Claude to investigate your infrastructure using natural language — Claude will call the MCP tools automatically.
 
 ### Example: Health Check
 
@@ -433,9 +507,34 @@ All of these options are also available in the Web UI under **Sources > Add/Edit
 
 ## Configuration
 
-All configuration is managed via the Web UI and persisted to `sources.yaml`:
-- **Standalone:** `~/.observability-mcp/sources.yaml`
-- **Docker:** `config/sources.yaml`
+### Where does my config live?
+
+| Mode | Host path | Path inside container |
+|------|-----------|-----------------------|
+| `npx` / global install | `~/.observability-mcp/sources.yaml` | — |
+| Docker (GHCR image) | any host path you mount | `/home/node/.observability-mcp/sources.yaml` |
+| docker-compose (this repo) | `mcp-server/config/sources.yaml` | `/app/config/sources.yaml` |
+| Custom | `$CONFIG_PATH` | `$CONFIG_PATH` |
+
+The Web UI writes to whichever path resolves first (precedence: `CONFIG_PATH` → `./config/sources.yaml` → `~/.observability-mcp/sources.yaml`).
+
+### Env var substitution in `sources.yaml`
+
+`${VAR}` and `${VAR:-default}` placeholders are expanded at load time using `process.env`. This lets you commit `sources.yaml` to source control while keeping secrets in a `.env` file:
+
+```yaml
+sources:
+  - name: grafana-cloud-prom
+    type: prometheus
+    url: "${GRAFANA_PROM_URL}"
+    enabled: true
+    auth:
+      type: basic
+      username: "${GRAFANA_PROM_USER}"
+      password: "${GRAFANA_TOKEN}"
+```
+
+Undefined vars without a default produce a warning and an empty string (no crash).
 
 ```yaml
 sources:
@@ -491,6 +590,17 @@ LOKI_URL=http://loki1:3100,http://loki2:3100 \
 PORT=8080 \
 npx @thotischner/observability-mcp
 ```
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---------|--------------|-----|
+| Claude doesn't see the tools | Server not registered or not reachable | `claude mcp list` — re-add if missing; verify `curl http://localhost:3000/mcp` works |
+| `EADDRINUSE: 3000` on start | Another process owns the port | `lsof -i :3000` (or `ss -tlnp \| grep 3000`); pick another port via `PORT=8080` |
+| Source connects, queries return empty | Wrong auth scheme or URL path | Check server logs (`docker logs observability-mcp`); for Grafana Cloud use Basic Auth with numeric instance ID, not Bearer |
+| Server starts with no sources | No `sources.yaml` and no `PROMETHEUS_URL`/`LOKI_URL` set | Expected — add via Web UI or env vars; this is by design |
+| `${VAR}` shows up literally in UI | Env var not set when server started | Set the var in shell/`.env` before launch; substitution happens at file load |
+| Web UI shows red source indicator | Health check failing | Click *Test* in source row — error message tells you what's wrong (DNS, TLS, 401, etc.) |
 
 ## Endpoints
 

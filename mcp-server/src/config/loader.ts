@@ -27,10 +27,20 @@ export const DEFAULT_HEALTH_THRESHOLDS: HealthThresholds = {
   statusBoundaries: { healthy: 80, degraded: 50 },
 };
 
+export function substituteEnv(raw: string): string {
+  return raw.replace(/\$\{([A-Z_][A-Z0-9_]*)(?::-([^}]*))?\}/gi, (_match, name, fallback) => {
+    const val = process.env[name];
+    if (val !== undefined) return val;
+    if (fallback !== undefined) return fallback;
+    console.warn(`[config] env var \${${name}} is undefined`);
+    return "";
+  });
+}
+
 export function loadConfig(): Config {
   try {
     const raw = readFileSync(CONFIG_PATH, "utf-8");
-    const parsed = yaml.load(raw) as Partial<Config>;
+    const parsed = yaml.load(substituteEnv(raw)) as Partial<Config>;
     return {
       sources: parsed?.sources || [],
       settings: { ...DEFAULT_SETTINGS, ...parsed?.settings },

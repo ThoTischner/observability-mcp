@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { writeFileSync, mkdirSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { substituteEnv } from "./loader.js";
 
 // We test the helper functions by importing the module fresh with different env vars.
 // Since the config path is resolved at import time, we use dynamic imports.
@@ -141,6 +142,73 @@ sources:
       assert.equal(config.healthThresholds.weights.errorRate, 0.35);
       assert.equal(config.healthThresholds.cpu.crit, 95);
       assert.equal(config.healthThresholds.statusBoundaries.healthy, 80);
+    });
+  });
+
+  describe("substituteEnv", () => {
+    it("replaces ${VAR} with process.env value", () => {
+      process.env.TEST_FOO = "bar";
+      assert.equal(substituteEnv('value: "${TEST_FOO}"'), 'value: "bar"');
+      delete process.env.TEST_FOO;
+    });
+
+    it("uses default with ${VAR:-default} when unset", () => {
+      delete process.env.TEST_UNSET;
+      assert.equal(substituteEnv('value: "${TEST_UNSET:-fallback}"'), 'value: "fallback"');
+    });
+
+    it("prefers env value over default", () => {
+      process.env.TEST_SET = "real";
+      assert.equal(substituteEnv('value: "${TEST_SET:-fallback}"'), 'value: "real"');
+      delete process.env.TEST_SET;
+    });
+
+    it("returns empty string for undefined var without default", () => {
+      delete process.env.TEST_MISSING;
+      const origWarn = console.warn;
+      console.warn = () => {};
+      try {
+        assert.equal(substituteEnv('value: "${TEST_MISSING}"'), 'value: ""');
+      } finally {
+        console.warn = origWarn;
+      }
+    });
+
+    it("leaves yaml without placeholders unchanged", () => {
+      const yaml = "sources:\n  - name: prom\n    url: http://localhost:9090\n";
+      assert.equal(substituteEnv(yaml), yaml);
+    });
+
+    it("handles multiple substitutions in one string", () => {
+      process.env.A = "1";
+      process.env.B = "2";
+      assert.equal(substituteEnv("${A}-${B}-${C:-3}"), "1-2-3");
+      delete process.env.A;
+      delete process.env.B;
+    });
+
+    it("substitutes inside loaded YAML config", async () => {
+      process.env.GRAFANA_USER = "12345";
+      process.env.GRAFANA_TOKEN = "secret-token";
+      const configPath = join(TMP_DIR, "envsubst.yaml");
+      writeFileSync(configPath, `
+sources:
+  - name: grafana
+    type: prometheus
+    url: https://grafana.example.com
+    enabled: true
+    auth:
+      type: basic
+      username: "\${GRAFANA_USER}"
+      password: "\${GRAFANA_TOKEN}"
+`);
+      process.env.CONFIG_PATH = configPath;
+      const mod = await import("./loader.js?" + Date.now());
+      const config = mod.loadConfig();
+      assert.equal(config.sources[0].auth?.username, "12345");
+      assert.equal(config.sources[0].auth?.password, "secret-token");
+      delete process.env.GRAFANA_USER;
+      delete process.env.GRAFANA_TOKEN;
     });
   });
 
