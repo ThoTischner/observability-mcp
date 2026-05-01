@@ -8,6 +8,7 @@ import type {
   MetricInfo,
   MetricQuery,
   MetricResult,
+  MetricGroup,
   MetricDefinition,
   DataPoint,
   Trend,
@@ -25,17 +26,23 @@ import { buildTlsAgent } from "./tls.js";
 // pair (e.g. job="my-svc"); the connector probes job → service → app →
 // service_name. {{service}} (literal value) stays supported for user
 // overrides.
-type MetricCandidate = { seriesName: string; query: string };
+type MetricCandidate = {
+  seriesName: string;
+  query: string;             // single aggregated series
+  groupedQuery?: string;     // {{groupBy}} placeholder; used when caller passes groupBy
+};
 
 const PROMETHEUS_METRIC_CANDIDATES: Record<string, MetricCandidate[]> = {
   cpu: [
     {
       seriesName: "process_cpu_seconds_total",
+      // rate() preserves all labels — already broken down per-instance.
       query: 'rate(process_cpu_seconds_total{ {{selector}} }[1m]) * 100',
     },
     {
       seriesName: "node_cpu_seconds_total",
       query: '100 - avg(rate(node_cpu_seconds_total{ {{selector}}, mode="idle" }[1m])) * 100',
+      groupedQuery: '100 - avg by({{groupBy}}) (rate(node_cpu_seconds_total{ {{selector}}, mode="idle" }[1m])) * 100',
     },
   ],
   memory: [
@@ -52,33 +59,41 @@ const PROMETHEUS_METRIC_CANDIDATES: Record<string, MetricCandidate[]> = {
     {
       seriesName: "http_requests_total",
       query: 'sum(rate(http_requests_total{ {{selector}} }[1m]))',
+      groupedQuery: 'sum by({{groupBy}}) (rate(http_requests_total{ {{selector}} }[1m]))',
     },
   ],
   error_rate: [
     {
       seriesName: "http_requests_total",
       query: 'sum(rate(http_requests_total{ {{selector}}, status=~"5.." }[1m]))',
+      groupedQuery: 'sum by({{groupBy}}) (rate(http_requests_total{ {{selector}}, status=~"5.." }[1m]))',
     },
   ],
   latency_p99: [
     {
       seriesName: "http_request_duration_seconds_bucket",
       query: 'histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{ {{selector}} }[1m])) by (le))',
+      groupedQuery: 'histogram_quantile(0.99, sum by(le, {{groupBy}}) (rate(http_request_duration_seconds_bucket{ {{selector}} }[1m])))',
     },
   ],
   latency_p50: [
     {
       seriesName: "http_request_duration_seconds_bucket",
       query: 'histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket{ {{selector}} }[1m])) by (le))',
+      groupedQuery: 'histogram_quantile(0.50, sum by(le, {{groupBy}}) (rate(http_request_duration_seconds_bucket{ {{selector}} }[1m])))',
     },
   ],
   latency_avg: [
     {
       seriesName: "http_request_duration_seconds_sum",
       query: 'sum(rate(http_request_duration_seconds_sum{ {{selector}} }[1m])) / sum(rate(http_request_duration_seconds_count{ {{selector}} }[1m]))',
+      groupedQuery: 'sum by({{groupBy}}) (rate(http_request_duration_seconds_sum{ {{selector}} }[1m])) / sum by({{groupBy}}) (rate(http_request_duration_seconds_count{ {{selector}} }[1m]))',
     },
   ],
 };
+
+// Common breakdown labels probed for the auto-hint when no groupBy is set.
+const HINT_BREAKDOWN_LABELS = ["instance", "pod"];
 
 const DEFAULT_METRIC_META: Record<string, { unit: string; description: string }> = {
   cpu:          { unit: "percent", description: "CPU usage % (auto: prom-client process_cpu_seconds_total or node_exporter node_cpu_seconds_total)" },
@@ -235,50 +250,97 @@ export class PrometheusConnector implements ObservabilityConnector {
   }
 
   async queryMetrics(params: MetricQuery): Promise<MetricResult> {
-    const { promql, label } = await this.buildQuery(params.service, params.metric);
+    const { promql, label, candidate } = await this.buildQuery(params.service, params.metric, params.groupBy);
     const { start, end, step } = this.parseTimeRange(params.duration, params.step);
 
     const data = await this.apiGet<{ data: PromQueryRangeResult }>(
       `/api/v1/query_range?query=${encodeURIComponent(promql)}&start=${start}&end=${end}&step=${step}`
     );
 
-    const values: DataPoint[] = [];
-    const rawValues: number[] = [];
+    const seriesList = data?.data?.result || [];
 
-    const resultData = data?.data?.result?.[0]?.values || [];
-    for (const [ts, val] of resultData) {
-      const numVal = parseFloat(val as string);
-      if (!isNaN(numVal)) {
-        values.push({ timestamp: new Date(ts * 1000).toISOString(), value: numVal });
-        rawValues.push(numVal);
+    // Build groups from each returned series, keyed either by the explicit
+    // groupBy label (when grouped) or by a synthesized name from any
+    // remaining labels (for naturally per-instance queries like cpu/memory
+    // prom-client). Empty when nothing came back.
+    const groups: MetricGroup[] = [];
+    for (const series of seriesList) {
+      const seriesValues: DataPoint[] = [];
+      const rawValues: number[] = [];
+      for (const [ts, val] of series.values || []) {
+        const numVal = parseFloat(val as string);
+        if (!isNaN(numVal)) {
+          seriesValues.push({ timestamp: new Date(ts * 1000).toISOString(), value: numVal });
+          rawValues.push(numVal);
+        }
       }
+      groups.push({
+        key: this.groupKey(series.metric || {}, params.groupBy),
+        values: seriesValues,
+        summary: this.computeSummary(rawValues),
+      });
     }
 
-    return {
+    // Top-level values/summary always reflect the first series (back-compat:
+    // single-aggregated queries always return one row, so this is unchanged).
+    const top = groups[0] || { values: [], summary: this.computeSummary([]) };
+
+    const result: MetricResult = {
       source: this.name,
       service: params.service,
       metric: params.metric,
       unit: this.getUnit(params.metric),
-      values,
-      summary: this.computeSummary(rawValues),
+      values: top.values,
+      summary: top.summary,
       resolvedSeries: promql,
       resolvedLabel: label,
     };
+
+    if (params.groupBy && groups.length > 1) {
+      result.groupBy = params.groupBy;
+      result.groups = groups;
+    } else if (!params.groupBy && candidate) {
+      // Probe common breakdown labels and hint when more than one distinct
+      // value exists for this service. Helps the model ask the right
+      // follow-up instead of silently looking at an aggregated number.
+      const escaped = params.service.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+      for (const breakdownLabel of HINT_BREAKDOWN_LABELS) {
+        const distinct = await this.getDistinctLabelValues(
+          candidate.seriesName,
+          label,
+          escaped,
+          breakdownLabel
+        );
+        if (distinct.length > 1) {
+          result.hint = `${distinct.length} distinct ${breakdownLabel}s exist for this service. Pass groupBy="${breakdownLabel}" to break the result down.`;
+          break;
+        }
+      }
+    }
+
+    return result;
   }
 
   // --- Private helpers ---
 
-  private async buildQuery(service: string, metric: string): Promise<{ promql: string; label: string }> {
+  private async buildQuery(
+    service: string,
+    metric: string,
+    groupBy?: string
+  ): Promise<{ promql: string; label: string; candidate: MetricCandidate | null }> {
     // Resolve the service-filter label first. Candidate probing uses this
     // label to scope existence checks per-service rather than per-source.
     const escaped = service.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
     let label = "job";
     let template: string;
+    let candidate: MetricCandidate | null = null;
 
     if (!this.userOverrides.has(metric) && PROMETHEUS_METRIC_CANDIDATES[metric]) {
       label = await this.resolveServiceLabel(service);
-      const candidate = await this.pickMetricCandidate(metric, label, escaped);
-      template = candidate?.query || PROMETHEUS_METRIC_CANDIDATES[metric][0].query;
+      candidate = await this.pickMetricCandidate(metric, label, escaped);
+      const fallback = PROMETHEUS_METRIC_CANDIDATES[metric][0];
+      const chosen = candidate || fallback;
+      template = (groupBy && chosen.groupedQuery) ? chosen.groupedQuery : chosen.query;
     } else {
       const def = this.metrics.find((m) => m.name === metric);
       template = def?.query || `${metric}{ {{selector}} }`;
@@ -293,8 +355,44 @@ export class PrometheusConnector implements ObservabilityConnector {
       const selector = `${label}="${escaped}"`;
       promql = promql.replace(/\{\{selector\}\}/g, selector);
     }
+    if (groupBy && template.includes("{{groupBy}}")) {
+      // groupBy is a label name (caller-supplied). Constrain to the same
+      // safe character set we use for service names so it can't break out
+      // of the by(...) clause.
+      const safe = groupBy.replace(/[^a-zA-Z0-9_]/g, "");
+      promql = promql.replace(/\{\{groupBy\}\}/g, safe);
+    }
     promql = promql.replace(/\{\{service\}\}/g, escaped);
-    return { promql, label };
+    return { promql, label, candidate };
+  }
+
+  private groupKey(metric: Record<string, string>, groupBy?: string): string {
+    if (groupBy && metric[groupBy] !== undefined) return metric[groupBy];
+    // No explicit groupBy: synthesize a key from instance/pod/node if any,
+    // else from all labels. Useful for naturally-per-series queries like
+    // process_resident_memory_bytes (no aggregator dropping labels).
+    for (const probe of HINT_BREAKDOWN_LABELS) {
+      if (metric[probe]) return metric[probe];
+    }
+    const entries = Object.entries(metric);
+    if (entries.length === 0) return "default";
+    return entries.map(([k, v]) => `${k}=${v}`).join(",");
+  }
+
+  private async getDistinctLabelValues(
+    seriesName: string,
+    label: string,
+    escapedService: string,
+    breakdownLabel: string
+  ): Promise<string[]> {
+    try {
+      const matchExpr = `${seriesName}{${label}="${escapedService}"}`;
+      const url = `/api/v1/label/${encodeURIComponent(breakdownLabel)}/values?match[]=${encodeURIComponent(matchExpr)}`;
+      const data = await this.apiGet<{ data: string[] }>(url);
+      return data?.data || [];
+    } catch {
+      return [];
+    }
   }
 
   private async pickMetricCandidate(

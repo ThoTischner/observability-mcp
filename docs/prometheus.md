@@ -37,6 +37,37 @@ PROMETHEUS_SERVICE_LABELS=service,job npx @thotischner/observability-mcp
 
 Label values are cached per-label for 60 seconds.
 
+## Per-instance breakdown (`groupBy`)
+
+When a service is scraped on multiple targets (dev + prod, k8s replicas, etc.), the default queries collapse all of them into one number. Pass `groupBy` to break the result down by any label:
+
+```
+query_metrics(service="api", metric="cpu", groupBy="instance")
+```
+
+The connector swaps the synthetic-metric template for the `groupedQuery` variant — e.g. `sum(rate(...))` becomes `sum by(instance) (rate(...))`, and `histogram_quantile(... by (le))` becomes `... by (le, instance)`. The response shape becomes:
+
+```json
+{
+  "metric": "cpu",
+  "groupBy": "instance",
+  "groups": [
+    { "key": "prod-vm-1:9100", "values": [...], "summary": {...} },
+    { "key": "dev-vm-1:9100",  "values": [...], "summary": {...} }
+  ],
+  "values":  [...],   // first group's series, kept for back-compat
+  "summary": {...}
+}
+```
+
+If only one group exists, the `groups` array is omitted and the result keeps the single-series shape.
+
+When you call `query_metrics` **without** `groupBy` and the underlying series has more than one distinct `instance` (or `pod`) value for that service, the response includes a `hint` field telling you the breakdown is available:
+
+```json
+"hint": "2 distinct instances exist for this service. Pass groupBy=\"instance\" to break the result down."
+```
+
 ## `resolvedSeries` and `resolvedLabel`
 
 Every `query_metrics` response includes the actual PromQL executed and the label that was matched. When results look surprising, check these first.

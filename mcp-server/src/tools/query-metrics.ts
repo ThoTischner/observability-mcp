@@ -26,6 +26,11 @@ export const queryMetricsDefinition = {
         type: "string",
         description: "Specific source name to query. If omitted, queries all metrics backends.",
       },
+      groupBy: {
+        type: "string",
+        description:
+          "Optional label to break the result down by, e.g. 'instance', 'pod', 'node'. When set, the response includes a 'groups' array with one time-series per distinct value. When the service has only one matching series, the result is unchanged.",
+      },
     },
     required: ["service", "metric"],
   },
@@ -33,7 +38,7 @@ export const queryMetricsDefinition = {
 
 export async function queryMetricsHandler(
   registry: ConnectorRegistry,
-  args: { service: string; metric: string; duration?: string; source?: string }
+  args: { service: string; metric: string; duration?: string; source?: string; groupBy?: string }
 ) {
   const svcErr = validateServiceName(args.service);
   if (svcErr) return errorResponse(svcErr);
@@ -42,6 +47,11 @@ export async function queryMetricsHandler(
   if (durationErr) return errorResponse(durationErr);
   const metricErr = validateMetricName(args.metric, registry);
   if (metricErr) return errorResponse(metricErr);
+  if (args.groupBy && !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(args.groupBy)) {
+    return errorResponse(
+      `Invalid groupBy "${args.groupBy}". Must be a valid Prometheus label name (alphanumeric + underscore, starting with letter/underscore).`
+    );
+  }
 
   const connectors = args.source
     ? [registry.getByName(args.source)].filter(Boolean)
@@ -63,6 +73,7 @@ export async function queryMetricsHandler(
         service: args.service,
         metric: args.metric,
         duration,
+        groupBy: args.groupBy,
       });
       results.push(result);
     } catch (err) {

@@ -95,6 +95,7 @@ async function main() {
       metric: z.string().describe(`Metric name. Available: ${uniqueNames.join(", ")}`),
       duration: z.string().optional().describe("Time range (e.g. '5m', '1h', '24h'). Default: '5m'"),
       source: z.string().optional().describe("Specific source name. If omitted, queries all metrics backends."),
+      groupBy: z.string().optional().describe("Label to break the result down by, e.g. 'instance', 'pod', 'node'. Returns one series per distinct value in 'groups'."),
     },
     async (args) => queryMetricsHandler(registry, args)
   );

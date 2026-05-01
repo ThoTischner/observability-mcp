@@ -92,6 +92,7 @@ export interface MetricQuery {
   metric: string;
   duration: string; // "5m", "1h", "24h"
   step?: string;
+  groupBy?: string; // label to break the result down by (e.g. "instance", "pod")
 }
 
 export interface LogQuery {
@@ -116,6 +117,12 @@ export interface MetricSummary {
   trend: Trend;
 }
 
+export interface MetricGroup {
+  key: string;
+  values: DataPoint[];
+  summary: MetricSummary;
+}
+
 export interface MetricResult {
   source: string;
   service: string;
@@ -125,6 +132,9 @@ export interface MetricResult {
   summary: MetricSummary;
   resolvedSeries?: string;   // The actual PromQL executed (for debugging when auto-resolved)
   resolvedLabel?: string;    // Which label (job/service/app/...) the service was matched on
+  groupBy?: string;          // Label the result was broken down by
+  groups?: MetricGroup[];    // Per-group time-series (set when groupBy was requested and >1 group exists)
+  hint?: string;             // Suggestion when caller may want a different query shape
 }
 
 export interface LogEntry {
