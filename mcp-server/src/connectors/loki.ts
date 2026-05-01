@@ -49,13 +49,17 @@ export class LokiConnector implements ObservabilityConnector {
   async healthCheck(): Promise<ConnectorHealth> {
     const start = Date.now();
     try {
-      const res = await fetch(`${this.baseUrl}/ready`, this.fetchOptions());
-      const text = await res.text();
-      const isReady = res.ok && text.trim() === "ready";
+      // Use the labels query API instead of /ready: managed Loki (Grafana
+      // Cloud, etc.) does not expose the operational health endpoint.
+      // /loki/api/v1/labels returns 200 with auth on any reachable Loki.
+      const res = await fetch(
+        `${this.baseUrl}/loki/api/v1/labels`,
+        this.fetchOptions()
+      );
       return {
-        status: isReady ? "up" : "down",
+        status: res.ok ? "up" : "down",
         latencyMs: Date.now() - start,
-        message: isReady ? "Loki is ready" : `HTTP ${res.status}: ${text}`,
+        message: res.ok ? "Loki is ready" : `HTTP ${res.status}`,
       };
     } catch (err) {
       return { status: "down", latencyMs: Date.now() - start, message: String(err) };

@@ -60,7 +60,14 @@ export class PrometheusConnector implements ObservabilityConnector {
   async healthCheck(): Promise<ConnectorHealth> {
     const start = Date.now();
     try {
-      const res = await fetch(`${this.baseUrl}/-/ready`, this.fetchOptions());
+      // Use the query API instead of /-/ready: works on both OSS Prometheus
+      // and managed offerings (Grafana Cloud / Mimir, AWS Managed Prometheus,
+      // Chronosphere) which do not expose the operational health endpoint.
+      // 'up' is a synthetic metric guaranteed to exist on any Prometheus.
+      const res = await fetch(
+        `${this.baseUrl}/api/v1/query?query=up`,
+        this.fetchOptions()
+      );
       return {
         status: res.ok ? "up" : "down",
         latencyMs: Date.now() - start,
@@ -74,24 +81,50 @@ export class PrometheusConnector implements ObservabilityConnector {
   async disconnect(): Promise<void> {}
 
   async listServices(): Promise<ServiceInfo[]> {
-    const data = await this.apiGet<{ data: { activeTargets: PromTarget[] } }>(
-      "/api/v1/targets"
-    );
-    const targets = data?.data?.activeTargets || [];
-    const services = new Map<string, ServiceInfo>();
-    for (const t of targets) {
-      const name =
-        t.labels?.service || t.labels?.job || t.discoveredLabels?.__address__ || "unknown";
-      if (!services.has(name)) {
-        services.set(name, {
-          name,
-          source: this.name,
-          signalType: "metrics",
-          labels: t.labels,
-        });
+    // Prefer /api/v1/targets — gives full label detail incl. service/job/address.
+    // Managed Prometheus (Mimir, AMP, Chronosphere) returns 404 on this path
+    // because targets are an operational concept of the OSS scraper. Fall back
+    // to /api/v1/label/job/values, which is the canonical query-time source
+    // for service names and is supported everywhere.
+    try {
+      const data = await this.apiGet<{ data: { activeTargets: PromTarget[] } }>(
+        "/api/v1/targets"
+      );
+      const targets = data?.data?.activeTargets || [];
+      if (targets.length === 0) {
+        return await this.listServicesFromJobLabel();
       }
+      const services = new Map<string, ServiceInfo>();
+      for (const t of targets) {
+        const name =
+          t.labels?.service || t.labels?.job || t.discoveredLabels?.__address__ || "unknown";
+        if (!services.has(name)) {
+          services.set(name, {
+            name,
+            source: this.name,
+            signalType: "metrics",
+            labels: t.labels,
+          });
+        }
+      }
+      return Array.from(services.values());
+    } catch (err) {
+      const msg = String(err);
+      if (msg.includes("404")) {
+        return await this.listServicesFromJobLabel();
+      }
+      throw err;
     }
-    return Array.from(services.values());
+  }
+
+  private async listServicesFromJobLabel(): Promise<ServiceInfo[]> {
+    const data = await this.apiGet<{ data: string[] }>("/api/v1/label/job/values");
+    const jobs = data?.data || [];
+    return jobs.map((name) => ({
+      name,
+      source: this.name,
+      signalType: "metrics" as const,
+    }));
   }
 
   async listAvailableMetrics(_service: string): Promise<MetricInfo[]> {
