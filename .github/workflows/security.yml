@@ -14,8 +14,8 @@ jobs:
       matrix:
         dir: [mcp-server, agent]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: '20'
       - name: npm audit (${{ matrix.dir }})
@@ -25,8 +25,8 @@ jobs:
   unit-tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: '20'
       - name: Install
@@ -42,16 +42,16 @@ jobs:
       security-events: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Build image (no push)
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: ./mcp-server
           push: false
           load: true
           tags: observability-mcp:scan
       - name: Run Trivy on image
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: observability-mcp:scan
           format: sarif
@@ -59,13 +59,13 @@ jobs:
           severity: CRITICAL,HIGH
           exit-code: '0'
       - name: Upload Trivy SARIF
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: trivy-image.sarif
           category: trivy-image
       - name: Trivy filesystem scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -74,7 +74,7 @@ jobs:
           severity: CRITICAL,HIGH
           exit-code: '0'
       - name: Upload Trivy FS SARIF
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: trivy-fs.sarif
