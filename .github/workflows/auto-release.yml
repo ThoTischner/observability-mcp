@@ -1,0 +1,68 @@
+name: Auto-release (weekly)
+
+on:
+  schedule:
+    - cron: '0 23 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
+
+      - name: Check for new commits since last tag
+        id: check
+        run: |
+          set -euo pipefail
+          last_tag=$(git tag --list 'v*' --sort=-v:refname | head -1)
+          if [ -z "$last_tag" ]; then
+            echo "no previous tag found, skipping"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          commits=$(git log "${last_tag}..HEAD" --oneline | wc -l)
+          echo "last_tag=$last_tag, commits_since=$commits"
+          if [ "$commits" -eq 0 ]; then
+            echo "no commits since $last_tag, skipping"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "last_tag=$last_tag" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node.js
+        if: steps.check.outputs.skip != 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run unit tests
+        if: steps.check.outputs.skip != 'true'
+        working-directory: ./mcp-server
+        run: |
+          npm ci
+          npx tsx --test src/analysis/*.test.ts src/config/*.test.ts
+
+      - name: Bump patch version and tag
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          cd mcp-server
+          new_version=$(npm version patch --no-git-tag-version)
+          cd ..
+
+          git add mcp-server/package.json mcp-server/package-lock.json
+          git commit -m "chore(release): ${new_version}"
+          git tag "${new_version}"
+          git push origin main
+          git push origin "${new_version}"

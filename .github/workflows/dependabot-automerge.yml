@@ -1,0 +1,79 @@
+name: Dependabot auto-merge
+
+on:
+  schedule:
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  automerge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Merge eligible Dependabot PRs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          MIN_AGE_HOURS: 72
+        run: |
+          set -euo pipefail
+
+          prs=$(gh pr list --repo "$REPO" --author app/dependabot --state open --json number,createdAt,headRefName,title)
+          echo "$prs" | jq -c '.[]' | while read -r pr; do
+            number=$(echo "$pr" | jq -r .number)
+            created=$(echo "$pr" | jq -r .createdAt)
+            branch=$(echo "$pr" | jq -r .headRefName)
+            title=$(echo "$pr" | jq -r .title)
+
+            age_hours=$(( ( $(date +%s) - $(date -d "$created" +%s) ) / 3600 ))
+
+            echo ""
+            echo "PR #$number: $title"
+            echo "  age: ${age_hours}h, branch: $branch"
+
+            if [ "$age_hours" -lt "$MIN_AGE_HOURS" ]; then
+              echo "  skip: cooldown not met (need ${MIN_AGE_HOURS}h)"
+              continue
+            fi
+
+            metadata=$(gh api "/repos/$REPO/dependabot/alerts" 2>/dev/null || true)
+
+            update_type=$(echo "$title" | grep -oE 'from [0-9.]+ to [0-9.]+' | awk '{
+              split($2, from, "."); split($4, to, ".");
+              if (from[1] != to[1]) print "major";
+              else if (from[2] != to[2]) print "minor";
+              else print "patch";
+            }')
+            update_type=${update_type:-unknown}
+
+            if [ "$update_type" = "major" ]; then
+              echo "  skip: major version bump — manual review"
+              continue
+            fi
+
+            checks=$(gh pr checks "$number" --repo "$REPO" --json bucket --jq '[.[].bucket] | group_by(.) | map({k:.[0], v:length}) | from_entries')
+            fail=$(echo "$checks" | jq -r '.fail // 0')
+            pending=$(echo "$checks" | jq -r '.pending // 0')
+            pass=$(echo "$checks" | jq -r '.pass // 0')
+
+            echo "  checks: pass=$pass fail=$fail pending=$pending update=$update_type"
+
+            if [ "$fail" -gt 0 ]; then
+              echo "  skip: checks failing"
+              continue
+            fi
+            if [ "$pending" -gt 0 ]; then
+              echo "  skip: checks pending"
+              continue
+            fi
+            if [ "$pass" -lt 1 ]; then
+              echo "  skip: no successful checks yet"
+              continue
+            fi
+
+            echo "  merging…"
+            gh pr merge "$number" --repo "$REPO" --squash --delete-branch
+          done

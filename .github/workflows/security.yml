@@ -1,0 +1,81 @@
+name: Security scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '0 6 * * *'
+
+jobs:
+  npm-audit:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        dir: [mcp-server, agent]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: npm audit (${{ matrix.dir }})
+        working-directory: ./${{ matrix.dir }}
+        run: npm audit --audit-level=high
+
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install
+        working-directory: ./mcp-server
+        run: npm ci
+      - name: Run tests
+        working-directory: ./mcp-server
+        run: npx tsx --test src/analysis/*.test.ts src/config/*.test.ts
+
+  trivy:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image (no push)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./mcp-server
+          push: false
+          load: true
+          tags: observability-mcp:scan
+      - name: Run Trivy on image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: observability-mcp:scan
+          format: sarif
+          output: trivy-image.sarif
+          severity: CRITICAL,HIGH
+          exit-code: '0'
+      - name: Upload Trivy SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-fs.sarif
+          severity: CRITICAL,HIGH
+          exit-code: '0'
+      - name: Upload Trivy FS SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs

@@ -639,6 +639,20 @@ npx @thotischner/observability-mcp
 
 **Optional:** Ollama on host machine for AI-powered incident analysis
 
+## Security
+
+Continuous security automation runs on this repo:
+
+- **Dependabot** — weekly grouped PRs for npm, GitHub Actions, and Docker base images
+- **CodeQL** — static analysis (security-extended + quality queries) on every PR and weekly
+- **Trivy** — Docker image and filesystem scans for CRITICAL/HIGH CVEs, results in the Security tab
+- **npm audit** — fails CI on `--audit-level=high` issues
+- **OSSF Scorecard** — repo posture analysis, results uploaded weekly
+- **Auto-merge** — Dependabot patch/minor PRs auto-merge after a 72h cooldown if all checks pass; majors stay manual
+- **Auto-release** — weekly cron tags a patch release if there are merged commits since the last tag, which triggers npm + GHCR + GitHub Release automatically
+
+To report a vulnerability, please open a private security advisory on GitHub.
+
 ## Contributing
 
 Contributions are welcome! The easiest way to get started:
