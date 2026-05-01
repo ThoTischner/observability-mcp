@@ -10,7 +10,8 @@ normalizes the data, adds intelligent analysis, and provides a web UI for config
 *What Grafana did for dashboards, we do for AI agents.*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Docker Compose](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
+[![npm](https://img.shields.io/npm/v/@thotischner/observability-mcp?logo=npm)](https://www.npmjs.com/package/@thotischner/observability-mcp)
+[![GHCR](https://img.shields.io/badge/ghcr.io-observability--mcp-2496ED?logo=docker&logoColor=white)](https://github.com/ThoTischner/observability-mcp/pkgs/container/observability-mcp)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![MCP SDK](https://img.shields.io/badge/MCP_SDK-1.12-orange)](https://modelcontextprotocol.io)
 
@@ -86,12 +87,78 @@ graph TB
 └─────────────────┘      └──────────────────┘      └──────────────────┘      └──────────────────┘
 ```
 
+## Installation
+
+The server is published in two flavors. Pick what fits your stack:
+
+| Method | Command | Best for |
+|--------|---------|----------|
+| **npm (npx)** | `npx @thotischner/observability-mcp` | Local dev, Node toolchains, zero install |
+| **Docker (GHCR)** | `docker run -p 3000:3000 ghcr.io/thotischner/observability-mcp:latest` | Production, Kubernetes, isolation |
+| **From source** | `git clone … && docker-compose up` | Full POC with example services and chaos |
+
+### npm package
+
+Published as [`@thotischner/observability-mcp`](https://www.npmjs.com/package/@thotischner/observability-mcp).
+
+```bash
+# Run latest
+npx @thotischner/observability-mcp
+
+# Pin a version
+npx @thotischner/observability-mcp@1.0.0
+
+# Or install globally
+npm install -g @thotischner/observability-mcp
+observability-mcp
+```
+
+### Docker image
+
+Published as [`ghcr.io/thotischner/observability-mcp`](https://github.com/ThoTischner/observability-mcp/pkgs/container/observability-mcp). Multi-arch (amd64 + arm64).
+
+```bash
+# Pull and run, persisting config to a host volume
+docker run -d \
+  --name observability-mcp \
+  -p 3000:3000 \
+  -v $HOME/.observability-mcp:/home/node/.observability-mcp \
+  ghcr.io/thotischner/observability-mcp:latest
+
+# Pin a version
+docker run -p 3000:3000 ghcr.io/thotischner/observability-mcp:v1.0.0
+
+# With backend URLs preconfigured via env
+docker run -p 3000:3000 \
+  -e PROMETHEUS_URL=http://prometheus:9090 \
+  -e LOKI_URL=http://loki:3100 \
+  ghcr.io/thotischner/observability-mcp:latest
+```
+
+Available tags: `latest`, `main`, `vX.Y.Z`, `X.Y`, `X`, `sha-<commit>`.
+
+### docker-compose snippet
+
+```yaml
+services:
+  observability-mcp:
+    image: ghcr.io/thotischner/observability-mcp:latest
+    ports:
+      - "3000:3000"
+    environment:
+      PROMETHEUS_URL: http://prometheus:9090
+      LOKI_URL: http://loki:3100
+    volumes:
+      - ./mcp-config:/home/node/.observability-mcp
+    restart: unless-stopped
+```
+
 ## Quick Start
 
 ### Option A: Standalone (connect to your own backends)
 
 ```bash
-npx observability-mcp
+npx @thotischner/observability-mcp
 ```
 
 The server starts on **http://localhost:3000**. No backends are configured yet — add them through the Web UI:
@@ -106,7 +173,7 @@ Configuration is saved to `~/.observability-mcp/sources.yaml` and persists acros
 You can also skip the Web UI and configure via environment variables:
 
 ```bash
-PROMETHEUS_URL=http://localhost:9090 LOKI_URL=http://localhost:3100 npx observability-mcp
+PROMETHEUS_URL=http://localhost:9090 LOKI_URL=http://localhost:3100 npx @thotischner/observability-mcp
 ```
 
 ### Option B: Full Demo (Docker Compose with example services)
@@ -416,13 +483,13 @@ For quick setup without a config file — the server picks these up when no `sou
 
 ```bash
 # Single backend
-PROMETHEUS_URL=http://localhost:9090 npx observability-mcp
+PROMETHEUS_URL=http://localhost:9090 npx @thotischner/observability-mcp
 
 # Multiple backends on custom port
 PROMETHEUS_URL=http://prom1:9090,http://prom2:9090 \
 LOKI_URL=http://loki1:3100,http://loki2:3100 \
 PORT=8080 \
-npx observability-mcp
+npx @thotischner/observability-mcp
 ```
 
 ## Endpoints

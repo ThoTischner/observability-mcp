@@ -1,5 +1,5 @@
 {
-  "name": "observability-mcp",
+  "name": "@thotischner/observability-mcp",
   "version": "1.0.0",
   "description": "Unified observability gateway for AI agents — one MCP server for Prometheus, Loki, and any backend",
   "type": "module",
