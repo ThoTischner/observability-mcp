@@ -4,15 +4,19 @@ Default queries target **prom-client** conventions — the de-facto standard for
 
 ## Default metrics
 
-| Metric | Query | Unit | Source |
-|--------|-------|------|--------|
-| `cpu` | `rate(process_cpu_seconds_total{ {{selector}} }[1m]) * 100` | percent | prom-client `collectDefaultMetrics()` |
-| `memory` | `process_resident_memory_bytes{ {{selector}} }` | bytes | prom-client `collectDefaultMetrics()` |
-| `request_rate` | `sum(rate(http_requests_total{ {{selector}} }[1m]))` | req/s | counter you instrument |
-| `error_rate` | `sum(rate(http_requests_total{ {{selector}}, status=~"5.." }[1m]))` | req/s | same counter, filtered |
-| `latency_p99` | `histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{ {{selector}} }[1m])) by (le))` | seconds | histogram you instrument |
-| `latency_p50` | same with quantile `0.50` | seconds | — |
-| `latency_avg` | `sum(rate(_sum{...}[1m])) / sum(rate(_count{...}[1m]))` | seconds | — |
+For each synthetic metric the connector probes a list of candidate series and picks the first one that actually exists in the backend. This makes the same MCP work for prom-client apps **and** node_exporter hosts without per-source configuration.
+
+| Metric | First candidate (prom-client) | Fallback (node_exporter) |
+|--------|-------------------------------|--------------------------|
+| `cpu` | `rate(process_cpu_seconds_total[1m]) * 100` | `100 - avg(rate(node_cpu_seconds_total{mode="idle"}[1m])) * 100` |
+| `memory` | `process_resident_memory_bytes` | `node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes` |
+| `request_rate` | `sum(rate(http_requests_total[1m]))` | — (HTTP-app concept) |
+| `error_rate` | `sum(rate(http_requests_total{status=~"5.."}[1m]))` | — |
+| `latency_p99` | `histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[1m])) by (le))` | — |
+| `latency_p50` | same with quantile `0.50` | — |
+| `latency_avg` | `sum(rate(_sum[1m])) / sum(rate(_count[1m]))` | — |
+
+The probe queries `/api/v1/label/__name__/values` once per source and caches the result for 60 seconds. The selected candidate is reflected in the response's `resolvedSeries` field.
 
 ## Dynamic label resolution
 

@@ -15,57 +15,87 @@ import type {
 } from "../types.js";
 import { buildTlsAgent } from "./tls.js";
 
-// Defaults target prom-client conventions, the de-facto standard for
-// Node.js/Express instrumentation and what most apps emit out of the box.
-// {{selector}} is replaced at query time with the discovered label/value
+// Each synthetic metric maps to a list of candidate (seriesName, query)
+// pairs ordered by preference. At query time the connector probes which
+// series actually exist in the backend (via /api/v1/label/__name__/values)
+// and uses the first match. This lets the same MCP work for prom-client
+// apps and node_exporter hosts without per-source configuration.
+//
+// {{selector}} is replaced at query time with the discovered label=value
 // pair (e.g. job="my-svc"); the connector probes job → service → app →
-// service_name to find which label carries the requested service name.
-// {{service}} (literal value) is still supported for back-compat with
-// user-provided overrides.
-const DEFAULT_PROMETHEUS_METRICS: MetricDefinition[] = [
-  {
-    name: "cpu",
-    query: 'rate(process_cpu_seconds_total{ {{selector}} }[1m]) * 100',
-    unit: "percent",
-    description: "CPU usage % (rate of process_cpu_seconds_total — prom-client default)",
-  },
-  {
-    name: "memory",
-    query: 'process_resident_memory_bytes{ {{selector}} }',
-    unit: "bytes",
-    description: "Resident memory in bytes (prom-client default)",
-  },
-  {
-    name: "request_rate",
-    query: 'sum(rate(http_requests_total{ {{selector}} }[1m]))',
-    unit: "req/s",
-    description: "HTTP request rate",
-  },
-  {
-    name: "error_rate",
-    query: 'sum(rate(http_requests_total{ {{selector}}, status=~"5.." }[1m]))',
-    unit: "req/s",
-    description: "HTTP 5xx error rate",
-  },
-  {
-    name: "latency_p99",
-    query: 'histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{ {{selector}} }[1m])) by (le))',
-    unit: "seconds",
-    description: "99th percentile latency",
-  },
-  {
-    name: "latency_p50",
-    query: 'histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket{ {{selector}} }[1m])) by (le))',
-    unit: "seconds",
-    description: "50th percentile latency",
-  },
-  {
-    name: "latency_avg",
-    query: 'sum(rate(http_request_duration_seconds_sum{ {{selector}} }[1m])) / sum(rate(http_request_duration_seconds_count{ {{selector}} }[1m]))',
-    unit: "seconds",
-    description: "Average request latency",
-  },
-];
+// service_name. {{service}} (literal value) stays supported for user
+// overrides.
+type MetricCandidate = { seriesName: string; query: string };
+
+const PROMETHEUS_METRIC_CANDIDATES: Record<string, MetricCandidate[]> = {
+  cpu: [
+    {
+      seriesName: "process_cpu_seconds_total",
+      query: 'rate(process_cpu_seconds_total{ {{selector}} }[1m]) * 100',
+    },
+    {
+      seriesName: "node_cpu_seconds_total",
+      query: '100 - avg(rate(node_cpu_seconds_total{ {{selector}}, mode="idle" }[1m])) * 100',
+    },
+  ],
+  memory: [
+    {
+      seriesName: "process_resident_memory_bytes",
+      query: 'process_resident_memory_bytes{ {{selector}} }',
+    },
+    {
+      seriesName: "node_memory_MemTotal_bytes",
+      query: '(node_memory_MemTotal_bytes{ {{selector}} } - node_memory_MemAvailable_bytes{ {{selector}} })',
+    },
+  ],
+  request_rate: [
+    {
+      seriesName: "http_requests_total",
+      query: 'sum(rate(http_requests_total{ {{selector}} }[1m]))',
+    },
+  ],
+  error_rate: [
+    {
+      seriesName: "http_requests_total",
+      query: 'sum(rate(http_requests_total{ {{selector}}, status=~"5.." }[1m]))',
+    },
+  ],
+  latency_p99: [
+    {
+      seriesName: "http_request_duration_seconds_bucket",
+      query: 'histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{ {{selector}} }[1m])) by (le))',
+    },
+  ],
+  latency_p50: [
+    {
+      seriesName: "http_request_duration_seconds_bucket",
+      query: 'histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket{ {{selector}} }[1m])) by (le))',
+    },
+  ],
+  latency_avg: [
+    {
+      seriesName: "http_request_duration_seconds_sum",
+      query: 'sum(rate(http_request_duration_seconds_sum{ {{selector}} }[1m])) / sum(rate(http_request_duration_seconds_count{ {{selector}} }[1m]))',
+    },
+  ],
+};
+
+const DEFAULT_METRIC_META: Record<string, { unit: string; description: string }> = {
+  cpu:          { unit: "percent", description: "CPU usage % (auto: prom-client process_cpu_seconds_total or node_exporter node_cpu_seconds_total)" },
+  memory:       { unit: "bytes",   description: "Resident memory bytes (auto: prom-client process_resident_memory_bytes or node_memory used)" },
+  request_rate: { unit: "req/s",   description: "HTTP request rate (http_requests_total)" },
+  error_rate:   { unit: "req/s",   description: "HTTP 5xx error rate (http_requests_total filtered by status)" },
+  latency_p99:  { unit: "seconds", description: "99th percentile latency (http_request_duration_seconds_bucket)" },
+  latency_p50:  { unit: "seconds", description: "50th percentile latency (http_request_duration_seconds_bucket)" },
+  latency_avg:  { unit: "seconds", description: "Average request latency (sum/count ratio)" },
+};
+
+const DEFAULT_PROMETHEUS_METRICS: MetricDefinition[] = Object.keys(PROMETHEUS_METRIC_CANDIDATES).map((name) => ({
+  name,
+  query: PROMETHEUS_METRIC_CANDIDATES[name][0].query,
+  unit: DEFAULT_METRIC_META[name].unit,
+  description: DEFAULT_METRIC_META[name].description,
+}));
 
 const DEFAULT_SERVICE_LABELS = ["job", "service", "app", "service_name"];
 const LABEL_CACHE_TTL_MS = 60_000;
@@ -80,6 +110,8 @@ export class PrometheusConnector implements ObservabilityConnector {
   private metrics: MetricDefinition[] = [];
   private serviceLabels: string[] = DEFAULT_SERVICE_LABELS;
   private labelValuesCache = new Map<string, { values: string[]; expiresAt: number }>();
+  private metricNamesCache: { values: Set<string>; expiresAt: number } | null = null;
+  private userOverrides = new Set<string>();
 
   async connect(config: SourceConfig): Promise<void> {
     this.name = config.name;
@@ -88,7 +120,9 @@ export class PrometheusConnector implements ObservabilityConnector {
     this.tlsAgent = buildTlsAgent(config);
     // Source-level overrides merge with defaults by name, so users can pin
     // a single metric (e.g. cpu) to a custom query without re-listing the
-    // rest. To fully replace the defaults, override every metric explicitly.
+    // rest. Overridden metrics skip candidate probing — the user-supplied
+    // query is used verbatim.
+    this.userOverrides = new Set((config.metrics || []).map((m) => m.name));
     const overrides = new Map((config.metrics || []).map((m) => [m.name, m]));
     this.metrics = DEFAULT_PROMETHEUS_METRICS.map((d) => overrides.get(d.name) || d);
     for (const [name, m] of overrides) {
@@ -235,10 +269,21 @@ export class PrometheusConnector implements ObservabilityConnector {
   // --- Private helpers ---
 
   private async buildQuery(service: string, metric: string): Promise<{ promql: string; label: string }> {
-    const def = this.metrics.find((m) => m.name === metric);
-    const template = def?.query || `${metric}{ {{selector}} }`;
-    const escaped = service.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    // Pick the query template. For built-in metrics with no user override,
+    // probe candidate series in the backend and pick the first that exists
+    // (e.g. prom-client process_cpu_seconds_total → falls back to
+    // node_exporter node_cpu_seconds_total). User-overridden metrics use
+    // their query verbatim.
+    let template: string;
+    if (!this.userOverrides.has(metric) && PROMETHEUS_METRIC_CANDIDATES[metric]) {
+      const candidate = await this.pickMetricCandidate(metric);
+      template = candidate?.query || PROMETHEUS_METRIC_CANDIDATES[metric][0].query;
+    } else {
+      const def = this.metrics.find((m) => m.name === metric);
+      template = def?.query || `${metric}{ {{selector}} }`;
+    }
 
+    const escaped = service.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
     let promql = template;
     let label = "job";
     if (template.includes("{{selector}}")) {
@@ -248,6 +293,32 @@ export class PrometheusConnector implements ObservabilityConnector {
     }
     promql = promql.replace(/\{\{service\}\}/g, escaped);
     return { promql, label };
+  }
+
+  private async pickMetricCandidate(metric: string): Promise<MetricCandidate | null> {
+    const candidates = PROMETHEUS_METRIC_CANDIDATES[metric];
+    if (!candidates || candidates.length === 0) return null;
+    if (candidates.length === 1) return candidates[0];
+    const allNames = await this.getAllMetricNames();
+    for (const c of candidates) {
+      if (allNames.has(c.seriesName)) return c;
+    }
+    return candidates[0];
+  }
+
+  private async getAllMetricNames(): Promise<Set<string>> {
+    if (this.metricNamesCache && this.metricNamesCache.expiresAt > Date.now()) {
+      return this.metricNamesCache.values;
+    }
+    try {
+      const data = await this.apiGet<{ data: string[] }>("/api/v1/label/__name__/values");
+      const values = new Set(data?.data || []);
+      this.metricNamesCache = { values, expiresAt: Date.now() + LABEL_CACHE_TTL_MS };
+      return values;
+    } catch {
+      this.metricNamesCache = { values: new Set(), expiresAt: Date.now() + LABEL_CACHE_TTL_MS };
+      return new Set();
+    }
   }
 
   private async resolveServiceLabel(service: string): Promise<string> {
