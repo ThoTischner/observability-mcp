@@ -187,6 +187,34 @@ sources:
       delete process.env.B;
     });
 
+    it("does not substitute or warn for ${VAR} inside YAML comments (#17)", async () => {
+      delete process.env.VAR;
+      const configPath = join(TMP_DIR, "comments.yaml");
+      writeFileSync(configPath, `
+# Note: \${VAR}-style substitution is resolved at runtime from .env.
+# Another mention of \${SHOULD_NOT_WARN} in prose.
+sources:
+  - name: example
+    type: prometheus
+    url: http://localhost:9090
+    enabled: true
+`);
+      process.env.CONFIG_PATH = configPath;
+      const warnings: string[] = [];
+      const origWarn = console.warn;
+      console.warn = (msg: string) => warnings.push(msg);
+      try {
+        const mod = await import("./loader.js?" + Date.now());
+        const config = mod.loadConfig();
+        assert.equal(config.sources.length, 1);
+        assert.equal(config.sources[0].url, "http://localhost:9090");
+        const hits = warnings.filter((w) => w.includes("VAR") || w.includes("SHOULD_NOT_WARN"));
+        assert.equal(hits.length, 0, `expected no warnings for comment placeholders, got: ${hits.join("; ")}`);
+      } finally {
+        console.warn = origWarn;
+      }
+    });
+
     it("substitutes inside loaded YAML config", async () => {
       process.env.GRAFANA_USER = "12345";
       process.env.GRAFANA_TOKEN = "secret-token";

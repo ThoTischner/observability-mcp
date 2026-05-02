@@ -37,10 +37,27 @@ export function substituteEnv(raw: string): string {
   });
 }
 
+// Walk the parsed YAML tree and substitute ${VAR} only inside string values.
+// Comments don't survive yaml.load(), so this side-steps the bug where the
+// regex previously fired on `${...}` written in #-prefixed YAML comments.
+export function substituteEnvInTree<T>(node: T): T {
+  if (typeof node === "string") return substituteEnv(node) as T;
+  if (Array.isArray(node)) return node.map((v) => substituteEnvInTree(v)) as T;
+  if (node && typeof node === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
+      out[k] = substituteEnvInTree(v);
+    }
+    return out as T;
+  }
+  return node;
+}
+
 export function loadConfig(): Config {
   try {
     const raw = readFileSync(CONFIG_PATH, "utf-8");
-    const parsed = yaml.load(substituteEnv(raw)) as Partial<Config>;
+    const parsedRaw = yaml.load(raw) as Partial<Config> | null;
+    const parsed = substituteEnvInTree(parsedRaw || {});
     return {
       sources: parsed?.sources || [],
       settings: { ...DEFAULT_SETTINGS, ...parsed?.settings },
