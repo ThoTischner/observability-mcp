@@ -62,10 +62,15 @@ async function main() {
   await registry.initialize(config);
   applyConfigToRuntime(config, registry);
 
-  const mcpServer = new McpServer({
-    name: "observability-mcp",
-    version: "1.0.0",
-  });
+  // The MCP SDK Protocol class permits exactly one transport per instance,
+  // so we cannot share a single McpServer across HTTP sessions. Each new
+  // session needs its own server. The factory captures the live registry
+  // by reference so tool handlers always see the current configuration.
+  function createMcpServer(): McpServer {
+    const mcpServer = new McpServer({
+      name: "observability-mcp",
+      version: "1.3.0",
+    });
 
   // --- Register tools with Zod schemas ---
 
@@ -132,6 +137,9 @@ async function main() {
     },
     async (args) => detectAnomaliesHandler(registry, args)
   );
+
+    return mcpServer;
+  }
 
   // --- HTTP server ---
   const app = express();
@@ -429,7 +437,8 @@ async function main() {
         }
       };
 
-      await mcpServer.connect(transport);
+      const sessionMcpServer = createMcpServer();
+      await sessionMcpServer.connect(transport);
     }
 
     await transport.handleRequest(req, res, req.body);
