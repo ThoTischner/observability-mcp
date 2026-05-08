@@ -300,12 +300,12 @@ sequenceDiagram
       <h2>How it fits together</h2>
       <div class="mermaid" style="margin-top:18px;">
 flowchart TB
-    Agent["AI Agent<br/>Claude, Ollama, etc."]
+    Agent["AI Agent (Claude, Ollama, ...)"]
 
     subgraph MCP ["observability-mcp :3000"]
         direction TB
         Tools["6 MCP Tools"]
-        Analysis["Analysis Engine<br/>Z-score · Health · Correlation"]
+        Analysis["Analysis Engine"]
         UI["Web UI"]
     end
 
@@ -316,7 +316,7 @@ flowchart TB
         Next["Your Backend"]
     end
 
-    Agent <-->|"MCP / Streamable HTTP"| Tools
+    Agent <--> Tools
     Tools --- Analysis
     Tools --- UI
     Tools --> Prom
@@ -556,7 +556,7 @@ docker-compose up</code></pre>
 <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/highlight/highlight.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/notes/notes.js"></script>
 <script type="module">
-  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.esm.min.mjs';
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11.4.0/dist/mermaid.esm.min.mjs';
   mermaid.initialize({
     startOnLoad: false,
     theme: 'dark',

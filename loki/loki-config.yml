@@ -11,6 +11,11 @@ common:
       rules_directory: /loki/rules
   replication_factor: 1
   ring:
+    # Single-node setup, so loopback is enough for ring membership.
+    # Loki 3.x's query-scheduler-ring otherwise probes eth0/en0/lo and
+    # fails on WSL2/Docker networks where the interface is named eth0
+    # but the auto-detection still misses (race / netns timing).
+    instance_addr: 127.0.0.1
     kvstore:
       store: inmemory
 
