@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>observability-mcp — MCP for the unified observability stack</title>
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reset.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/black.css" id="theme" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/highlight/monokai.css" />
+
+  <style>
+    :root {
+      --accent: #58a6ff;
+      --accent-2: #3fb950;
+      --accent-3: #f0883e;
+      --bg: #0d1117;
+      --bg-2: #161b22;
+      --text: #e6edf3;
+      --muted: #8b949e;
+    }
+    .reveal {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .reveal .slides section {
+      text-align: left;
+    }
+    .reveal .slides section.center {
+      text-align: center;
+    }
+    .reveal h1, .reveal h2, .reveal h3 {
+      color: var(--text);
+      text-transform: none;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    .reveal h1 { font-size: 2.4em; }
+    .reveal h2 { font-size: 1.8em; }
+    .reveal h3 { font-size: 1.2em; color: var(--accent); }
+    .reveal a { color: var(--accent); }
+    .reveal code {
+      font-family: "JetBrains Mono", Menlo, Consolas, monospace;
+      background: var(--bg-2);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.85em;
+      color: var(--accent-2);
+    }
+    .reveal pre {
+      box-shadow: none;
+      border: 1px solid var(--bg-2);
+      border-radius: 6px;
+      width: 100%;
+    }
+    .reveal pre code {
+      background: var(--bg-2);
+      padding: 18px 22px;
+      font-size: 0.55em;
+      line-height: 1.5;
+      color: var(--text);
+      max-height: 500px;
+    }
+    .reveal blockquote {
+      background: var(--bg-2);
+      border-left: 4px solid var(--accent);
+      padding: 12px 20px;
+      font-style: normal;
+      color: var(--text);
+      box-shadow: none;
+    }
+    .reveal table { font-size: 0.7em; }
+    .reveal table th { color: var(--accent); border-bottom: 1px solid var(--accent); }
+    .reveal table td { border: none; padding: 8px 12px; }
+    .reveal ul li { margin: 8px 0; }
+    .reveal .badges img { margin: 4px 6px; }
+    .reveal .muted { color: var(--muted); }
+    .reveal .accent { color: var(--accent); }
+    .reveal .accent-2 { color: var(--accent-2); }
+    .reveal .accent-3 { color: var(--accent-3); }
+    .reveal .tag {
+      display: inline-block;
+      background: var(--bg-2);
+      color: var(--accent);
+      padding: 4px 12px;
+      border-radius: 999px;
+      font-size: 0.6em;
+      font-weight: 500;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+    .reveal .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      align-items: start;
+    }
+    .reveal .grid-3 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 18px;
+    }
+    .reveal .card {
+      background: var(--bg-2);
+      border-radius: 8px;
+      padding: 18px 20px;
+      border-top: 3px solid var(--accent);
+    }
+    .reveal .card.green { border-color: var(--accent-2); }
+    .reveal .card.orange { border-color: var(--accent-3); }
+    .reveal .card h3 { margin-top: 0; font-size: 1em; }
+    .reveal .card p { font-size: 0.7em; color: var(--muted); margin: 6px 0; }
+    .reveal .footnote {
+      position: absolute;
+      bottom: 8px;
+      right: 24px;
+      font-size: 0.4em;
+      color: var(--muted);
+      text-align: right;
+    }
+    .reveal .hero-screenshot {
+      max-height: 460px;
+      border-radius: 8px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+    }
+    .mermaid {
+      background: transparent !important;
+      font-family: "JetBrains Mono", monospace;
+    }
+    .reveal section.title-slide {
+      background: linear-gradient(135deg, #0d1117 0%, #1a1f2e 50%, #0d1117 100%);
+    }
+    .reveal section.title-slide h1 {
+      font-size: 3.4em;
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 0;
+    }
+    .reveal section.title-slide .tagline {
+      color: var(--muted);
+      font-size: 1.1em;
+      margin-top: 24px;
+    }
+    .reveal .step {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin: 14px 0;
+    }
+    .reveal .step-num {
+      flex-shrink: 0;
+      width: 36px;
+      height: 36px;
+      background: var(--accent);
+      color: var(--bg);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+    }
+    .reveal .kbd {
+      display: inline-block;
+      padding: 2px 8px;
+      border: 1px solid var(--muted);
+      border-radius: 4px;
+      font-size: 0.7em;
+      color: var(--muted);
+      font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+<div class="reveal">
+  <div class="slides">
+
+    <!-- ===== SLIDE 1: TITLE ===== -->
+    <section class="title-slide center">
+      <h1>observability-mcp</h1>
+      <p class="tagline">The unified observability gateway for AI agents.</p>
+      <p class="muted" style="margin-top:48px;font-size:0.7em;">
+        What Grafana did for dashboards, we do for AI agents.
+      </p>
+      <p style="margin-top:80px;">
+        <span class="tag">npm: @thotischner/observability-mcp</span>
+        <span class="tag">ghcr.io/thotischner/observability-mcp</span>
+      </p>
+    </section>
+
+    <!-- ===== SLIDE 2: THE PROBLEM ===== -->
+    <section>
+      <span class="tag">The problem</span>
+      <h2>Every observability vendor ships its own MCP server.</h2>
+      <div class="grid-3" style="margin-top:32px;">
+        <div class="card"><h3 class="accent">Prometheus MCP</h3><p>One vendor. PromQL only.</p></div>
+        <div class="card orange"><h3 class="accent-3">Datadog MCP</h3><p>Another silo. Different schema.</p></div>
+        <div class="card green"><h3 class="accent-2">Grafana MCP</h3><p>Third process. Third config.</p></div>
+        <div class="card"><h3 class="accent">Elastic MCP</h3><p>Yet another one.</p></div>
+        <div class="card orange"><h3 class="accent-3">Loki MCP</h3><p>...</p></div>
+        <div class="card green"><h3 class="accent-2">N more</h3><p>Tomorrow's stack.</p></div>
+      </div>
+      <p style="margin-top:32px;font-size:0.8em;">
+        Agents that reason <strong>across systems</strong> juggle <em>N</em> disconnected servers.
+        <br />There is no unified abstraction layer.
+      </p>
+    </section>
+
+    <!-- ===== SLIDE 3: WHAT IS MCP ===== -->
+    <section>
+      <span class="tag">Background</span>
+      <h2>What is MCP?</h2>
+      <p style="font-size:0.85em;">
+        <strong>Model Context Protocol</strong> — Anthropic, open spec, 2024.
+        <br />A standard way for AI agents to talk to external systems.
+      </p>
+      <div class="grid-2" style="margin-top:24px;">
+        <div>
+          <h3>Why it matters</h3>
+          <ul style="font-size:0.75em;">
+            <li>Agents don't ship with knowledge of <em>your</em> infrastructure.</li>
+            <li>Without context, every prompt is a guess.</li>
+            <li>MCP gives them <strong>tools</strong> they can call.</li>
+            <li>Tool results land in the conversation as new context.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Three primitives</h3>
+          <ul style="font-size:0.75em;">
+            <li><strong class="accent">Tools</strong> — functions the agent can invoke <em>(query metrics, search logs...)</em></li>
+            <li><strong class="accent-2">Resources</strong> — data the agent can read <em>(file contents, configs...)</em></li>
+            <li><strong class="accent-3">Prompts</strong> — reusable templates the user can pick</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== SLIDE 4: MCP ARCHITECTURE ===== -->
+    <section>
+      <span class="tag">Background</span>
+      <h2>MCP at a glance</h2>
+      <div class="mermaid" style="margin-top:24px;">
+sequenceDiagram
+    autonumber
+    participant U as User
+    participant C as AI Agent<br/>(MCP Client)
+    participant S as MCP Server
+    participant B as Backend System
+
+    U->>C: "Why is the API slow?"
+    C->>S: tools/list
+    S-->>C: [query_metrics, query_logs, ...]
+    C->>S: query_metrics(service=api, metric=latency)
+    S->>B: PromQL query
+    B-->>S: time-series data
+    S-->>C: { values, summary }
+    C->>U: "p99 spiked 3x at 14:02 — checking logs..."
+      </div>
+      <p class="footnote">Streamable HTTP transport • JSON-RPC 2.0 • One round-trip per tool call</p>
+    </section>
+
+    <!-- ===== SLIDE 5: WHY THIS PROJECT ===== -->
+    <section>
+      <span class="tag">The solution</span>
+      <h2>One MCP. Any backend. Pluggable.</h2>
+      <div class="grid-2" style="margin-top:24px;">
+        <div>
+          <h3>What you connect to</h3>
+          <ul style="font-size:0.8em;">
+            <li>Prometheus / Mimir / AMP</li>
+            <li>Loki (self-hosted &amp; managed)</li>
+            <li><span class="muted">Your future backend (one interface)</span></li>
+          </ul>
+          <h3 style="margin-top:24px;">What you get</h3>
+          <ul style="font-size:0.8em;">
+            <li>Single MCP endpoint</li>
+            <li>Cross-signal analysis (z-score, health scoring)</li>
+            <li>Web UI for sources, services, health</li>
+          </ul>
+        </div>
+        <div class="card" style="border-color:var(--accent-2);">
+          <h3 class="accent-2">10-second start</h3>
+          <pre><code class="bash">npx @thotischner/observability-mcp
+# open http://localhost:3000</code></pre>
+          <p style="font-size:0.65em;margin-top:12px;color:var(--muted);">
+            Add Prometheus / Loki via the Web UI or env vars.
+            <br />Point any MCP client at <code>:3000/mcp</code>.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== SLIDE 6: ARCHITECTURE ===== -->
+    <section>
+      <span class="tag">Architecture</span>
+      <h2>How it fits together</h2>
+      <div class="mermaid" style="margin-top:18px;">
+graph TB
+    Agent["AI Agent<br/><small>Claude, Ollama, etc.</small>"]
+
+    subgraph MCP ["observability-mcp :3000"]
+        Tools["6 MCP Tools"]
+        Analysis["Analysis Engine<br/><small>Z-score · Health · Correlation</small>"]
+        UI["Web UI"]
+    end
+
+    subgraph Connectors ["Pluggable Connectors"]
+        Prom["Prometheus<br/><small>PromQL</small>"]
+        Loki["Loki<br/><small>LogQL</small>"]
+        Next["Your Backend<br/><small>Any query language</small>"]
+    end
+
+    Agent <-->|"MCP<br/>Streamable HTTP"| Tools
+    Tools --- Analysis
+    Tools --- UI
+    MCP --> Prom & Loki & Next
+
+    style MCP fill:#1a1a2e,stroke:#58a6ff,color:#fff
+    style Connectors fill:#0d1117,stroke:#3fb950,color:#fff
+    style Agent fill:#58a6ff,stroke:#58a6ff,color:#000
+    style Next fill:#0d1117,stroke:#3fb950,color:#8b949e,stroke-dasharray: 5 5
+      </div>
+    </section>
+
+    <!-- ===== SLIDE 7: THE 6 TOOLS ===== -->
+    <section>
+      <span class="tag">Surface area</span>
+      <h2>6 tools. One contract.</h2>
+      <table style="margin-top:24px;width:100%;">
+        <thead>
+          <tr><th>Tool</th><th>Signal</th><th>What it does</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>list_sources</code></td><td>meta</td><td>Discover backends &amp; their health</td></tr>
+          <tr><td><code>list_services</code></td><td>meta</td><td>Discover services across all backends</td></tr>
+          <tr><td><code>query_metrics</code></td><td>metrics</td><td>Time-series + summary stats + per-instance breakdown</td></tr>
+          <tr><td><code>query_logs</code></td><td>logs</td><td>Log entries with error counts and top patterns</td></tr>
+          <tr><td><code>get_service_health</code></td><td>unified</td><td>0–100 score combining metrics &amp; logs</td></tr>
+          <tr><td><code>detect_anomalies</code></td><td>unified</td><td>Cross-signal anomalies via z-score analysis</td></tr>
+        </tbody>
+      </table>
+      <p style="margin-top:24px;font-size:0.7em;" class="muted">
+        Same shape regardless of backend. Adding Datadog or InfluxDB doesn't change the tool surface — only adds another connector.
+      </p>
+    </section>
+
+    <!-- ===== SLIDE 8: ADAPTIVE INTELLIGENCE ===== -->
+    <section>
+      <span class="tag">Why it Just Works</span>
+      <h2>Adaptive resolution.</h2>
+      <p style="font-size:0.8em;">
+        Real Prometheus deployments don't agree on metric names or label conventions.
+        We probe the backend instead of guessing.
+      </p>
+      <div class="grid-2" style="margin-top:18px;">
+        <div class="card">
+          <h3>Series discovery</h3>
+          <p>Per metric, an ordered list of candidates. Probe per-service:</p>
+          <pre><code class="bash">cpu:
+  process_cpu_seconds_total      # prom-client
+  ↓ fallback
+  node_cpu_seconds_total{...}    # node_exporter</code></pre>
+          <p>The selected candidate lands in <code>resolvedSeries</code>.</p>
+        </div>
+        <div class="card green">
+          <h3>Label resolution</h3>
+          <p>Service identifier is matched against the labels real Prometheus uses:</p>
+          <pre><code class="bash">probe order:
+  job  →  service  →  app  →  service_name</code></pre>
+          <p>Configurable via <code>PROMETHEUS_SERVICE_LABELS</code>.<br/>
+          Same idea on Loki for <code>service_name / container / job / ...</code>.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== SLIDE 9: groupBy ===== -->
+    <section>
+      <span class="tag">v1.3 highlight</span>
+      <h2>Per-instance breakdown</h2>
+      <p style="font-size:0.8em;">
+        Multi-target services <em>(dev + prod, k8s replicas, ...)</em> collapse into one number by default.
+        <br />Pass <code>groupBy</code> to see them split:
+      </p>
+      <pre style="margin-top:18px;"><code class="javascript">query_metrics(service="api", metric="cpu", groupBy="instance")</code></pre>
+      <pre style="margin-top:8px;"><code class="json">{
+  "metric": "cpu",
+  "groupBy": "instance",
+  "groups": [
+    { "key": "prod-vm-1:9100", "values": [...], "summary": { "current": 42.1 } },
+    { "key": "dev-vm-1:9100",  "values": [...], "summary": { "current": 11.8 } }
+  ],
+  "resolvedSeries": "100 - avg by(instance) (rate(node_cpu_seconds_total{...}[1m])) * 100"
+}</code></pre>
+      <p style="font-size:0.65em;margin-top:12px;" class="muted">
+        Without <code>groupBy</code>, the response includes a hint:
+        <em>"2 distinct instances exist for this service. Pass <code>groupBy="instance"</code> to break it down."</em>
+      </p>
+    </section>
+
+    <!-- ===== SLIDE 10: LIVE DEMO ===== -->
+    <section>
+      <span class="tag">In action</span>
+      <h2>From "anything wrong?" to root cause.</h2>
+      <div class="step">
+        <div class="step-num">1</div>
+        <div><span class="kbd">curl</span> Trigger chaos:
+        <code>curl -X POST :8081/chaos/error-spike</code></div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div>Ask Claude: <em>"Are there any anomalies right now?"</em></div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div>Claude calls <code>detect_anomalies</code> →
+        finds <span class="accent-3">CPU spike (3.4σ)</span>, <span class="accent-3">request rate dropping</span></div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div>Claude calls <code>query_logs</code> →
+        finds <code>"internal error during POST /payments (6x)"</code></div>
+      </div>
+      <div class="step">
+        <div class="step-num">5</div>
+        <div><strong class="accent-2">Claude correlates the signals and explains the incident in plain language.</strong>
+        <br /><span class="muted">No PromQL. No LogQL. No dashboards.</span></div>
+      </div>
+    </section>
+
+    <!-- ===== SLIDE 11: WEB UI ===== -->
+    <section class="center">
+      <span class="tag">Web UI</span>
+      <h2>Configure visually.</h2>
+      <img src="dashboard.png" alt="Web UI Dashboard" class="hero-screenshot" />
+      <p style="font-size:0.65em;margin-top:18px;" class="muted">
+        Sources · Services · Health · Settings — dark theme, real-time, zero deps.
+      </p>
+    </section>
+
+    <!-- ===== SLIDE 12: DISTRIBUTION ===== -->
+    <section>
+      <span class="tag">How to ship it</span>
+      <h2>Three ways to run it.</h2>
+      <div class="grid-3" style="margin-top:24px;">
+        <div class="card">
+          <h3>npm</h3>
+          <pre><code>npx @thotischner/observability-mcp</code></pre>
+          <p>Local dev, zero install.</p>
+        </div>
+        <div class="card green">
+          <h3>Docker (GHCR)</h3>
+          <pre><code>docker run -p 3000:3000 \
+  ghcr.io/thotischner/...
+  observability-mcp:latest</code></pre>
+          <p>Multi-arch (amd64 + arm64), native runners.</p>
+        </div>
+        <div class="card orange">
+          <h3>From source</h3>
+          <pre><code>git clone …
+docker-compose up</code></pre>
+          <p>Full POC: 3 services + chaos.</p>
+        </div>
+      </div>
+      <p style="margin-top:24px;font-size:0.7em;" class="muted">
+        npm Provenance signed (SLSA). Multi-arch Docker built natively, no QEMU emulation.
+      </p>
+    </section>
+
+    <!-- ===== SLIDE 13: SECURITY ===== -->
+    <section>
+      <span class="tag">Continuous security</span>
+      <h2>Self-driving, hands-off.</h2>
+      <div class="grid-2" style="margin-top:24px;">
+        <div>
+          <h3>Detection</h3>
+          <ul style="font-size:0.7em;">
+            <li><strong>Dependabot</strong> — weekly grouped PRs (npm, GH Actions, Docker)</li>
+            <li><strong>CodeQL</strong> — security-extended on every PR</li>
+            <li><strong>Trivy</strong> — Docker + filesystem CVE scan, daily</li>
+            <li><strong>npm audit</strong> — fails CI on high-severity</li>
+            <li><strong>OSSF Scorecard</strong> — repo posture, weekly</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Reaction</h3>
+          <ul style="font-size:0.7em;">
+            <li><strong>Auto-merge sweeper</strong> — patch/minor PRs ≥ 72 h, all checks green</li>
+            <li><strong>Auto-release</strong> — Sunday 23 UTC, patch-bumps + tags</li>
+            <li><strong>Tag → 3 publishes</strong> — npm + GHCR + GitHub Release, parallel</li>
+            <li><strong>Major bumps</strong> — stay manual, never auto-merged</li>
+          </ul>
+        </div>
+      </div>
+      <blockquote style="margin-top:18px;font-size:0.7em;">
+        Six issues filed by users, six closed via auto-pipeline. Time from issue → live release: minutes.
+      </blockquote>
+    </section>
+
+    <!-- ===== SLIDE 14: STATUS ===== -->
+    <section>
+      <span class="tag">Where we are</span>
+      <h2>v1.3.2 — and counting.</h2>
+      <div class="grid-2" style="margin-top:24px;">
+        <div>
+          <h3>Shipped</h3>
+          <ul style="font-size:0.75em;">
+            <li>Prometheus + Loki connectors</li>
+            <li>Web UI (5 pages, real-time)</li>
+            <li>prom-client + node_exporter adaptive defaults</li>
+            <li>Per-instance <code>groupBy</code> breakdown</li>
+            <li>Grafana Cloud / Mimir / managed Loki support</li>
+            <li>Auth (Basic, Bearer) + TLS (custom CA, mTLS)</li>
+            <li>Optional Ollama agent for autonomous detection</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Roadmap</h3>
+          <ul style="font-size:0.75em;">
+            <li>InfluxDB / Tempo / Datadog connectors</li>
+            <li>Cluster-aware breakdowns (k8s namespace, region)</li>
+            <li>Trace queries (OTel)</li>
+            <li>Alert-as-context — pull active alerts into the conversation</li>
+            <li>Streaming responses (SSE) for long queries</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== SLIDE 15: TRY IT ===== -->
+    <section class="center">
+      <h1 style="font-size:2.6em;">Try it now</h1>
+      <pre style="margin:32px auto;width:80%;"><code class="bash" style="text-align:center;font-size:1.1em;">npx @thotischner/observability-mcp</code></pre>
+      <p style="font-size:0.85em;margin-top:24px;">
+        <a href="https://github.com/ThoTischner/observability-mcp">github.com/ThoTischner/observability-mcp</a>
+      </p>
+      <p style="margin-top:48px;" class="muted">
+        Star ⭐ helps others discover the project.
+      </p>
+      <p style="margin-top:48px;font-size:0.6em;" class="muted">
+        Apache 2026 — MIT License — Built with TypeScript, Node 20, MCP SDK 1.12+
+      </p>
+    </section>
+
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/highlight/highlight.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/notes/notes.js"></script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: 'dark',
+    themeVariables: {
+      darkMode: true,
+      primaryColor: '#1a1a2e',
+      primaryTextColor: '#e6edf3',
+      primaryBorderColor: '#58a6ff',
+      lineColor: '#8b949e',
+      secondaryColor: '#0d1117',
+      tertiaryColor: '#161b22',
+      background: '#0d1117',
+    },
+  });
+  await mermaid.run({ querySelector: '.mermaid' });
+
+  Reveal.initialize({
+    hash: true,
+    slideNumber: 'c/t',
+    transition: 'fade',
+    backgroundTransition: 'fade',
+    controls: true,
+    progress: true,
+    plugins: [RevealHighlight, RevealNotes],
+  });
+</script>
+</body>
+</html>
