@@ -247,9 +247,9 @@
 sequenceDiagram
     autonumber
     participant U as User
-    participant C as AI Agent<br/>(MCP Client)
+    participant C as AI Agent (MCP Client)
     participant S as MCP Server
-    participant B as Backend System
+    participant B as Backend
 
     U->>C: "Why is the API slow?"
     C->>S: tools/list
@@ -258,7 +258,7 @@ sequenceDiagram
     S->>B: PromQL query
     B-->>S: time-series data
     S-->>C: { values, summary }
-    C->>U: "p99 spiked 3x at 14:02 — checking logs..."
+    C->>U: "p99 spiked 3x at 14:02, checking logs..."
       </div>
       <p class="footnote">Streamable HTTP transport • JSON-RPC 2.0 • One round-trip per tool call</p>
     </section>
@@ -299,25 +299,29 @@ sequenceDiagram
       <span class="tag">Architecture</span>
       <h2>How it fits together</h2>
       <div class="mermaid" style="margin-top:18px;">
-graph TB
-    Agent["AI Agent<br/><small>Claude, Ollama, etc.</small>"]
+flowchart TB
+    Agent["AI Agent<br/>Claude, Ollama, etc."]
 
     subgraph MCP ["observability-mcp :3000"]
+        direction TB
         Tools["6 MCP Tools"]
-        Analysis["Analysis Engine<br/><small>Z-score · Health · Correlation</small>"]
+        Analysis["Analysis Engine<br/>Z-score · Health · Correlation"]
         UI["Web UI"]
     end
 
     subgraph Connectors ["Pluggable Connectors"]
-        Prom["Prometheus<br/><small>PromQL</small>"]
-        Loki["Loki<br/><small>LogQL</small>"]
-        Next["Your Backend<br/><small>Any query language</small>"]
+        direction TB
+        Prom["Prometheus / PromQL"]
+        Loki["Loki / LogQL"]
+        Next["Your Backend"]
     end
 
-    Agent <-->|"MCP<br/>Streamable HTTP"| Tools
+    Agent <-->|"MCP / Streamable HTTP"| Tools
     Tools --- Analysis
     Tools --- UI
-    MCP --> Prom & Loki & Next
+    Tools --> Prom
+    Tools --> Loki
+    Tools --> Next
 
     style MCP fill:#1a1a2e,stroke:#58a6ff,color:#fff
     style Connectors fill:#0d1117,stroke:#3fb950,color:#fff
