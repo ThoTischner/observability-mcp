@@ -173,6 +173,16 @@ async function main() {
     next();
   });
 
+  // k8s-convention liveness/readiness probes at the root of the path
+  // tree, no /api prefix. Helm chart points its probes here. Cheap
+  // enough to skip the request-counter middleware.
+  let ready = false;
+  app.get("/healthz", (_req, res) => res.type("text").send("ok"));
+  app.get("/readyz", (_req, res) => {
+    if (ready) return res.type("text").send("ok");
+    return res.status(503).type("text").send("starting");
+  });
+
   // Self-monitoring — Prometheus scrape endpoint.
   // Disabled with METRICS_ENABLED=false for environments that prefer
   // sidecar agents. The Helm chart's ServiceMonitor template targets
@@ -508,6 +518,7 @@ async function main() {
 
   const PORT = parseInt(process.env.PORT || "3000");
   app.listen(PORT, () => {
+    ready = true;
     console.log(`observability-mcp server running on port ${PORT}`);
     console.log(`  MCP endpoint: http://localhost:${PORT}/mcp`);
     console.log(`  Web UI: http://localhost:${PORT}`);
