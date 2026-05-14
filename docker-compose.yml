@@ -1,6 +1,17 @@
 services:
-  # --- Example Microservices ---
+  # ============================================================
+  # CORE — always runs.
+  # `docker compose up mcp-server` gives a bare server you can point at
+  # your own Prometheus/Loki via the Web UI or env vars.
+  # ------------------------------------------------------------
+  # DEMO PROFILE — `docker compose --profile demo up` adds the example
+  # microservices, Prometheus, Loki, Promtail, and the autonomous agent
+  # so you can see chaos detection end-to-end without external infra.
+  # ============================================================
+
+  # --- Example Microservices (demo) ---
   api-gateway:
+    profiles: ["demo"]
     build:
       context: ./example-services
     environment:
@@ -20,6 +31,7 @@ services:
       - observability
 
   payment-service:
+    profiles: ["demo"]
     build:
       context: ./example-services
     environment:
@@ -39,6 +51,7 @@ services:
       - observability
 
   order-service:
+    profiles: ["demo"]
     build:
       context: ./example-services
     environment:
@@ -57,8 +70,9 @@ services:
     networks:
       - observability
 
-  # --- Observability Stack ---
+  # --- Observability Stack (demo) ---
   prometheus:
+    profiles: ["demo"]
     image: prom/prometheus:v2.53.0
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
@@ -81,6 +95,7 @@ services:
         condition: service_healthy
 
   loki:
+    profiles: ["demo"]
     image: grafana/loki:3.1.0
     volumes:
       - ./loki/loki-config.yml:/etc/loki/local-config.yaml:ro
@@ -99,6 +114,7 @@ services:
       - observability
 
   promtail:
+    profiles: ["demo"]
     image: grafana/promtail:3.1.0
     volumes:
       - ./promtail/promtail-config.yml:/etc/promtail/config.yml:ro
@@ -139,8 +155,9 @@ services:
       loki:
         condition: service_healthy
 
-  # --- AI Agent ---
+  # --- AI Agent (demo) ---
   agent:
+    profiles: ["demo"]
     build:
       context: ./agent
     environment:

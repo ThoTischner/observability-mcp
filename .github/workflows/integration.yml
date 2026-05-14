@@ -14,7 +14,11 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Build & start the full stack
-        run: docker compose up -d --build --wait --wait-timeout 300
+        # The demo profile pulls in Prometheus, Loki, example services
+        # and the agent so the MCP tool calls have something to talk to.
+        # Operators in production typically `docker compose up mcp-server`
+        # and point at their own backends.
+        run: docker compose --profile demo up -d --build --wait --wait-timeout 300
 
       - name: List running services
         if: always()
@@ -117,4 +121,4 @@ jobs:
 
       - name: Tear down
         if: always()
-        run: docker compose down -v
+        run: docker compose --profile demo down -v
