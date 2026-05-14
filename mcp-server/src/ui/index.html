@@ -400,6 +400,30 @@
       padding: 10px 12px; margin-top: 6px;
       font-size: var(--fs-sm); color: var(--text); line-height: 1.5;
     }
+    .info-footer {
+      max-width: 1240px; margin: var(--sp-8) auto var(--sp-6);
+      padding: var(--sp-4) var(--sp-6);
+      border-top: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: var(--fs-xs);
+      display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3);
+      letter-spacing: 0.02em;
+    }
+    .info-footer code { color: var(--text); font-size: var(--fs-xs); }
+    .info-footer strong { color: var(--text); font-weight: 600; }
+    .footer-sep { color: var(--text-dim); }
+    .footer-plugins { display: inline-flex; flex-wrap: wrap; gap: var(--sp-1); }
+    .footer-pill {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 2px 8px;
+      background: var(--surface-2);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-pill);
+      font-size: var(--fs-xs);
+      color: var(--text);
+    }
+    .footer-pill-meta { color: var(--text-muted); font-weight: 400; }
+
     @media (max-width: 768px) { .stats { grid-template-columns: repeat(2, 1fr); } .threshold-group { grid-template-columns: 1fr; } .form-row, .form-row-3 { grid-template-columns: 1fr; } }
   </style>
 </head>
@@ -949,7 +973,30 @@ function renderHealthCards() {
 // --- Utils ---
 function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
 async function refresh(){await Promise.all([loadSources(),loadServices()]);}
-(async()=>{await loadTypes();await refresh();setInterval(refresh,15000);})();
+
+async function loadInfo(){
+  try{
+    const r=await fetch('/api/info'); if(!r.ok) return;
+    const d=await r.json();
+    const footer=document.getElementById('info-footer');
+    if(!footer) return;
+    const plugins=(d.plugins||[]).map(p=>`<span class="footer-pill">${esc(p.name)}<span class="footer-pill-meta">${esc(p.source)}${p.version?` · ${esc(p.version)}`:''}</span></span>`).join('');
+    const sha=d.build&&d.build.commit?` · <code class="mono">${esc(d.build.commit.slice(0,7))}</code>`:'';
+    footer.innerHTML=`
+      <span><strong>${esc(d.name)}</strong> v${esc(d.version)}${sha}</span>
+      <span class="footer-sep">·</span>
+      <span>MCP ${esc(d.mcpProtocolVersion)}</span>
+      <span class="footer-sep">·</span>
+      <span>${esc(d.runtime?d.runtime.node:'')} ${esc(d.runtime?d.runtime.platform+'/'+d.runtime.arch:'')}</span>
+      <span class="footer-sep">·</span>
+      <span class="footer-plugins">${plugins||'<em>no plugins loaded</em>'}</span>
+    `;
+  }catch{/* server too old or /api/info disabled */}
+}
+
+(async()=>{await loadTypes();await refresh();await loadInfo();setInterval(refresh,15000);})();
 </script>
+
+<footer id="info-footer" class="info-footer"><span class="spinner"></span>&nbsp;loading server info…</footer>
 </body>
 </html>
