@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { writeFileSync, mkdirSync, rmSync, existsSync } from "node:fs";
+import { writeFileSync, mkdtempSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { substituteEnv } from "./loader.js";
@@ -8,11 +8,11 @@ import { substituteEnv } from "./loader.js";
 // We test the helper functions by importing the module fresh with different env vars.
 // Since the config path is resolved at import time, we use dynamic imports.
 
-const TMP_DIR = join(tmpdir(), "observability-mcp-test-" + Date.now());
+let TMP_DIR: string;
 
 describe("config/loader", () => {
   beforeEach(() => {
-    mkdirSync(TMP_DIR, { recursive: true });
+    TMP_DIR = mkdtempSync(join(tmpdir(), "observability-mcp-test-"));
   });
 
   afterEach(() => {

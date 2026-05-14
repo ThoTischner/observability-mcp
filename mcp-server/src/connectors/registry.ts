@@ -2,6 +2,7 @@ import type { ObservabilityConnector } from "./interface.js";
 import type { Config, ConnectorHealth, SignalType, SourceConfig } from "../types.js";
 import { PrometheusConnector } from "./prometheus.js";
 import { LokiConnector } from "./loki.js";
+import { sanitizeForLog } from "../util/sanitize.js";
 
 const connectorFactories: Record<string, () => ObservabilityConnector> = {
   prometheus: () => new PrometheusConnector(),
@@ -26,17 +27,19 @@ export class ConnectorRegistry {
 
   private async connectSource(source: SourceConfig): Promise<void> {
     const factory = connectorFactories[source.type];
+    const safeName = sanitizeForLog(source.name);
+    const safeType = sanitizeForLog(source.type);
     if (!factory) {
-      console.warn(`Unknown connector type: ${source.type}, skipping ${source.name}`);
+      console.warn("Unknown connector type: %s, skipping %s", safeType, safeName);
       return;
     }
     const connector = factory();
     try {
       await connector.connect(source);
       this.connectors.set(source.name, connector);
-      console.log(`Connector "${source.name}" (${source.type}) connected`);
+      console.log('Connector "%s" (%s) connected', safeName, safeType);
     } catch (err) {
-      console.error(`Failed to connect "${source.name}":`, err);
+      console.error('Failed to connect "%s":', safeName, err);
     }
   }
 
