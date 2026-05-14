@@ -60,30 +60,29 @@ Chaos modes are correlated: error-spike also increases CPU + latency + error log
 ## Project Structure
 
 ```
-mcp-server/src/
-├── index.ts              # Express + MCP server + API endpoints
-├── types.ts              # Shared type definitions
-├── connectors/
-│   ├── interface.ts      # ObservabilityConnector interface (implement this for new backends)
-│   ├── registry.ts       # Connector lifecycle management
-│   ├── prometheus.ts     # Prometheus connector (PromQL, default metrics)
-│   └── loki.ts           # Loki connector (LogQL)
-├── tools/
-│   ├── list-sources.ts   # MCP tool: list backends
-│   ├── list-services.ts  # MCP tool: discover services
-│   ├── query-metrics.ts  # MCP tool: query metrics (with validation)
-│   ├── query-logs.ts     # MCP tool: query logs (with validation)
-│   ├── get-service-health.ts  # MCP tool: aggregated health score
-│   ├── detect-anomalies.ts    # MCP tool: cross-signal anomaly detection
-│   └── validation.ts     # Shared input validation helpers
-├── analysis/
-│   ├── anomaly.ts        # Z-score anomaly detection
-│   ├── health.ts         # Health scoring (configurable thresholds)
-│   └── correlator.ts     # Cross-signal correlation
-├── config/
-│   └── loader.ts         # YAML config loader with defaults
-└── ui/
-    └── index.html        # Single-file Web UI (Dashboard, Sources, Services, Health, Settings)
+.
+├── mcp-server/           # The product — MCP server + Web UI + analysis engine
+│   ├── src/
+│   │   ├── index.ts          # Express + MCP server + /api/* + /healthz + /readyz
+│   │   ├── openapi.ts        # OpenAPI 3.1 spec served at /api/openapi.json
+│   │   ├── types.ts          # Shared types
+│   │   ├── connectors/       # Connector interface + builtin shims + PluginLoader
+│   │   ├── sdk/              # Public SDK barrel + Zod manifest schema for plugins
+│   │   ├── tools/            # 6 MCP tools + shared validation
+│   │   ├── analysis/         # Anomaly detection, health scoring, correlation
+│   │   ├── metrics/          # prom-client self-metrics + connector instrumentation
+│   │   ├── config/           # sources.yaml loader (with ${VAR} substitution)
+│   │   ├── util/             # sanitizeForLog, etc.
+│   │   └── ui/index.html     # Single-file Web UI (Dashboard/Sources/Services/Health/Settings)
+│   └── plugins/              # Filesystem connectors: prometheus/, loki/
+├── helm/observability-mcp/   # ArtifactHub-grade Helm chart (Deployment/HPA/NetworkPolicy/ServiceMonitor/test/values.schema)
+├── examples/                 # Demo material — opt-in via `docker compose --profile demo`
+│   ├── agent/                # Optional autonomous detection agent (uses Ollama)
+│   ├── example-services/     # 3 chaos-able microservices
+│   ├── prometheus/           # Demo Prometheus config
+│   ├── loki/                 # Demo Loki config
+│   └── promtail/             # Demo log shipper
+└── docs/                     # configuration, auth-and-tls, plugin-architecture, airgapped-deployment, ...
 ```
 
 ## Adding a New Connector

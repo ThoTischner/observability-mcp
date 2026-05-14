@@ -32,6 +32,14 @@ npx @thotischner/observability-mcp
 
 The server starts with **zero sources**. Add Prometheus/Loki via the Web UI or `PROMETHEUS_URL` / `LOKI_URL` env vars.
 
+Want the full chaos-engineering demo (Prometheus + Loki + 3 example services + the autonomous agent)? Clone and run:
+
+```bash
+make demo   # equivalent to: docker compose --profile demo up --build --wait
+```
+
+See `make help` for all canonical workflows.
+
 ## Why?
 
 Every observability vendor ships its own MCP server — Prometheus, Grafana, Datadog, Elastic, each siloed. AI agents that need to reason across systems must juggle N separate servers. There is no unified abstraction layer.
@@ -77,6 +85,17 @@ graph TB
     style Agent fill:#58a6ff,stroke:#58a6ff,color:#000
     style Next fill:#0d1117,stroke:#3fb950,color:#8b949e,stroke-dasharray: 5 5
 ```
+
+## Repo layout
+
+```
+mcp-server/   # the product — server, Web UI, analysis engine, built-in plugins
+helm/         # ArtifactHub-grade Helm chart
+docs/         # configuration, auth, plugin architecture, airgapped deployment, ...
+examples/     # demo material — agent, example services, Prometheus+Loki configs
+```
+
+`mcp-server/` is what you install. Everything under `examples/` is opt-in via `docker compose --profile demo` — it's how the repo demos chaos detection end-to-end, but production deployments don't need any of it.
 
 ## Installation
 

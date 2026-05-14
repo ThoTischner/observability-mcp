@@ -13,7 +13,7 @@ services:
   api-gateway:
     profiles: ["demo"]
     build:
-      context: ./example-services
+      context: ./examples/example-services
     environment:
       - SERVICE_NAME=api-gateway
       - PORT=8080
@@ -33,7 +33,7 @@ services:
   payment-service:
     profiles: ["demo"]
     build:
-      context: ./example-services
+      context: ./examples/example-services
     environment:
       - SERVICE_NAME=payment-service
       - PORT=8081
@@ -53,7 +53,7 @@ services:
   order-service:
     profiles: ["demo"]
     build:
-      context: ./example-services
+      context: ./examples/example-services
     environment:
       - SERVICE_NAME=order-service
       - PORT=8082
@@ -75,7 +75,7 @@ services:
     profiles: ["demo"]
     image: prom/prometheus:v2.53.0
     volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./examples/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     ports:
       - "9090:9090"
     healthcheck:
@@ -98,7 +98,7 @@ services:
     profiles: ["demo"]
     image: grafana/loki:3.1.0
     volumes:
-      - ./loki/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - ./examples/loki/loki-config.yml:/etc/loki/local-config.yaml:ro
       - loki-data:/loki
     ports:
       - "3100:3100"
@@ -117,7 +117,7 @@ services:
     profiles: ["demo"]
     image: grafana/promtail:3.1.0
     volumes:
-      - ./promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+      - ./examples/promtail/promtail-config.yml:/etc/promtail/config.yml:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
     command: -config.file=/etc/promtail/config.yml
     healthcheck:
