@@ -1,0 +1,11 @@
+# ArtifactHub repository metadata, served from gh-pages alongside index.yaml
+# so the Helm HTTP repo verifier can read it. Mirrors .artifacthub-repo.yml
+# on the main branch.
+# Spec: https://artifacthub.io/docs/topics/repositories/
+
+repositoryID: 5470709b-d6ae-4b64-b72f-27fa1fd4881c
+owners:
+  - name: ThoTischner
+    email: ai-solutions-camp@email.de
+
+ignore: []
