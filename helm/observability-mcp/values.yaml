@@ -1,0 +1,153 @@
+# Default values for observability-mcp.
+# Production deployments should override at least: image.tag, ingress, auth.token, sources.
+
+image:
+  repository: ghcr.io/thotischner/observability-mcp
+  # Override at install time: --set image.tag=v1.3.4
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+replicaCount: 1
+
+# The MCP server holds session state per Streamable HTTP session, so
+# multiple replicas need sticky-session ingress (or an external session
+# store, which is on the roadmap). Default is 1.
+strategy:
+  type: Recreate
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Authentication for the /mcp endpoint. If unset, the endpoint is open —
+# only acceptable for trusted networks. Set existingSecret OR token.
+auth:
+  enabled: false
+  # If set, this secret must contain key 'token'. Takes precedence over .token.
+  existingSecret: ""
+  # Plain-text token (rendered into a Secret managed by the chart).
+  # Prefer existingSecret for real deployments.
+  token: ""
+
+# Observability backends. Empty by default — the operator must configure
+# at least one source via sources.yaml mounted as a ConfigMap, or via
+# env vars (PROMETHEUS_URL, LOKI_URL).
+sources:
+  # Inline sources.yaml content. If non-empty, rendered into a ConfigMap
+  # and mounted at /app/config/sources.yaml.
+  # Example:
+  # config: |
+  #   sources:
+  #     - name: prometheus
+  #       type: prometheus
+  #       url: http://prometheus.monitoring.svc.cluster.local:9090
+  #       enabled: true
+  #     - name: loki
+  #       type: loki
+  #       url: http://loki.logging.svc.cluster.local:3100
+  #       enabled: true
+  config: ""
+  # Alternative: comma-separated URLs as env vars (handled by the server).
+  prometheusUrl: ""
+  lokiUrl: ""
+
+# Extra environment variables passed to the container.
+extraEnv: []
+  # - name: MCP_LOG_LEVEL
+  #   value: info
+
+service:
+  type: ClusterIP
+  port: 3000
+  annotations: {}
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+    # nginx.ingress.kubernetes.io/affinity: cookie
+    # nginx.ingress.kubernetes.io/session-cookie-name: mcp-session
+  hosts:
+    - host: observability-mcp.example.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+    # - secretName: observability-mcp-tls
+    #   hosts:
+    #     - observability-mcp.example.local
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+  # MCP sessions are sticky to a pod — enabling HPA without sticky-session
+  # ingress will fragment sessions across replicas.
+
+# Pod-level security
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: false  # node writes to /tmp; switch to true with emptyDir tmp
+
+# Persistent config — if you edit sources via the Web UI you want the
+# updated sources.yaml to survive restarts. Disabled by default; for
+# read-only / GitOps deployments leave off.
+persistence:
+  enabled: false
+  size: 1Gi
+  storageClass: ""
+  accessMode: ReadWriteOnce
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Liveness / readiness — server exposes /api/health (200 when up).
+probes:
+  liveness:
+    httpGet:
+      path: /api/health
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 20
+    timeoutSeconds: 3
+  readiness:
+    httpGet:
+      path: /api/sources
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 3
+
+# Optional NetworkPolicy locking egress to declared sources only.
+# Out of scope for the v0.1 skeleton — wire when sources have hostnames.
+networkPolicy:
+  enabled: false
+
+# Service account token mounting — disable for stricter pods.
+automountServiceAccountToken: false
