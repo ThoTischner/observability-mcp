@@ -146,7 +146,8 @@
       border-radius: var(--radius);
       padding: var(--sp-5);
       position: relative; overflow: hidden;
-      transition: border-color var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
+      text-align: left;
+      transition: border-color var(--t-fast) var(--ease);
     }
     .stat-card:hover { border-color: var(--border-strong); }
     .stat-card::after {
@@ -154,8 +155,47 @@
       background: linear-gradient(180deg, var(--accent), transparent);
       opacity: 0.5;
     }
-    .stat-card .value { font-size: var(--fs-3xl); font-weight: 600; letter-spacing: -0.02em; color: var(--text); font-variant-numeric: tabular-nums; }
-    .stat-card .label { font-size: var(--fs-xs); color: var(--text-muted); margin-top: var(--sp-1); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 500; }
+    .stat-card .label {
+      font-size: var(--fs-xs); color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: 0.08em; font-weight: 500;
+      margin-bottom: var(--sp-2);
+    }
+    .stat-card .value {
+      font-size: var(--fs-3xl); font-weight: 600; letter-spacing: -0.02em;
+      color: var(--text); font-variant-numeric: tabular-nums; line-height: 1.1;
+    }
+    .stat-card .context {
+      font-size: var(--fs-xs); color: var(--text-muted);
+      margin-top: var(--sp-2);
+      font-variant-numeric: tabular-nums;
+    }
+    .stat-card .context.good { color: var(--success, #3fb950); }
+    .stat-card .context.warn { color: var(--warn, #d29922); }
+
+    .live-indicator {
+      display: inline-flex; align-items: center; gap: var(--sp-2);
+      font-size: var(--fs-xs); color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: 0.08em;
+    }
+    .live-indicator::before {
+      content: ''; width: 8px; height: 8px; border-radius: 50%;
+      background: var(--success, #3fb950);
+      box-shadow: 0 0 0 0 rgba(63, 185, 80, 0.5);
+      animation: live-pulse 2s var(--ease) infinite;
+    }
+    @keyframes live-pulse {
+      0% { box-shadow: 0 0 0 0 rgba(63, 185, 80, 0.4); }
+      70% { box-shadow: 0 0 0 6px rgba(63, 185, 80, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(63, 185, 80, 0); }
+    }
+    .dashboard-meta {
+      display: flex; align-items: baseline; justify-content: space-between;
+      gap: var(--sp-4); margin-bottom: var(--sp-4);
+    }
+    .dashboard-meta h1 {
+      font-size: var(--fs-lg); font-weight: 600; color: var(--text);
+      letter-spacing: -0.01em; margin: 0;
+    }
     .card {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -445,11 +485,31 @@
   <div class="container">
     <!-- ===== Dashboard ===== -->
     <div class="page active" id="page-dashboard">
+      <div class="dashboard-meta">
+        <h1>Overview</h1>
+        <span class="live-indicator" id="dash-live">Live</span>
+      </div>
       <div class="stats">
-        <div class="stat-card"><div class="value" id="stat-sources">-</div><div class="label">Data Sources</div></div>
-        <div class="stat-card"><div class="value" id="stat-sources-up">-</div><div class="label">Sources UP</div></div>
-        <div class="stat-card"><div class="value" id="stat-services">-</div><div class="label">Services</div></div>
-        <div class="stat-card"><div class="value" id="stat-tools">6</div><div class="label">MCP Tools</div></div>
+        <div class="stat-card">
+          <div class="label">Data Sources</div>
+          <div class="value" id="stat-sources">-</div>
+          <div class="context" id="stat-sources-ctx">configured</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Sources Up</div>
+          <div class="value" id="stat-sources-up">-</div>
+          <div class="context" id="stat-sources-up-ctx">connected</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Services</div>
+          <div class="value" id="stat-services">-</div>
+          <div class="context" id="stat-services-ctx">discovered</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">MCP Tools</div>
+          <div class="value" id="stat-tools">6</div>
+          <div class="context">available</div>
+        </div>
       </div>
       <div class="endpoint-bar">
         <span>MCP Endpoint: <strong id="mcp-url">http://localhost:3000/mcp</strong></span>
@@ -690,9 +750,29 @@ async function loadSettingsData() {
   ]); populateSettingsForm(); populateHealthForm(); populateMetricsSourceSelect(); } catch(e){ console.error(e); }
 }
 function updateStats() {
-  document.getElementById('stat-sources').textContent=sourcesData.length;
-  document.getElementById('stat-sources-up').textContent=sourcesData.filter(s=>s.status==='up').length;
-  document.getElementById('stat-services').textContent=servicesData.length;
+  const total = sourcesData.length;
+  const up = sourcesData.filter(s=>s.status==='up').length;
+  const enabled = sourcesData.filter(s=>s.enabled).length;
+  document.getElementById('stat-sources').textContent = total;
+  document.getElementById('stat-sources-up').textContent = up;
+  document.getElementById('stat-services').textContent = servicesData.length;
+
+  const srcCtx = document.getElementById('stat-sources-ctx');
+  if (srcCtx) srcCtx.textContent = enabled === total ? `${enabled} enabled` : `${enabled}/${total} enabled`;
+
+  const upCtx = document.getElementById('stat-sources-up-ctx');
+  if (upCtx) {
+    upCtx.textContent = total === 0 ? 'no sources' : `${up}/${total} connected`;
+    upCtx.classList.toggle('good', total > 0 && up === total);
+    upCtx.classList.toggle('warn', total > 0 && up < total);
+  }
+
+  const svcCtx = document.getElementById('stat-services-ctx');
+  if (svcCtx) {
+    const backends = new Set(servicesData.map(s => s.source || s.sourceName).filter(Boolean));
+    svcCtx.textContent = backends.size > 0 ? `across ${backends.size} backend${backends.size===1?'':'s'}` : 'discovered';
+  }
+
   const allUp=sourcesData.length>0&&sourcesData.filter(s=>s.enabled).every(s=>s.status==='up');
   const b=document.getElementById('status-badge');
   b.textContent=sourcesData.length===0?'No sources':allUp?'All systems operational':'Issues detected';
