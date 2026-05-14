@@ -40,7 +40,7 @@ jobs:
         run: npm ci
       - name: Run tests
         working-directory: ./mcp-server
-        run: npx tsx --test src/analysis/*.test.ts src/config/*.test.ts
+        run: npx tsx --test src/analysis/*.test.ts src/config/*.test.ts src/sdk/*.test.ts
 
   trivy:
     runs-on: ubuntu-latest
