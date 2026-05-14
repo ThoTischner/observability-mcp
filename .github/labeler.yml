@@ -29,7 +29,7 @@ docker:
       - any-glob-to-any-file:
           - 'mcp-server/Dockerfile'
           - 'examples/agent/Dockerfile'
-          - 'example-services/Dockerfile'
+          - 'examples/example-services/Dockerfile'
           - 'docker-compose.yml'
 
 ci:
