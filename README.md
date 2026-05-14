@@ -12,8 +12,10 @@ normalizes the data, adds intelligent analysis, and provides a web UI for config
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![npm](https://img.shields.io/npm/v/@thotischner/observability-mcp?logo=npm)](https://www.npmjs.com/package/@thotischner/observability-mcp)
 [![GHCR](https://img.shields.io/badge/ghcr.io-observability--mcp-2496ED?logo=docker&logoColor=white)](https://github.com/ThoTischner/observability-mcp/pkgs/container/observability-mcp)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![MCP SDK](https://img.shields.io/badge/MCP_SDK-1.12-orange)](https://modelcontextprotocol.io)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![MCP SDK](https://img.shields.io/badge/MCP_SDK-1.29-orange)](https://modelcontextprotocol.io)
+[![Helm chart](https://img.shields.io/badge/helm-observability--mcp-0F1689?logo=helm&logoColor=white)](./helm/observability-mcp)
+[![Provenance](https://img.shields.io/badge/npm-provenance-success?logo=npm)](https://docs.npmjs.com/generating-provenance-statements)
 
 ![Web UI Dashboard](docs/dashboard.png)
 

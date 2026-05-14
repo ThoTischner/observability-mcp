@@ -1,0 +1,71 @@
+# Smithery.ai catalog manifest.
+#
+# Lets Smithery (and other catalogs that consume the same format) import
+# this server with one click and render a configurable run page. The
+# server itself does not read this file — it only exists for catalogs.
+#
+# Spec: https://smithery.ai/docs/config
+
+runtime: container
+build:
+  dockerfile: mcp-server/Dockerfile
+  context: ./mcp-server
+
+startCommand:
+  type: http
+  port: 3000
+  endpoint: /mcp
+
+configSchema:
+  type: object
+  description: |
+    Either set the inline env vars below for a quick start, or mount a
+    full sources.yaml at /app/config/sources.yaml and point CONFIG_PATH
+    at it. Sources can also be added later via the Web UI at
+    http://localhost:3000.
+  properties:
+    PROMETHEUS_URL:
+      type: string
+      title: Prometheus base URL
+      description: e.g. http://prometheus:9090. Multiple URLs comma-separated.
+    LOKI_URL:
+      type: string
+      title: Loki base URL
+      description: e.g. http://loki:3100. Multiple URLs comma-separated.
+    CONFIG_PATH:
+      type: string
+      title: sources.yaml path (alternative to env vars)
+      default: /app/config/sources.yaml
+    MCP_AUTH_TOKEN:
+      type: string
+      title: Bearer token required on /mcp
+      description: Leave empty for trusted networks. Required for any public exposure.
+      format: password
+  required: []
+
+metadata:
+  display_name: Observability MCP
+  description: >-
+    Unified gateway to Prometheus, Loki, and other observability backends
+    with cross-signal anomaly detection. One MCP endpoint, any backend.
+  homepage: https://github.com/ThoTischner/observability-mcp
+  documentation: https://github.com/ThoTischner/observability-mcp#readme
+  license: MIT
+  categories:
+    - observability
+    - monitoring
+    - devops
+    - sre
+  tags:
+    - prometheus
+    - loki
+    - anomaly-detection
+    - ai-agents
+    - airgapped
+  tools:
+    - list_sources
+    - list_services
+    - query_metrics
+    - query_logs
+    - get_service_health
+    - detect_anomalies
