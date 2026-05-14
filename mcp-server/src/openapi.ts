@@ -31,7 +31,11 @@ const SOURCE_SCHEMA: OpenAPIV3_1.SchemaObject = {
 };
 
 export function buildOpenApiSpec(version: string): OpenAPIV3_1.Document {
-  return {
+  // openapi-types' deeply-nested generics make literal path objects fail
+  // structural assignability even when the document is valid OpenAPI. We
+  // build it as a permissive object and cast at the boundary — the shape
+  // is hand-verified and rendered by Swagger/Insomnia downstream.
+  const doc = {
     openapi: "3.1.0",
     info: {
       title: "observability-mcp HTTP API",
@@ -183,4 +187,5 @@ export function buildOpenApiSpec(version: string): OpenAPIV3_1.Document {
       },
     },
   };
+  return doc as unknown as OpenAPIV3_1.Document;
 }
