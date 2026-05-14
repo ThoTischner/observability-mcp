@@ -238,8 +238,9 @@ export class LokiConnector implements ObservabilityConnector {
   }
 
   private escapeLogQLRegex(value: string): string {
-    // Escape backticks which would break the LogQL regex delimiter
-    return value.replace(/`/g, "\\`");
+    // Escape backslash first (so we don't double-escape sequences we add),
+    // then the backtick that delimits LogQL regex literals.
+    return value.replace(/\\/g, "\\\\").replace(/`/g, "\\`");
   }
 
   private buildAuthHeaders(): Record<string, string> {

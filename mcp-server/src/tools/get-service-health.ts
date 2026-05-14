@@ -2,6 +2,7 @@ import type { ConnectorRegistry } from "../connectors/registry.js";
 import type { ServiceHealth, AnomalyReport, HealthThresholds } from "../types.js";
 import { calculateHealthScore } from "../analysis/health.js";
 import { detectRecentAnomaly } from "../analysis/anomaly.js";
+import { sanitizeForLog } from "../util/sanitize.js";
 
 let _thresholds: HealthThresholds | null = null;
 
@@ -54,7 +55,7 @@ export async function getServiceHealthHandler(
       latencyP99 = latResult.summary.current;
       checkAnomaly(latResult.values.map(v => v.value), "latency_p99", args.service, connector.name, anomalies);
     } catch (err) {
-      console.error(`Health check metrics failed for ${args.service}:`, err);
+      console.error("Health check metrics failed for %s:", sanitizeForLog(args.service), err);
     }
   }
 
@@ -80,7 +81,7 @@ export async function getServiceHealthHandler(
         }
       }
     } catch (err) {
-      console.error(`Health check logs failed for ${args.service}:`, err);
+      console.error("Health check logs failed for %s:", sanitizeForLog(args.service), err);
     }
   }
 

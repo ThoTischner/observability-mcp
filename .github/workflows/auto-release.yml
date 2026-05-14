@@ -61,6 +61,7 @@ jobs:
 
       - name: Open release PR
         if: steps.check.outputs.skip != 'true'
+        id: cpr
         uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
@@ -71,10 +72,19 @@ jobs:
 
             - Bumps `mcp-server/package.json` to `${{ steps.bump.outputs.new_version }}`
             - Previous tag: `${{ steps.check.outputs.last_tag }}`
-            - Merging this PR triggers `tag-on-release.yml`, which pushes the tag and fans out to `release.yml`, `docker-publish.yml`, and `npm-publish.yml`.
+            - Auto-merge is enabled — GitHub will squash-merge as soon as all required checks pass. Merging triggers `tag-on-release.yml`, which pushes the tag and fans out to `release.yml`, `docker-publish.yml`, and `npm-publish.yml`.
           branch: release/${{ steps.bump.outputs.new_version }}
           delete-branch: true
           add-paths: |
             mcp-server/package.json
             mcp-server/package-lock.json
           labels: release,automated
+
+      - name: Enable auto-merge on the release PR
+        if: steps.check.outputs.skip != 'true' && steps.cpr.outputs.pull-request-number
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr merge "${{ steps.cpr.outputs.pull-request-number }}" \
+            --repo "${{ github.repository }}" \
+            --auto --squash --delete-branch
