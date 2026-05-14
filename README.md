@@ -15,6 +15,7 @@ normalizes the data, adds intelligent analysis, and provides a web UI for config
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![MCP SDK](https://img.shields.io/badge/MCP_SDK-1.29-orange)](https://modelcontextprotocol.io)
 [![Helm chart](https://img.shields.io/badge/helm-observability--mcp-0F1689?logo=helm&logoColor=white)](./helm/observability-mcp)
+[![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/observability-mcp)](https://artifacthub.io/packages/search?repo=observability-mcp)
 [![Provenance](https://img.shields.io/badge/npm-provenance-success?logo=npm)](https://docs.npmjs.com/generating-provenance-statements)
 
 ![Web UI Dashboard](docs/dashboard.png)
