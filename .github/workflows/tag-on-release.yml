@@ -1,0 +1,54 @@
+name: Tag on release merge
+
+# When a "chore(release): vX.Y.Z" commit lands on main (typically via the
+# PR opened by auto-release.yml), create and push the matching tag. The
+# tag push then triggers release.yml, docker-publish.yml, and
+# npm-publish.yml. Tag refs are not blocked by branch protection on main.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - mcp-server/package.json
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          token: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
+
+      - name: Check commit message and create tag
+        run: |
+          set -euo pipefail
+          msg=$(git log -1 --pretty=%s)
+          echo "head subject: $msg"
+          if ! [[ "$msg" =~ ^chore\(release\):[[:space:]]+v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "not a release commit, skipping"
+            exit 0
+          fi
+          version="v${BASH_REMATCH[1]}"
+
+          # Sanity: the package.json must agree with the commit subject.
+          pkg_version=$(node -p "require('./mcp-server/package.json').version")
+          if [ "v$pkg_version" != "$version" ]; then
+            echo "commit subject ($version) does not match package.json (v$pkg_version)"
+            exit 1
+          fi
+
+          # Don't re-tag if it already exists.
+          if git rev-parse "$version" >/dev/null 2>&1; then
+            echo "tag $version already exists, skipping"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$version" -m "Release $version"
+          git push origin "$version"
+          echo "pushed tag $version"
