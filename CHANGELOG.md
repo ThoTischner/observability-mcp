@@ -6,7 +6,56 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.4.0] — 2026-05-14
+
 ### Added
+- **Plugin Loader complete (steps 1–5 of the architecture roadmap)** —
+  Prometheus and Loki connectors extracted as filesystem plugins under
+  `mcp-server/plugins/`. The PluginLoader scans `PLUGINS_DIR` (default
+  `/app/plugins`), validates each `manifest.json` against a Zod schema,
+  and falls back to the built-in shim on demand. `PLUGINS_DISABLED`
+  short-circuits selected plugins at runtime.
+- **OpenAPI 3.1 spec** at `/api/openapi.json` describing the operator
+  REST surface (`/api/sources`, `/api/services`, `/api/health`,
+  `/api/settings`, `/api/metrics-config`, `/api/info`, `/metrics`).
+- **Root-level `/healthz` + `/readyz`** for the k8s convention.
+- **`/api/info`** exposes version, build commit/date, plugin inventory,
+  and runtime. The Web UI footer renders this live.
+- **Web UI enterprise refresh — passes 3 + 4.** Left-aligned stat cards
+  with live context sublines (`X/Y connected` color-coded), Overview
+  header with live-pulse indicator, inline SVG sparklines on each
+  health card (30 samples ≈ 7.5 min at 15s refresh).
+- **Helm chart v0.3.0** — `helm test` connection probe, ArtifactHub
+  `images` + `changes` annotations, `values.schema.json` validating
+  `helm install` input before render, NOTES.txt with post-install
+  steps, optional `prometheus.io/scrape` annotations for clusters
+  without prometheus-operator.
+- **Docker image build args** `GIT_COMMIT` and `BUILD_DATE` baked in via
+  Dockerfile ARGs and exposed through `/api/info` build metadata.
+- **SBOM (CycloneDX) and SLSA provenance attestations** attached to
+  every GHCR image via `docker/build-push-action@v7` (`sbom: true`,
+  `provenance: mode=max`).
+- **GitHub issue + PR templates** under `.github/` for bug, feature,
+  connector-request, and config questions.
+- **Path-based PR auto-labeler** with labels server/ui/connector/agent/
+  helm/docker/ci/docs/dependencies/security/release.
+- **Tool/API/session metrics instrumentation** — `obsmcp_tool_calls_total`,
+  `obsmcp_api_requests_total`, `obsmcp_active_sessions`, `obsmcp_connector_calls_total`
+  (per connector via a loader decorator).
+- **Connector-level metrics** wrapped at the loader's `create()` site
+  so connector authors get observability for free.
+- **Web UI server-info footer** populated from `/api/info`.
+- **`Makefile`** with canonical Docker workflows: `make demo`, `make up`,
+  `make test`, `make lint`, `make smoke`, `make release-dryrun`.
+- **`docs/airgapped-deployment.md`** — image mirroring, Sigstore
+  attestation verification, locked-down NetworkPolicy egress, private
+  plugins baked into a derived image, GitOps config.
+- **Docker compose `demo` profile** — `docker compose up` runs only
+  mcp-server by default; `--profile demo` adds Prometheus, Loki,
+  example services and the agent.
+- **Repo refactor** — `examples/agent`, `examples/example-services`,
+  `examples/prometheus`, `examples/loki`, `examples/promtail`. mcp-server
+  is the deliverable, the rest is demo material.
 - **Plugin system foundation** — `mcp-server/src/sdk/` barrel re-exporting the
   connector interface, manifest type, and a Zod schema for runtime validation.
   Filesystem `PluginLoader` (default `/app/plugins`) loads connectors at
@@ -47,6 +96,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   against all six core tools.
 
 ### Fixed
+- Contact email in SECURITY.md, .artifacthub-repo.yml, and the bug
+  issue template corrected to `ai-solutions-camp@email.de`.
+- Loki ring init on WSL2/Docker with the upgraded image.
+- Mermaid label crash on certain unicode chars in the docs.
 - Transitive CVEs from `@modelcontextprotocol/sdk` (`fast-uri`, `hono`,
   `ip-address`, `@hono/node-server`) pinned via `npm overrides`.
 - `escapeLogQLRegex` in the Loki connector now escapes backslashes before
