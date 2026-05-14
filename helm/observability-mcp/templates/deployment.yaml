@@ -1,0 +1,103 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "observability-mcp.fullname" . }}
+  labels:
+    {{- include "observability-mcp.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    {{- toYaml .Values.strategy | nindent 4 }}
+  selector:
+    matchLabels:
+      {{- include "observability-mcp.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "observability-mcp.selectorLabels" . | nindent 8 }}
+      annotations:
+        {{- if .Values.sources.config }}
+        checksum/sources: {{ .Values.sources.config | sha256sum }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "observability-mcp.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.automountServiceAccountToken }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: mcp-server
+          image: "{{ .Values.image.repository }}:{{ include "observability-mcp.imageTag" . }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          env:
+            {{- if .Values.sources.config }}
+            - name: CONFIG_PATH
+              value: /app/config/sources.yaml
+            {{- end }}
+            {{- if .Values.sources.prometheusUrl }}
+            - name: PROMETHEUS_URL
+              value: {{ .Values.sources.prometheusUrl | quote }}
+            {{- end }}
+            {{- if .Values.sources.lokiUrl }}
+            - name: LOKI_URL
+              value: {{ .Values.sources.lokiUrl | quote }}
+            {{- end }}
+            {{- if .Values.auth.enabled }}
+            - name: MCP_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "observability-mcp.authSecretName" . }}
+                  key: token
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          livenessProbe:
+            {{- toYaml .Values.probes.liveness | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.probes.readiness | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            {{- if .Values.sources.config }}
+            - name: sources-config
+              mountPath: /app/config/sources.yaml
+              subPath: sources.yaml
+              readOnly: true
+            {{- end }}
+            {{- if .Values.persistence.enabled }}
+            - name: data
+              mountPath: /app/config
+            {{- end }}
+      volumes:
+        {{- if .Values.sources.config }}
+        - name: sources-config
+          configMap:
+            name: {{ include "observability-mcp.fullname" . }}-sources
+        {{- end }}
+        {{- if .Values.persistence.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "observability-mcp.fullname" . }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
