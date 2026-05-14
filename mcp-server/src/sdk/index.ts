@@ -12,6 +12,8 @@
 // constraint in their package.json (see docs/plugin-architecture.md).
 
 export type { ObservabilityConnector } from "../connectors/interface.js";
+export { manifestSchema } from "./manifest-schema.js";
+export type { ValidatedConnectorManifest } from "./manifest-schema.js";
 
 export type {
   SignalType,
