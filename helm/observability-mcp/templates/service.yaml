@@ -4,10 +4,18 @@ metadata:
   name: {{ include "observability-mcp.fullname" . }}
   labels:
     {{- include "observability-mcp.labels" . | nindent 4 }}
-  {{- with .Values.service.annotations }}
   annotations:
+    {{- if .Values.scrapeAnnotations.enabled }}
+    # Vanilla Prometheus scrape config (alternative to ServiceMonitor)
+    # for clusters without prometheus-operator. Toggle via
+    # `scrapeAnnotations.enabled`.
+    prometheus.io/scrape: "true"
+    prometheus.io/port: {{ .Values.service.port | quote }}
+    prometheus.io/path: {{ .Values.scrapeAnnotations.path | default "/metrics" | quote }}
+    {{- end }}
+    {{- with .Values.service.annotations }}
     {{- toYaml . | nindent 4 }}
-  {{- end }}
+    {{- end }}
 spec:
   type: {{ .Values.service.type }}
   ports:
