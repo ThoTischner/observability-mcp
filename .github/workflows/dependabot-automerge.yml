@@ -19,7 +19,7 @@ jobs:
           REPO: ${{ github.repository }}
           MIN_AGE_HOURS: 72
         run: |
-          set -euo pipefail
+          set -uo pipefail
 
           prs=$(gh pr list --repo "$REPO" --author app/dependabot --state open --json number,createdAt,headRefName,title)
           echo "$prs" | jq -c '.[]' | while read -r pr; do
@@ -75,5 +75,5 @@ jobs:
             fi
 
             echo "  merging…"
-            gh pr merge "$number" --repo "$REPO" --squash --delete-branch
+            gh pr merge "$number" --repo "$REPO" --squash --delete-branch || echo "  merge failed — continuing"
           done
