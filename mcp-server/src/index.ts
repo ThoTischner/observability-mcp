@@ -17,8 +17,20 @@ import { detectAnomaliesHandler } from "./tools/detect-anomalies.js";
 import type { Config } from "./types.js";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { readFileSync } from "node:fs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// Read once at startup; the file is shipped inside the image so this
+// is the source of truth even when the user runs from `npx`.
+const SERVER_VERSION: string = (() => {
+  try {
+    const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf8"));
+    return pkg.version ?? "unknown";
+  } catch {
+    return "unknown";
+  }
+})();
 
 function applyConfigToRuntime(config: Config, registry: ConnectorRegistry) {
   setHealthThresholds(config.healthThresholds);
@@ -72,7 +84,7 @@ async function main() {
   function createMcpServer(): McpServer {
     const mcpServer = new McpServer({
       name: "observability-mcp",
-      version: "1.3.0",
+      version: SERVER_VERSION,
     });
 
   // --- Register tools with Zod schemas ---
@@ -214,6 +226,32 @@ async function main() {
   // Get supported connector types
   app.get("/api/source-types", (_req, res) => {
     res.json(getSupportedTypes());
+  });
+
+  // Server info — version, loaded plugins, MCP protocol version, build metadata.
+  // Used by the Web UI footer and by operators to confirm what's deployed.
+  app.get("/api/info", async (_req, res) => {
+    const loader = getPluginLoader();
+    res.json({
+      name: "observability-mcp",
+      version: SERVER_VERSION,
+      mcpProtocolVersion: "2025-03-26",
+      build: {
+        commit: process.env.GIT_COMMIT || null,
+        date: process.env.BUILD_DATE || null,
+      },
+      runtime: {
+        node: process.version,
+        platform: process.platform,
+        arch: process.arch,
+      },
+      plugins: loader.list().map((p) => ({
+        name: p.name,
+        source: p.source,
+        version: p.manifest?.version ?? null,
+        signalTypes: p.manifest?.signalTypes ?? null,
+      })),
+    });
   });
 
   // Add a new source
