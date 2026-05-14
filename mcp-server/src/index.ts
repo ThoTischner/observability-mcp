@@ -7,7 +7,7 @@ import { z } from "zod";
 import { loadConfig, saveConfig, DEFAULT_HEALTH_THRESHOLDS, DEFAULT_SETTINGS } from "./config/loader.js";
 import { ConnectorRegistry, getSupportedTypes } from "./connectors/registry.js";
 import { getPluginLoader } from "./connectors/loader.js";
-import { selfRegistry } from "./metrics/self.js";
+import { selfRegistry, withToolMetrics, apiRequests, mcpActiveSessions } from "./metrics/self.js";
 import { listSourcesHandler } from "./tools/list-sources.js";
 import { listServicesHandler } from "./tools/list-services.js";
 import { queryMetricsHandler } from "./tools/query-metrics.js";
@@ -81,14 +81,14 @@ async function main() {
     "list_sources",
     "List all configured observability backends and their connection status. Use this to discover what data sources are available.",
     {},
-    async () => listSourcesHandler(registry)
+    async () => withToolMetrics("list_sources", () => listSourcesHandler(registry))
   );
 
   mcpServer.tool(
     "list_services",
     "List all monitored services discovered across all connected backends. Returns service names, their data sources, and signal types (metrics/logs).",
     { filter: z.string().optional().describe("Optional filter to match service names") },
-    async (args) => listServicesHandler(registry, args)
+    async (args) => withToolMetrics("list_services", () => listServicesHandler(registry, args))
   );
 
   const metricsList = getAvailableMetricNames(registry);
@@ -105,7 +105,7 @@ async function main() {
       source: z.string().optional().describe("Specific source name. If omitted, queries all metrics backends."),
       groupBy: z.string().optional().describe("Label to break the result down by, e.g. 'instance', 'pod', 'node'. Returns one series per distinct value in 'groups'."),
     },
-    async (args) => queryMetricsHandler(registry, args)
+    async (args) => withToolMetrics("query_metrics", () => queryMetricsHandler(registry, args))
   );
 
   mcpServer.tool(
@@ -118,7 +118,7 @@ async function main() {
       level: z.string().optional().describe("Filter by log level: 'error', 'warn', 'info', 'debug'"),
       limit: z.number().optional().describe("Maximum log entries to return. Default: 100"),
     },
-    async (args) => queryLogsHandler(registry, args)
+    async (args) => withToolMetrics("query_logs", () => queryLogsHandler(registry, args))
   );
 
   mcpServer.tool(
@@ -127,7 +127,7 @@ async function main() {
     {
       service: z.string().describe("Service name to check health for"),
     },
-    async (args) => getServiceHealthHandler(registry, args)
+    async (args) => withToolMetrics("get_service_health", () => getServiceHealthHandler(registry, args))
   );
 
   mcpServer.tool(
@@ -138,7 +138,7 @@ async function main() {
       duration: z.string().optional().describe("Time range to analyze (e.g. '5m', '15m', '1h'). Default: '10m'"),
       sensitivity: z.enum(["low", "medium", "high"]).optional().describe("Detection sensitivity: low (>3σ), medium (>2σ), high (>1.5σ). Default: 'medium'"),
     },
-    async (args) => detectAnomaliesHandler(registry, args)
+    async (args) => withToolMetrics("detect_anomalies", () => detectAnomaliesHandler(registry, args))
   );
 
     return mcpServer;
@@ -154,6 +154,22 @@ async function main() {
     res.setHeader("X-Frame-Options", "DENY");
     res.setHeader("X-XSS-Protection", "1; mode=block");
     res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    next();
+  });
+
+  // API request counter — emitted at response time so the `status` label
+  // is the real outcome. /metrics itself is excluded to avoid self-scrape
+  // amplification.
+  app.use((req, res, next) => {
+    if (req.path === "/metrics") return next();
+    res.on("finish", () => {
+      // Group dynamic segments by the registered Express route when we
+      // have one, otherwise fall back to the literal path. This keeps
+      // label cardinality bounded.
+      const route =
+        (req as unknown as { route?: { path?: string } }).route?.path ?? req.path;
+      apiRequests.inc({ route, method: req.method, status: String(res.statusCode) });
+    });
     next();
   });
 
@@ -431,6 +447,7 @@ async function main() {
         console.log(`Session ${sid} expired (idle)`);
       }
     }
+    mcpActiveSessions.set(transports.size);
   }, 5 * 60 * 1000);
 
   app.post("/mcp", async (req, res) => {
@@ -449,6 +466,7 @@ async function main() {
         for (const [sid, t] of transports) {
           if (t === transport) { transports.delete(sid); break; }
         }
+        mcpActiveSessions.set(transports.size);
       };
 
       const sessionMcpServer = createMcpServer();
@@ -463,6 +481,7 @@ async function main() {
       if (!transports.has(sid)) transports.set(sid, transport);
       sessionLastActive.set(sid, Date.now());
     }
+    mcpActiveSessions.set(transports.size);
   });
 
   app.get("/mcp", async (req, res) => {
