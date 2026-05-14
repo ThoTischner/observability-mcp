@@ -18,7 +18,7 @@ path.
 Report privately via one of:
 
 - **GitHub Security Advisories** — preferred. https://github.com/ThoTischner/observability-mcp/security/advisories/new
-- **Email** — `info@holzbau-konfigurator.de`
+- **Email** — `ai-solutions-camp@email.de`
 
 What to include:
 
