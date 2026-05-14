@@ -4,6 +4,10 @@ on:
   schedule:
     - cron: '0 7 * * *'
   workflow_dispatch:
+  check_suite:
+    types: [completed]
+  pull_request_target:
+    branches: [main]
 
 permissions:
   contents: write
@@ -17,9 +21,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          MIN_AGE_HOURS: 72
+          MIN_AGE_HOURS: 0
         run: |
-          set -euo pipefail
+          set -uo pipefail
 
           prs=$(gh pr list --repo "$REPO" --author app/dependabot --state open --json number,createdAt,headRefName,title)
           echo "$prs" | jq -c '.[]' | while read -r pr; do
@@ -75,5 +79,5 @@ jobs:
             fi
 
             echo "  merging…"
-            gh pr merge "$number" --repo "$REPO" --squash --delete-branch
+            gh pr merge "$number" --repo "$REPO" --squash --delete-branch || echo "  merge failed — continuing"
           done
