@@ -10,6 +10,12 @@ on:
   schedule:
     - cron: '0 23 * * 0'
   workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump size (npm version arg)"
+        type: choice
+        options: [patch, minor, major]
+        default: patch
 
 permissions:
   contents: write
@@ -49,16 +55,23 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Bump patch version
+      - name: Bump version
         if: steps.check.outputs.skip != 'true'
         id: bump
         working-directory: ./mcp-server
+        env:
+          # workflow_dispatch supplies inputs.bump; scheduled runs default to patch.
+          BUMP: ${{ github.event.inputs.bump || 'patch' }}
         run: |
           set -euo pipefail
-          new_version=$(npm version patch --no-git-tag-version)
+          new_version=$(npm version "$BUMP" --no-git-tag-version)
           echo "new_version=${new_version}" >> "$GITHUB_OUTPUT"
-          echo "bumped to ${new_version}"
+          echo "bumped to ${new_version} ($BUMP)"
 
+      # NOTE: GITHUB_TOKEN can create PRs only when the repo setting
+      # "Settings → Actions → General → Allow GitHub Actions to create
+      # and approve pull requests" is enabled. If not, set a RELEASE_PAT
+      # repo secret with a PAT scoped to `repo` + `workflow`.
       - name: Open release PR
         if: steps.check.outputs.skip != 'true'
         id: cpr
