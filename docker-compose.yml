@@ -149,11 +149,9 @@ services:
     restart: unless-stopped
     networks:
       - observability
-    depends_on:
-      prometheus:
-        condition: service_healthy
-      loki:
-        condition: service_healthy
+    # No depends_on prometheus/loki — they live in the demo profile and
+    # mcp-server must be able to start standalone (pointing at external
+    # backends or with sources added later via the Web UI).
 
   # --- AI Agent (demo) ---
   agent:
