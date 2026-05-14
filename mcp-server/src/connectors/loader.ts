@@ -8,6 +8,7 @@ import { manifestSchema } from "../sdk/manifest-schema.js";
 import { PrometheusConnector } from "./prometheus.js";
 import { LokiConnector } from "./loki.js";
 import { sanitizeForLog } from "../util/sanitize.js";
+import { instrumentConnector } from "../metrics/instrument-connector.js";
 
 export interface LoadedConnector {
   /** Connector type id, e.g. "prometheus". Matches `source.type` in sources.yaml. */
@@ -79,7 +80,7 @@ export class PluginLoader {
       // this becomes a real pattern.
       throw new Error(`Connector ${name} returned a Promise; async factories not yet wired`);
     }
-    return c;
+    return instrumentConnector(c);
   }
 
   private loadBuiltins(): void {
