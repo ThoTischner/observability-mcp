@@ -1,0 +1,119 @@
+name: Helm chart integration test
+
+# Spins up a real (kind) cluster, installs the chart, waits for
+# readiness, runs `helm test`, then re-installs with a more demanding
+# values matrix (auth on, ingress on, serviceMonitor on, NetworkPolicy
+# on, autoscaling on) to catch template regressions.
+#
+# Triggered on PRs that touch the chart and on every push to main.
+# Cheaper than the full docker-compose smoke (~3-4 min) and exercises
+# k8s-specific paths the compose smoke can't.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'helm/**'
+      - '.github/workflows/helm-integration.yml'
+  pull_request:
+    paths:
+      - 'helm/**'
+      - 'mcp-server/Dockerfile'
+      - '.github/workflows/helm-integration.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  helm-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up kind cluster
+        uses: helm/kind-action@v1.12.0
+        with:
+          version: v0.24.0
+          node_image: kindest/node:v1.31.0
+          cluster_name: helm-it
+          wait: 90s
+
+      - name: Install Helm
+        uses: azure/setup-helm@v5
+        with:
+          version: v3.16.2
+
+      - name: Build mcp-server image
+        run: docker build -t observability-mcp:it ./mcp-server
+
+      - name: Load image into kind
+        run: kind load docker-image observability-mcp:it --name helm-it
+
+      - name: Lint chart
+        run: helm lint helm/observability-mcp
+
+      # --- Scenario 1: default install ---
+      - name: Install (default values)
+        run: |
+          helm install obs ./helm/observability-mcp \
+            --set image.repository=observability-mcp \
+            --set image.tag=it \
+            --set image.pullPolicy=Never \
+            --wait --timeout 3m
+
+      - name: Wait for pod Ready
+        run: |
+          kubectl wait --for=condition=Ready pod \
+            -l app.kubernetes.io/name=observability-mcp \
+            --timeout=120s
+
+      - name: helm test (default install)
+        run: helm test obs --timeout 60s
+
+      - name: Probe /api/info inside the cluster
+        run: |
+          pod=$(kubectl get pod -l app.kubernetes.io/name=observability-mcp -o jsonpath='{.items[0].metadata.name}')
+          kubectl exec "$pod" -- wget -qO- http://localhost:3000/api/info | head -c 400
+          echo
+
+      - name: Uninstall (default)
+        run: helm uninstall obs
+
+      # --- Scenario 2: full opt-in values matrix ---
+      - name: Install (auth + ingress + scrape + NetworkPolicy + HPA)
+        run: |
+          helm install obs ./helm/observability-mcp \
+            --set image.repository=observability-mcp \
+            --set image.tag=it \
+            --set image.pullPolicy=Never \
+            --set auth.enabled=true \
+            --set auth.token=testtoken \
+            --set ingress.enabled=true \
+            --set ingress.className=nginx \
+            --set scrapeAnnotations.enabled=true \
+            --set networkPolicy.enabled=true \
+            --set autoscaling.enabled=true \
+            --set persistence.enabled=true \
+            --wait --timeout 3m
+
+      - name: Verify HPA + NetworkPolicy + Secret rendered
+        run: |
+          kubectl get hpa obs-observability-mcp
+          kubectl get networkpolicy obs-observability-mcp
+          kubectl get secret obs-observability-mcp-auth -o jsonpath='{.data.token}' | base64 -d | grep -q testtoken
+
+      - name: helm test (full matrix)
+        run: helm test obs --timeout 60s
+
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          kubectl get pods -A
+          kubectl describe pod -l app.kubernetes.io/name=observability-mcp || true
+          kubectl logs -l app.kubernetes.io/name=observability-mcp --tail=200 || true
+
+      - name: Uninstall (full matrix)
+        if: always()
+        run: helm uninstall obs || true
