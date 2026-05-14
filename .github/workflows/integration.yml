@@ -28,7 +28,7 @@ jobs:
             if [ -n "$body" ] && [ "$(echo "$body" | jq 'type')" = '"array"' ]; then
               echo "$body" | jq '[.[] | {name, type, status}]'
               total=$(echo "$body" | jq 'length')
-              ok=$(echo "$body" | jq '[.[] | select(.status == "connected")] | length')
+              ok=$(echo "$body" | jq '[.[] | select(.status == "up")] | length')
               if [ "$total" -gt 0 ] && [ "$total" = "$ok" ]; then
                 echo "all $total sources connected"
                 exit 0
