@@ -83,10 +83,23 @@ graph TB
 | Method | Command | Best for |
 |--------|---------|----------|
 | **npm** | `npx @thotischner/observability-mcp` | Local dev, Node toolchains, zero install |
-| **Docker (GHCR)** | `docker run -p 3000:3000 ghcr.io/thotischner/observability-mcp:latest` | Production, Kubernetes, isolation |
-| **From source** | `git clone … && docker compose --profile demo up` | Full POC with example services and chaos |
+| **Docker (GHCR)** | `docker run -p 3000:3000 ghcr.io/thotischner/observability-mcp:latest` | Production hosts, isolation |
+| **Helm** | `helm repo add observability-mcp https://thotischner.github.io/observability-mcp/`<br>`helm install observability-mcp observability-mcp/observability-mcp` | Kubernetes |
+| **From source** | `git clone … && make demo` | Full POC with example services and chaos |
 
 GHCR is multi-arch (amd64 + arm64). Available tags: `latest`, `main`, `X.Y.Z`, `X.Y`, `X`, `sha-<commit>`. Note: the leading `v` is stripped from semver tags.
+
+### Helm chart
+
+The chart ships with Deployment, Service, optional Ingress/PVC/HPA, NetworkPolicy, ServiceMonitor (auto-gated on the Prometheus Operator CRD), `helm test` connection probe, and `values.schema.json` validation. ArtifactHub-grade annotations. See [`helm/observability-mcp/`](./helm/observability-mcp/) for the full values reference, or the [airgapped deployment guide](docs/airgapped-deployment.md) for a hardened production example.
+
+```bash
+helm repo add observability-mcp https://thotischner.github.io/observability-mcp/
+helm repo update
+helm install observability-mcp observability-mcp/observability-mcp \
+  --set sources.prometheusUrl=http://prometheus.monitoring.svc.cluster.local:9090 \
+  --set sources.lokiUrl=http://loki.logging.svc.cluster.local:3100
+```
 
 ```yaml
 # docker-compose snippet
