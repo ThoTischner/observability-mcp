@@ -1,0 +1,167 @@
+# Connector plugin architecture
+
+Status: design — implementation tracked in [#46+]
+Last updated: 2026-05-14
+
+## Goals
+
+1. **Connectors are optional.** The MCP server starts and serves `tools/list` with zero connectors; users add Prometheus, Loki, Tempo, OpenSearch, Datadog, etc. on demand.
+2. **No build needed to add a connector.** Drop a tarball / npm package into the right place, point a config line at it, restart. No code changes to the server.
+3. **Airgapped works.** No runtime network access required to load a connector. All resolution from local filesystem or the container image.
+4. **Versioned, signed, discoverable.** A future *connector hub* (think Confluent Hub for Kafka Connect) hosts connector packages with signed manifests; the CLI can install from the hub or a private mirror.
+5. **Backwards compatible during rollout.** The existing `PrometheusConnector` and `LokiConnector` keep working through a builtin-shim before they get extracted into separate packages.
+
+## Non-goals (for v1)
+
+- Hot-reload of connector code without server restart. (Stretch goal — possible with `vm.Module` but adds complexity.)
+- Multi-language connectors. The plugin contract is JavaScript/TypeScript; non-JS backends still get connectors written in TS that wrap their HTTP API. (This may change with the connector hub.)
+- A separate sandboxed permission model per connector. Connectors run in the same process and trust the server.
+
+## The contract
+
+A connector plugin is an npm package (or directory) that:
+
+1. Has a `package.json` with the field
+   ```json
+   "observabilityMcp": {
+     "kind": "connector",
+     "name": "prometheus",
+     "manifest": "./manifest.json"
+   }
+   ```
+   The `name` is the unique connector type id used in `sources.yaml` (`type: prometheus`).
+
+2. Ships a `manifest.json` declaring metadata used by the server and the hub UI:
+   ```json
+   {
+     "schemaVersion": 1,
+     "name": "prometheus",
+     "displayName": "Prometheus",
+     "version": "1.0.0",
+     "description": "PromQL-based metrics backend.",
+     "signalTypes": ["metrics"],
+     "homepage": "https://github.com/.../connector-prometheus",
+     "license": "MIT",
+     "logo": "./logo.svg",
+     "configSchema": {
+       "$schema": "https://json-schema.org/draft/2020-12/schema",
+       "type": "object",
+       "required": ["url"],
+       "properties": {
+         "url":  { "type": "string", "format": "uri" },
+         "auth": { "$ref": "#/$defs/auth" }
+       }
+     },
+     "capabilities": {
+       "queryMetrics": true,
+       "queryLogs":    false,
+       "listServices": true
+     },
+     "compat": {
+       "serverVersion": ">=1.4.0"
+     }
+   }
+   ```
+
+3. Exports a default factory:
+   ```ts
+   import type { ObservabilityConnector } from "@thotischner/observability-mcp/sdk";
+
+   export default function createConnector(): ObservabilityConnector {
+     return new PrometheusConnector();
+   }
+   ```
+   The factory is async-tolerant; the server `await`s it.
+
+4. (Optional) Ships an integration test that the hub can run before publishing:
+   ```
+   npm test  # exits 0 if the connector can connect/disconnect against a recorded mock
+   ```
+
+The server's existing `ObservabilityConnector` TypeScript interface stays the source of truth and is published as `@thotischner/observability-mcp/sdk` so plugin authors don't pull in the whole server.
+
+## Loading mechanism
+
+The server has three loading sources, applied in order. Higher in the list wins on name collision.
+
+1. **Builtin shim** — for v1 only. The shim exposes `prometheus` and `loki` as if they were external plugins. Lets us roll out the plugin layer first, then extract the two connectors in a follow-up PR with zero user-facing change.
+
+2. **Filesystem plugins** — the server scans `${PLUGINS_DIR:-/app/plugins}` at startup for sub-directories containing a `package.json` with the `observabilityMcp` marker. This is the canonical install path for:
+   - **Air-gapped deployments** — operator copies the tarball into the image at build time or mounts a ConfigMap-extracted dir.
+   - **Helm chart** — the chart's `values.yaml` will accept a `plugins:` list that mounts each as an init-container-extracted volume.
+
+3. **`plugins:` block in `sources.yaml`** — optional, for explicit pinning when the dir scan would otherwise pick up the wrong version:
+   ```yaml
+   plugins:
+     - name: prometheus
+       version: 1.2.0       # picks /app/plugins/prometheus-1.2.0 over a bare prometheus dir
+   ```
+
+The order matters because air-gapped users typically pre-stage `/app/plugins` and want the server to honor that without writing config.
+
+A registered plugin is just a row in a `Map<string, { factory: () => Connector, manifest: Manifest }>`. The existing `connectorFactories` map in `registry.ts` gets replaced by this loader's output.
+
+## Air-gapped: how it actually works
+
+The pain point of airgapped setups is **no `npm install` at runtime**, no GitHub access, no registry. The plugin architecture exists in large part to solve this cleanly.
+
+Three supported workflows:
+
+- **Bundled image.** The Dockerfile copies a `plugins/` dir into the image. Operators rebuild the image when they want a new connector. CI builds an `:airgap-bundle` tag that includes every blessed connector.
+
+- **Mounted volume (k8s).** The Helm chart accepts:
+  ```yaml
+  plugins:
+    image: registry.internal/observability-mcp-plugins:1.0.0   # an OCI image that *only* contains plugins/
+    paths:
+      - prometheus
+      - loki
+      - tempo
+  ```
+  This translates into an init container that extracts the listed paths from the plugin image into an `emptyDir` mounted at `/app/plugins`. No registry access from the main container.
+
+- **Sideloaded tarballs.** For VM / bare-metal deployments, operators `wget <url>` the connector tarball, `tar -xzf` into `/app/plugins/`, restart. The tarball is a published `*.tgz` from the hub (or a mirror) — the same format `npm pack` produces.
+
+Signing: each tarball is accompanied by a sigstore signature published alongside. The server's `--verify-plugins=true` flag (default in prod) checks the signature against a configured trust root before loading.
+
+## The connector hub
+
+Long-term — out of v1 scope but the architecture above is shaped by it.
+
+- A static catalog (think `helm/charts` repo): a Git repo where each connector's manifest, signed tarball URL, screenshots, and changelog live.
+- A web UI at `hub.observability-mcp.dev` (or similar) that browses the catalog. Search by signal type, capability, vendor.
+- A CLI command `observability-mcp install <name>` that:
+  1. Fetches the manifest from the catalog
+  2. Verifies the signature
+  3. Downloads the tarball into `${PLUGINS_DIR}/<name>-<version>/`
+  4. Hot-load via SIGHUP if the server supports it, otherwise prompts to restart.
+- A "third-party / certified / official" rating tiers, like Confluent Hub.
+- Telemetry-free by default. The hub serves static files; no install pingback.
+
+The hub *publishes* tarballs but does not host the server. Operators can mirror the catalog into their own static-file CDN with a single rsync.
+
+## Implementation milestones
+
+These will be separate PRs so each can pass smoke independently:
+
+| PR | Scope |
+|----|-------|
+| 1  | Extract `ObservabilityConnector` and types into `mcp-server/src/sdk/` and re-export. No behavior change. |
+| 2  | Replace `registry.ts:connectorFactories` with a `PluginLoader` that walks builtin → filesystem → config-pinned. Builtin shim wraps current prometheus/loki connectors. |
+| 3  | Add `PLUGINS_DIR` env, document it. Plugin scan + manifest validation against a Zod schema. Per-plugin enable/disable. |
+| 4  | Publish `@thotischner/observability-mcp-sdk` to npm. Move the prometheus connector into its own package, mark the shim as deprecated. |
+| 5  | Loki connector → own package. |
+| 6  | Sigstore verification (`--verify-plugins`). Document the trust root setup. |
+| 7  | Helm chart: `plugins.image` + init container extraction. |
+| 8  | Connector hub catalog repo + minimal static site. |
+
+The first three PRs unlock airgapped deployments. Everything after is incremental polish.
+
+## Open questions
+
+- **Plugin process model.** Same-process for v1. Re-evaluate if a malicious connector becomes a real threat — could move to worker_threads with a message-passed adapter; needs cost/benefit analysis.
+- **Versioning.** Manifest declares `compat.serverVersion`. We need a clear deprecation policy if/when the connector interface changes.
+- **Permissions.** Should a connector be able to read environment variables freely? For airgapped customers with strict separation this is a question; default-allow for v1, tighten later if there's demand.
+- **Tool-level extensibility.** Connectors are scoped to backends. Pure tool extensions (e.g. a `slack_notify` tool) belong in a separate plugin kind (`kind: "tool"`) — out of scope for v1.
+
+Feedback welcome on the PR.
