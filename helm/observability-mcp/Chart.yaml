@@ -4,7 +4,7 @@ description: Unified observability gateway for AI agents — one MCP server for 
 type: application
 
 # Chart version (this chart). Bumped on chart changes.
-version: 0.1.0
+version: 0.2.0
 
 # App version (the mcp-server image tag the chart defaults to).
 # Update with each release of the mcp-server image.
@@ -44,3 +44,18 @@ annotations:
   artifacthub.io/containsSecurityUpdates: "false"
   artifacthub.io/operator: "false"
   artifacthub.io/prerelease: "false"
+  artifacthub.io/images: |
+    - name: observability-mcp
+      image: ghcr.io/thotischner/observability-mcp:1.3.4
+      platforms:
+        - linux/amd64
+        - linux/arm64
+  artifacthub.io/changes: |
+    - kind: added
+      description: Helm test pod (`helm test <release>`) that probes /readyz on the service
+    - kind: added
+      description: Optional prometheus.io/scrape annotations on the Service for clusters without prometheus-operator
+    - kind: added
+      description: NOTES.txt with post-install instructions for accessing UI, configuring sources, and Claude Code wiring
+    - kind: added
+      description: artifacthub.io/images and artifacthub.io/changes annotations
