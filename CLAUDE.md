@@ -6,10 +6,12 @@ This project is fully containerized. **Never run `npm install` on the host machi
 
 ### Quick Start
 ```bash
-docker-compose up --build
+docker compose --profile demo up --build
 ```
 
 All 8 containers start with health checks. Services generate traffic automatically.
+
+Without `--profile demo`, only `mcp-server` runs — for production deployments where Prometheus/Loki are managed elsewhere.
 
 ### Rebuild a Single Service
 ```bash
