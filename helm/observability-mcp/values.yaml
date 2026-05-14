@@ -144,10 +144,22 @@ probes:
     periodSeconds: 10
     timeoutSeconds: 3
 
-# Optional NetworkPolicy locking egress to declared sources only.
-# Out of scope for the v0.1 skeleton — wire when sources have hostnames.
+# Optional NetworkPolicy.
+# Defaults: ingress from any in-cluster namespace, egress to kube-dns only.
+# Override `ingress`/`egress` with full rule lists for stricter posture.
 networkPolicy:
   enabled: false
+  ingress: []
+  egress: []
+
+# Prometheus Operator ServiceMonitor — only renders if the CRD is installed.
+serviceMonitor:
+  enabled: false
+  path: /metrics
+  interval: 30s
+  scrapeTimeout: 10s
+  labels: {}
+  relabelings: []
 
 # Service account token mounting — disable for stricter pods.
 automountServiceAccountToken: false
