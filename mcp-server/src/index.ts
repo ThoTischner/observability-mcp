@@ -6,6 +6,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { z } from "zod";
 import { loadConfig, saveConfig, DEFAULT_HEALTH_THRESHOLDS, DEFAULT_SETTINGS } from "./config/loader.js";
 import { ConnectorRegistry, getSupportedTypes } from "./connectors/registry.js";
+import { getPluginLoader } from "./connectors/loader.js";
 import { listSourcesHandler } from "./tools/list-sources.js";
 import { listServicesHandler } from "./tools/list-services.js";
 import { queryMetricsHandler } from "./tools/query-metrics.js";
@@ -58,6 +59,7 @@ function validateSourceUrl(url: string): string | null {
 
 async function main() {
   let config = loadConfig();
+  await getPluginLoader().load();
   const registry = new ConnectorRegistry();
   await registry.initialize(config);
   applyConfigToRuntime(config, registry);
