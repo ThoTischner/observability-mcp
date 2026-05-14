@@ -8,7 +8,15 @@ kind: Pod
 metadata:
   name: {{ include "observability-mcp.fullname" . }}-test-connection
   labels:
-    {{- include "observability-mcp.labels" . | nindent 4 }}
+    # Intentionally NOT using selectorLabels — the chart's NetworkPolicy
+    # podSelector targets the mcp-server pods, and inheriting those
+    # labels would put the test pod under the same egress restriction
+    # (DNS-only) so it couldn't reach the service it's meant to probe.
+    # A standalone "component: test" label keeps it isolated.
+    helm.sh/chart: {{ include "observability-mcp.chart" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/component: test
   annotations:
     "helm.sh/hook": test
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
@@ -29,14 +37,16 @@ spec:
           set -eu
           host="{{ include "observability-mcp.fullname" . }}"
           port="{{ .Values.service.port }}"
-          for i in $(seq 1 30); do
+          # 60 attempts × 2s = 120s — must stay under the `helm test
+          # --timeout` the caller uses (default workflow uses 180s).
+          for i in $(seq 1 60); do
             if wget -q -O- "http://${host}:${port}/readyz" >/dev/null; then
-              echo "readyz OK"
+              echo "readyz OK on attempt $i"
               exit 0
             fi
             sleep 2
           done
-          echo "readyz never responded"
+          echo "readyz never responded after 60 attempts"
           exit 1
       securityContext:
         allowPrivilegeEscalation: false
