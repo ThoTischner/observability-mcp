@@ -1,0 +1,11 @@
+# ArtifactHub repository metadata.
+# Picked up automatically by the ArtifactHub scanner when this repo is
+# registered as a Helm chart source.
+# Spec: https://artifacthub.io/docs/topics/repositories/
+
+repositoryID: ""    # set after first claim — ArtifactHub assigns one
+owners:
+  - name: ThoTischner
+    email: info@holzbau-konfigurator.de
+
+ignore: []          # no chart paths to ignore — only helm/observability-mcp/
