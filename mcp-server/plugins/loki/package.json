@@ -1,0 +1,14 @@
+{
+  "name": "@observability-mcp/connector-loki",
+  "version": "1.0.0",
+  "description": "Loki connector for observability-mcp.",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "license": "MIT",
+  "observabilityMcp": {
+    "kind": "connector",
+    "name": "loki",
+    "manifest": "./manifest.json"
+  }
+}
