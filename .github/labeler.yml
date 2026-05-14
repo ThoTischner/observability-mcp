@@ -1,0 +1,61 @@
+# Path-based PR labels. Picked up by .github/workflows/labeler.yml.
+# Spec: https://github.com/actions/labeler
+
+server:
+  - changed-files:
+      - any-glob-to-any-file: 'mcp-server/src/**'
+
+ui:
+  - changed-files:
+      - any-glob-to-any-file: 'mcp-server/src/ui/**'
+
+connector:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'mcp-server/src/connectors/**'
+          - 'mcp-server/plugins/**'
+          - 'mcp-server/src/sdk/**'
+
+agent:
+  - changed-files:
+      - any-glob-to-any-file: 'agent/**'
+
+helm:
+  - changed-files:
+      - any-glob-to-any-file: 'helm/**'
+
+docker:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'mcp-server/Dockerfile'
+          - 'agent/Dockerfile'
+          - 'example-services/Dockerfile'
+          - 'docker-compose.yml'
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file: '.github/workflows/**'
+
+docs:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'docs/**'
+          - 'README.md'
+          - 'CHANGELOG.md'
+          - 'CONTRIBUTING.md'
+          - 'SECURITY.md'
+
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '**/package.json'
+          - '**/package-lock.json'
+          - '.github/dependabot.yml'
+
+security:
+  - changed-files:
+      - any-glob-to-any-file: 'SECURITY.md'
+  - head-branch: ['^security/', '^cve/']
+
+release:
+  - head-branch: ['^release/', '^chore/release']
