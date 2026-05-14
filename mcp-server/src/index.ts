@@ -7,6 +7,7 @@ import { z } from "zod";
 import { loadConfig, saveConfig, DEFAULT_HEALTH_THRESHOLDS, DEFAULT_SETTINGS } from "./config/loader.js";
 import { ConnectorRegistry, getSupportedTypes } from "./connectors/registry.js";
 import { getPluginLoader } from "./connectors/loader.js";
+import { selfRegistry } from "./metrics/self.js";
 import { listSourcesHandler } from "./tools/list-sources.js";
 import { listServicesHandler } from "./tools/list-services.js";
 import { queryMetricsHandler } from "./tools/query-metrics.js";
@@ -155,6 +156,17 @@ async function main() {
     res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
     next();
   });
+
+  // Self-monitoring — Prometheus scrape endpoint.
+  // Disabled with METRICS_ENABLED=false for environments that prefer
+  // sidecar agents. The Helm chart's ServiceMonitor template targets
+  // this endpoint when enabled.
+  if (process.env.METRICS_ENABLED !== "false") {
+    app.get("/metrics", async (_req, res) => {
+      res.set("Content-Type", selfRegistry.contentType);
+      res.end(await selfRegistry.metrics());
+    });
+  }
 
   // Serve Web UI
   app.use(express.static(join(__dirname, "ui")));
