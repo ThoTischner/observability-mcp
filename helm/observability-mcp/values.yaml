@@ -156,6 +156,14 @@ networkPolicy:
   ingress: []
   egress: []
 
+# Vanilla `prometheus.io/*` scrape annotations on the Service. Use when
+# the cluster Prometheus uses kubernetes_sd_configs without the
+# prometheus-operator. If you DO run the operator, leave this off and
+# turn on `serviceMonitor.enabled` instead.
+scrapeAnnotations:
+  enabled: false
+  path: /metrics
+
 # Prometheus Operator ServiceMonitor — only renders if the CRD is installed.
 serviceMonitor:
   enabled: false

@@ -1,0 +1,54 @@
+observability-mcp {{ .Chart.AppVersion }} installed in namespace {{ .Release.Namespace }}.
+
+1. Find the deployed pod:
+     kubectl get pods --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "observability-mcp.name" . }},app.kubernetes.io/instance={{ .Release.Name }}"
+
+2. Reach the Web UI / MCP endpoint:
+{{- if .Values.ingress.enabled }}
+{{- range $h := .Values.ingress.hosts }}
+     http{{ if $.Values.ingress.tls }}s{{ end }}://{{ $h.host }}{{ (index $h.paths 0).path }}
+{{- end }}
+{{- else if contains "NodePort" .Values.service.type }}
+     export NODE_PORT=$(kubectl get -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "observability-mcp.fullname" . }} -n {{ .Release.Namespace }})
+     export NODE_IP=$(kubectl get nodes -o jsonpath="{.items[0].status.addresses[0].address}")
+     echo "http://${NODE_IP}:${NODE_PORT}"
+{{- else if contains "LoadBalancer" .Values.service.type }}
+     kubectl get svc -n {{ .Release.Namespace }} {{ include "observability-mcp.fullname" . }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+{{- else }}
+     kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "observability-mcp.fullname" . }} 3000:{{ .Values.service.port }}
+     # then open http://localhost:3000
+{{- end }}
+
+3. Add observability backends — either point the MCP server at the URLs:
+{{- if not .Values.sources.prometheusUrl }}
+     helm upgrade {{ .Release.Name }} ./observability-mcp \
+       --reuse-values \
+       --set sources.prometheusUrl=http://prometheus.monitoring.svc:9090 \
+       --set sources.lokiUrl=http://loki.logging.svc:3100
+{{- else }}
+     prometheus: {{ .Values.sources.prometheusUrl | quote }}
+     loki:       {{ .Values.sources.lokiUrl | quote }}
+{{- end }}
+
+   …or use the Web UI's Sources page once the pod is reachable.
+
+4. Plug into Claude Code:
+     claude mcp add observability \
+       --transport http \
+       http{{ if .Values.ingress.tls }}s{{ end }}://YOUR-HOST/mcp{{ if .Values.auth.enabled }} \
+       --header "Authorization: Bearer <token>"{{ end }}
+
+{{- if not .Values.auth.enabled }}
+
+⚠  Auth is disabled. /mcp accepts unauthenticated calls — set
+   `auth.enabled=true` + `auth.token=…` (or `auth.existingSecret=…`)
+   before exposing externally.
+{{- end }}
+
+{{- if and (gt (int .Values.replicaCount) 1) (not (and .Values.ingress.enabled .Values.ingress.annotations)) }}
+
+⚠  replicaCount={{ .Values.replicaCount }} without sticky-session ingress will
+   fragment MCP Streamable HTTP sessions across replicas. See README.md.
+{{- end }}
+
+Manifest, README, and source: https://github.com/ThoTischner/observability-mcp
