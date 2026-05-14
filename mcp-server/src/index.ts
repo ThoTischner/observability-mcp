@@ -8,6 +8,7 @@ import { loadConfig, saveConfig, DEFAULT_HEALTH_THRESHOLDS, DEFAULT_SETTINGS } f
 import { ConnectorRegistry, getSupportedTypes } from "./connectors/registry.js";
 import { getPluginLoader } from "./connectors/loader.js";
 import { selfRegistry, withToolMetrics, apiRequests, mcpActiveSessions } from "./metrics/self.js";
+import { buildOpenApiSpec } from "./openapi.js";
 import { listSourcesHandler } from "./tools/list-sources.js";
 import { listServicesHandler } from "./tools/list-services.js";
 import { queryMetricsHandler } from "./tools/query-metrics.js";
@@ -193,6 +194,11 @@ async function main() {
   app.get("/readyz", (_req, res) => {
     if (ready) return res.type("text").send("ok");
     return res.status(503).type("text").send("starting");
+  });
+
+  // OpenAPI 3.1 document for the /api/* surface.
+  app.get("/api/openapi.json", (_req, res) => {
+    res.json(buildOpenApiSpec(SERVER_VERSION));
   });
 
   // Self-monitoring — Prometheus scrape endpoint.
