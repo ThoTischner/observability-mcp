@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "name": "prometheus",
+  "displayName": "Prometheus",
+  "version": "1.0.0",
+  "description": "PromQL-based metrics backend with prom-client default scrape support and dynamic service-label resolution.",
+  "signalTypes": ["metrics"],
+  "license": "MIT",
+  "capabilities": {
+    "queryMetrics": true,
+    "listServices": true,
+    "listAvailableMetrics": true
+  },
+  "compat": {
+    "serverVersion": ">=1.4.0"
+  }
+}
