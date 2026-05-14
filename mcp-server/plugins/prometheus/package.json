@@ -1,0 +1,14 @@
+{
+  "name": "@observability-mcp/connector-prometheus",
+  "version": "1.0.0",
+  "description": "Prometheus connector for observability-mcp.",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "license": "MIT",
+  "observabilityMcp": {
+    "kind": "connector",
+    "name": "prometheus",
+    "manifest": "./manifest.json"
+  }
+}
