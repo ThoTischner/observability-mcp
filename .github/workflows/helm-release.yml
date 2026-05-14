@@ -1,0 +1,62 @@
+name: Publish Helm chart
+
+# Publishes the chart at helm/observability-mcp/ to a gh-pages branch
+# (Helm chart-releaser convention). Operators can then:
+#   helm repo add observability-mcp https://thotischner.github.io/observability-mcp
+#   helm install obs ./observability-mcp/observability-mcp
+#
+# Triggered on tag push (so the chart version matches the app release)
+# or manually. ArtifactHub picks up the index via the gh-pages URL.
+
+on:
+  push:
+    tags: ['v*']
+    paths:
+      - 'helm/**'
+      - '.github/workflows/helm-release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.0
+
+      - name: Lint chart
+        run: helm lint helm/observability-mcp
+
+      - name: Template chart (smoke)
+        run: |
+          helm template smoke helm/observability-mcp \
+            --set sources.prometheusUrl=http://prometheus:9090 \
+            --set ingress.enabled=true \
+            --set auth.enabled=true \
+            --set auth.token=test \
+            --set persistence.enabled=true \
+            --set autoscaling.enabled=true > /tmp/rendered.yaml
+          wc -l /tmp/rendered.yaml
+
+      - name: Run chart-releaser
+        uses: helm/chart-releaser-action@v1.6.0
+        with:
+          charts_dir: helm
+          mark_as_latest: "true"
+          skip_existing: "true"
+        env:
+          CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
