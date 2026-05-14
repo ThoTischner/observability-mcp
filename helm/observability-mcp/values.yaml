@@ -127,22 +127,26 @@ nodeSelector: {}
 tolerations: []
 affinity: {}
 
-# Liveness / readiness — server exposes /api/health (200 when up).
+# Liveness / readiness — root-level /healthz and /readyz (k8s convention).
+# /healthz returns 200 once the event loop is alive.
+# /readyz returns 200 once the HTTP listener is up; sources are runtime-
+# configurable so source presence is not a readiness signal.
 probes:
   liveness:
     httpGet:
-      path: /api/health
+      path: /healthz
       port: http
     initialDelaySeconds: 10
     periodSeconds: 20
     timeoutSeconds: 3
   readiness:
     httpGet:
-      path: /api/sources
+      path: /readyz
       port: http
-    initialDelaySeconds: 5
-    periodSeconds: 10
+    initialDelaySeconds: 2
+    periodSeconds: 5
     timeoutSeconds: 3
+    failureThreshold: 6
 
 # Optional NetworkPolicy.
 # Defaults: ingress from any in-cluster namespace, egress to kube-dns only.
