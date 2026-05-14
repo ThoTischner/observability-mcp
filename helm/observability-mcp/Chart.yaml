@@ -4,7 +4,7 @@ description: Unified observability gateway for AI agents — one MCP server for 
 type: application
 
 # Chart version (this chart). Bumped on chart changes.
-version: 0.3.0
+version: 0.4.0
 
 # App version (the mcp-server image tag the chart defaults to).
 # Update with each release of the mcp-server image.
@@ -44,6 +44,9 @@ annotations:
   artifacthub.io/containsSecurityUpdates: "false"
   artifacthub.io/operator: "false"
   artifacthub.io/prerelease: "false"
+  artifacthub.io/signKey: |
+    fingerprint: 2F1AA15DCD2A730001FEDDFCE82E1048DA28BDCD
+    url: https://raw.githubusercontent.com/ThoTischner/observability-mcp/main/docs/helm-signing.pub.asc
   artifacthub.io/images: |
     - name: observability-mcp
       image: ghcr.io/thotischner/observability-mcp:1.4.0
@@ -51,6 +54,10 @@ annotations:
         - linux/amd64
         - linux/arm64
   artifacthub.io/changes: |
+    - kind: added
+      description: GPG signing of chart packages — \"signed\" badge on ArtifactHub
+    - kind: fixed
+      description: Chart icon points at an existing SVG (logo.png 404 fixed)
     - kind: added
       description: values.schema.json — Helm validates input types before render
     - kind: added
