@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for reporting. **Security issues** go to `info@holzbau-konfigurator.de` or a private advisory — see [SECURITY.md](../SECURITY.md). Don't paste vuln details here.
+        Thanks for reporting. **Security issues** go to `ai-solutions-camp@email.de` or a private advisory — see [SECURITY.md](../SECURITY.md). Don't paste vuln details here.
 
   - type: textarea
     id: what
