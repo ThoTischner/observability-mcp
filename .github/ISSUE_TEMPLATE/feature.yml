@@ -1,0 +1,43 @@
+name: Feature request
+description: Propose something new for observability-mcp.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What's the problem?
+      description: |
+        Skip if it's obvious. Otherwise, what are you actually trying to do —
+        and what gets in your way today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like to see?
+      description: One concrete option is enough. Don't enumerate every alternative.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Which area?
+      multiple: true
+      options:
+        - MCP server / tools
+        - Web UI
+        - Connector / plugin
+        - Helm chart
+        - Docs
+        - CI / release
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Considered alternatives
+      description: Optional. Note anything you already ruled out and why.

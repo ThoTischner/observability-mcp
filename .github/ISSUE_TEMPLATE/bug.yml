@@ -1,0 +1,61 @@
+name: Bug report
+description: Something is wrong with observability-mcp.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. **Security issues** go to `info@holzbau-konfigurator.de` or a private advisory — see [SECURITY.md](../SECURITY.md). Don't paste vuln details here.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      placeholder: Steps to reproduce, the smaller the better.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: From `/api/info` or `docker inspect` — image digest or git SHA preferred.
+      placeholder: "v1.3.4 or sha-abc1234"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: How are you running it?
+      options:
+        - npx
+        - Docker (compose)
+        - Docker (single container)
+        - Kubernetes (Helm chart)
+        - From source
+    validations:
+      required: true
+
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: Node version, OS, relevant env vars. Redact secrets.
+      render: text
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: |
+        Output from `docker logs <container>` or the relevant excerpt from the
+        server logs. Trim aggressively — only what's needed.
+      render: text
