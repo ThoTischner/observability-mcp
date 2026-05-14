@@ -62,29 +62,43 @@ jobs:
             curl -fsS "http://localhost:${port}/health"
           done
 
-      - name: MCP Streamable HTTP — initialize handshake
+      - name: MCP Streamable HTTP — initialize, list tools, list resources
         run: |
           set -euo pipefail
-          # MCP Streamable HTTP requires Accept: application/json, text/event-stream
-          resp=$(curl -fsS -X POST http://localhost:3000/mcp \
-            -H 'Content-Type: application/json' \
-            -H 'Accept: application/json, text/event-stream' \
-            -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"ci-smoke","version":"1.0"}}}')
-          echo "$resp" | head -50
-          echo "$resp" | grep -q '"serverInfo"' || (echo "initialize did not return serverInfo"; exit 1)
+          # MCP Streamable HTTP transport: initialize returns Mcp-Session-Id
+          # header which must be replayed on subsequent calls. Responses are
+          # SSE-framed (lines prefixed with "data: ").
+          hdr=/tmp/mcp-hdr
+          body=/tmp/mcp-body
 
-      - name: MCP — list tools
-        run: |
-          set -euo pipefail
-          resp=$(curl -fsS -X POST http://localhost:3000/mcp \
+          curl -sS -D "$hdr" -o "$body" -X POST http://localhost:3000/mcp \
             -H 'Content-Type: application/json' \
             -H 'Accept: application/json, text/event-stream' \
-            -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}')
-          echo "$resp" | head -100
-          # Expect the core tools registered in mcp-server/src/index.ts
+            -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"ci-smoke","version":"1.0"}}}'
+          echo "--- init headers ---"; cat "$hdr"
+          echo "--- init body ---";    cat "$body"
+
+          sid=$(grep -i '^mcp-session-id:' "$hdr" | awk '{print $2}' | tr -d '\r\n')
+          [ -n "$sid" ] || (echo "no mcp-session-id returned"; exit 1)
+          grep -q '"serverInfo"' "$body" || (echo "initialize did not return serverInfo"; exit 1)
+
+          # Required follow-up per spec
+          curl -fsS -X POST http://localhost:3000/mcp \
+            -H "Mcp-Session-Id: $sid" \
+            -H 'Content-Type: application/json' \
+            -H 'Accept: application/json, text/event-stream' \
+            -d '{"jsonrpc":"2.0","method":"notifications/initialized"}' >/dev/null || true
+
+          curl -fsS -X POST http://localhost:3000/mcp \
+            -H "Mcp-Session-Id: $sid" \
+            -H 'Content-Type: application/json' \
+            -H 'Accept: application/json, text/event-stream' \
+            -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' -o "$body"
+          echo "--- tools/list ---"; cat "$body"
           for t in list_sources list_services query_metrics query_logs get_service_health detect_anomalies; do
-            echo "$resp" | grep -q "\"$t\"" || (echo "missing tool: $t"; exit 1)
+            grep -q "\"$t\"" "$body" || (echo "missing tool: $t"; exit 1)
           done
+          echo "all 6 tools advertised"
 
       - name: Trigger a chaos mode and verify it sticks
         run: |
