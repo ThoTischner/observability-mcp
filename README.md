@@ -84,7 +84,7 @@ graph TB
 |--------|---------|----------|
 | **npm** | `npx @thotischner/observability-mcp` | Local dev, Node toolchains, zero install |
 | **Docker (GHCR)** | `docker run -p 3000:3000 ghcr.io/thotischner/observability-mcp:latest` | Production, Kubernetes, isolation |
-| **From source** | `git clone … && docker-compose up` | Full POC with example services and chaos |
+| **From source** | `git clone … && docker compose --profile demo up` | Full POC with example services and chaos |
 
 GHCR is multi-arch (amd64 + arm64). Available tags: `latest`, `main`, `X.Y.Z`, `X.Y`, `X`, `sha-<commit>`. Note: the leading `v` is stripped from semver tags.
 
@@ -154,10 +154,12 @@ GRAFANA_PROM_USER=… GRAFANA_LOKI_USER=… GRAFANA_TOKEN=glc_… \
 ```bash
 git clone https://github.com/ThoTischner/observability-mcp.git
 cd observability-mcp
-docker-compose up --build
+docker compose --profile demo up --build
 ```
 
 Boots 8 containers with health checks: 3 example microservices, Prometheus, Loki, Promtail, the MCP server, and the agent. Open `http://localhost:3000`.
+
+Without `--profile demo`, only `mcp-server` starts — useful when you already run Prometheus/Loki elsewhere and just want to expose them via MCP.
 
 ## MCP Tools
 
