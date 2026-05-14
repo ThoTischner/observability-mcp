@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 
 import type { ObservabilityConnector } from "./interface.js";
 import type { ConnectorFactory, ConnectorManifest } from "../sdk/index.js";
+import { manifestSchema } from "../sdk/manifest-schema.js";
 import { PrometheusConnector } from "./prometheus.js";
 import { LokiConnector } from "./loki.js";
 import { sanitizeForLog } from "../util/sanitize.js";
@@ -33,10 +34,18 @@ export class PluginLoader {
   private connectors = new Map<string, LoadedConnector>();
   private pluginsDir: string;
 
-  constructor(opts: { pluginsDir?: string } = {}) {
+  private disabled: Set<string>;
+
+  constructor(opts: { pluginsDir?: string; disabled?: string[] } = {}) {
     this.pluginsDir = opts.pluginsDir
       ?? process.env.PLUGINS_DIR
       ?? "/app/plugins";
+    // Per-plugin disable via env: PLUGINS_DISABLED="prometheus,loki"
+    const envDisabled = (process.env.PLUGINS_DISABLED ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    this.disabled = new Set([...(opts.disabled ?? []), ...envDisabled]);
   }
 
   async load(): Promise<void> {
@@ -121,12 +130,25 @@ export class PluginLoader {
     if (marker.manifest) {
       const manifestPath = resolve(pluginRoot, marker.manifest);
       if (existsSync(manifestPath)) {
-        manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as ConnectorManifest;
-        if (manifest.schemaVersion !== 1) {
+        const raw = JSON.parse(readFileSync(manifestPath, "utf8"));
+        const parsed = manifestSchema.safeParse(raw);
+        if (!parsed.success) {
+          const issues = parsed.error.issues
+            .map((i) => `${i.path.join(".")}: ${i.message}`)
+            .join("; ");
           console.warn(
-            "Plugin %s declares unsupported manifest schemaVersion %s; skipping",
+            "Plugin %s has invalid manifest.json — %s; skipping",
             sanitizeForLog(marker.name),
-            sanitizeForLog(String(manifest.schemaVersion))
+            sanitizeForLog(issues)
+          );
+          return;
+        }
+        manifest = parsed.data;
+        if (manifest.name !== marker.name) {
+          console.warn(
+            "Plugin %s package.json marker name does not match manifest.json (%s); skipping",
+            sanitizeForLog(marker.name),
+            sanitizeForLog(manifest.name)
           );
           return;
         }
@@ -159,6 +181,10 @@ export class PluginLoader {
   }
 
   private register(entry: LoadedConnector): void {
+    if (this.disabled.has(entry.name)) {
+      console.log("Connector %s disabled via PLUGINS_DISABLED; skipping", sanitizeForLog(entry.name));
+      return;
+    }
     // Later sources override earlier ones; current call order is
     // builtin → filesystem → config-pinned, matching the design doc.
     this.connectors.set(entry.name, entry);
