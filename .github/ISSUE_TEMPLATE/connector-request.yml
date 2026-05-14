@@ -1,0 +1,48 @@
+name: Connector request
+description: Propose a new observability backend connector.
+labels: ["enhancement", "connector"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Useful before writing one yourself. Once the connector hub is up, this issue becomes the tracking ticket for catalog entry.
+
+  - type: input
+    id: backend
+    attributes:
+      label: Backend
+      placeholder: "Tempo / Datadog / OpenSearch / Elastic / InfluxDB / ..."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: signals
+    attributes:
+      label: Signal types supported
+      multiple: true
+      options:
+        - metrics
+        - logs
+        - traces
+    validations:
+      required: true
+
+  - type: textarea
+    id: query-language
+    attributes:
+      label: Query language and API
+      placeholder: "e.g. PromQL over /api/v1/query_range — link to upstream docs."
+    validations:
+      required: true
+
+  - type: textarea
+    id: auth
+    attributes:
+      label: Auth modes you need
+      description: API key, bearer, mTLS, OAuth, AWS sigv4, ...
+
+  - type: textarea
+    id: priority
+    attributes:
+      label: Why this one
+      description: Optional. Helps prioritise across multiple requests.
