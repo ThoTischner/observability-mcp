@@ -287,6 +287,7 @@ The agent ([docs/agent.md](docs/agent.md)) detects anomalies within 30 seconds a
 - [Troubleshooting](docs/troubleshooting.md) — common pitfalls and fixes
 - [Security](docs/security.md) — automation pipeline, vulnerability reporting, built-in protections
 - [Airgapped deployment](docs/airgapped-deployment.md) — mirroring images, private plugins, GitOps-friendly config
+- [Roadmap](ROADMAP.md) — where the project is going, how to influence it
 
 ## Endpoints
 
