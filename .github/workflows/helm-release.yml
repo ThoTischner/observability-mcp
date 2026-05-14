@@ -38,6 +38,36 @@ jobs:
         with:
           version: v3.14.0
 
+      - name: Import GPG signing key
+        # Reconstitutes the signing key from the base64-encoded secret into a
+        # legacy gpg keyring file that Helm 3's --sign can read. The passphrase
+        # is empty by convention (CI-only key, scoped to chart signing).
+        id: gpg
+        env:
+          KEY_B64: ${{ secrets.HELM_SIGNING_KEY_B64 }}
+          PASSPHRASE: ${{ secrets.HELM_SIGNING_KEY_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          if [ -z "$KEY_B64" ]; then
+            echo "::warning::HELM_SIGNING_KEY_B64 unset — chart will not be signed."
+            echo "sign=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          mkdir -p ~/.gnupg && chmod 700 ~/.gnupg
+          echo "$KEY_B64" | base64 -d > ~/.gnupg/secring.gpg
+          # Identify the signing key UID + fingerprint for later steps.
+          uid=$(gpg --no-default-keyring --keyring ~/.gnupg/secring.gpg \
+                --list-keys --with-colons \
+                | awk -F: '/^uid:/{print $10; exit}')
+          fpr=$(gpg --no-default-keyring --keyring ~/.gnupg/secring.gpg \
+                --list-keys --with-colons \
+                | awk -F: '/^fpr:/{print $10; exit}')
+          echo "sign=true"  >> "$GITHUB_OUTPUT"
+          echo "key_uid=$uid"     >> "$GITHUB_OUTPUT"
+          echo "key_fpr=$fpr"     >> "$GITHUB_OUTPUT"
+          echo "$PASSPHRASE" > /tmp/helm-passphrase
+          echo "imported key: $fpr ($uid)"
+
       - name: Lint chart
         run: helm lint helm/observability-mcp
 
@@ -58,5 +88,18 @@ jobs:
           charts_dir: helm
           mark_as_latest: "true"
           skip_existing: "true"
+          # GPG signing — produces .tgz.prov alongside the chart tarball.
+          # ArtifactHub picks up the provenance file from the same URL as
+          # the chart and grants the "signed" label.
+          sign: ${{ steps.gpg.outputs.sign }}
+          key: ${{ steps.gpg.outputs.key_uid }}
+          keyring: ~/.gnupg/secring.gpg
+          passphrase-file: /tmp/helm-passphrase
         env:
           CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Wipe signing material
+        if: always()
+        run: |
+          shred -u /tmp/helm-passphrase 2>/dev/null || rm -f /tmp/helm-passphrase
+          rm -rf ~/.gnupg
