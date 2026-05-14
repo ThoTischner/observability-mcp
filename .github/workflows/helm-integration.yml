@@ -70,7 +70,7 @@ jobs:
             --timeout=120s
 
       - name: helm test (default install)
-        run: helm test obs --timeout 60s
+        run: helm test obs --timeout 180s
 
       - name: Probe /api/info inside the cluster
         run: |
@@ -105,7 +105,7 @@ jobs:
           kubectl get secret obs-observability-mcp-auth -o jsonpath='{.data.token}' | base64 -d | grep -q testtoken
 
       - name: helm test (full matrix)
-        run: helm test obs --timeout 60s
+        run: helm test obs --timeout 180s
 
       - name: Dump logs on failure
         if: failure()

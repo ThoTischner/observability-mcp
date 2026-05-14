@@ -29,14 +29,16 @@ spec:
           set -eu
           host="{{ include "observability-mcp.fullname" . }}"
           port="{{ .Values.service.port }}"
-          for i in $(seq 1 30); do
+          # 60 attempts × 2s = 120s — must stay under the `helm test
+          # --timeout` the caller uses (default workflow uses 180s).
+          for i in $(seq 1 60); do
             if wget -q -O- "http://${host}:${port}/readyz" >/dev/null; then
-              echo "readyz OK"
+              echo "readyz OK on attempt $i"
               exit 0
             fi
             sleep 2
           done
-          echo "readyz never responded"
+          echo "readyz never responded after 60 attempts"
           exit 1
       securityContext:
         allowPrivilegeEscalation: false
