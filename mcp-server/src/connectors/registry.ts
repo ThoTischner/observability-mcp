@@ -1,21 +1,20 @@
 import type { ObservabilityConnector } from "./interface.js";
 import type { Config, ConnectorHealth, SignalType, SourceConfig } from "../types.js";
-import { PrometheusConnector } from "./prometheus.js";
-import { LokiConnector } from "./loki.js";
+import { getPluginLoader, type PluginLoader } from "./loader.js";
 import { sanitizeForLog } from "../util/sanitize.js";
 
-const connectorFactories: Record<string, () => ObservabilityConnector> = {
-  prometheus: () => new PrometheusConnector(),
-  loki: () => new LokiConnector(),
-};
-
 export function getSupportedTypes(): string[] {
-  return Object.keys(connectorFactories);
+  return getPluginLoader().supportedTypes();
 }
 
 export class ConnectorRegistry {
   private connectors: Map<string, ObservabilityConnector> = new Map();
   private sourceConfigs: Map<string, SourceConfig> = new Map();
+  private loader: PluginLoader;
+
+  constructor(loader: PluginLoader = getPluginLoader()) {
+    this.loader = loader;
+  }
 
   async initialize(config: Config): Promise<void> {
     for (const source of config.sources) {
@@ -26,14 +25,13 @@ export class ConnectorRegistry {
   }
 
   private async connectSource(source: SourceConfig): Promise<void> {
-    const factory = connectorFactories[source.type];
+    const connector = this.loader.create(source.type);
     const safeName = sanitizeForLog(source.name);
     const safeType = sanitizeForLog(source.type);
-    if (!factory) {
+    if (!connector) {
       console.warn("Unknown connector type: %s, skipping %s", safeType, safeName);
       return;
     }
-    const connector = factory();
     try {
       await connector.connect(source);
       this.connectors.set(source.name, connector);
@@ -65,11 +63,10 @@ export class ConnectorRegistry {
   }
 
   async testConnection(source: SourceConfig): Promise<ConnectorHealth> {
-    const factory = connectorFactories[source.type];
-    if (!factory) {
+    const connector = this.loader.create(source.type);
+    if (!connector) {
       return { status: "down", latencyMs: 0, message: `Unknown type: ${source.type}` };
     }
-    const connector = factory();
     try {
       await connector.connect(source);
       const health = await connector.healthCheck();
@@ -103,5 +100,4 @@ export class ConnectorRegistry {
     }
     return results;
   }
-
 }
