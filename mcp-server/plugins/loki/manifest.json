@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "name": "loki",
+  "displayName": "Loki",
+  "version": "1.0.0",
+  "description": "LogQL-based log backend with dynamic service-label discovery (service_name / service / job / app / container).",
+  "signalTypes": ["logs"],
+  "license": "MIT",
+  "capabilities": {
+    "queryLogs": true,
+    "listServices": true
+  },
+  "compat": {
+    "serverVersion": ">=1.4.0"
+  }
+}
