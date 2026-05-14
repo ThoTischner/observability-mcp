@@ -20,7 +20,7 @@ updates:
         patterns: ["@types/*"]
 
   - package-ecosystem: npm
-    directory: /agent
+    directory: /examples/agent
     schedule:
       interval: weekly
       day: monday

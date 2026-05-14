@@ -12,7 +12,10 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        dir: [mcp-server, agent]
+        # mcp-server is the primary artifact. examples/agent is an
+        # optional demo client but still audited so its CVE story stays
+        # in sync with the server.
+        dir: [mcp-server, examples/agent]
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6

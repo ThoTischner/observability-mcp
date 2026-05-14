@@ -18,7 +18,7 @@ connector:
 
 agent:
   - changed-files:
-      - any-glob-to-any-file: 'agent/**'
+      - any-glob-to-any-file: 'examples/agent/**'
 
 helm:
   - changed-files:
@@ -28,7 +28,7 @@ docker:
   - changed-files:
       - any-glob-to-any-file:
           - 'mcp-server/Dockerfile'
-          - 'agent/Dockerfile'
+          - 'examples/agent/Dockerfile'
           - 'example-services/Dockerfile'
           - 'docker-compose.yml'
 
