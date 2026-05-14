@@ -12,20 +12,28 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        dir: [mcp-server, agent]
+        # Branch protection requires job-name 'npm-audit (mcp-server)' and
+        # 'npm-audit (agent)' — keep the short names stable across repo
+        # refactors by mapping a friendly name to its path.
+        include:
+          - name: mcp-server
+            path: mcp-server
+          - name: agent
+            path: examples/agent
+    name: npm-audit (${{ matrix.name }})
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
           node-version: '20'
-      - name: Ensure lockfile exists (${{ matrix.dir }})
-        working-directory: ./${{ matrix.dir }}
+      - name: Ensure lockfile exists (${{ matrix.path }})
+        working-directory: ./${{ matrix.path }}
         run: |
           if [ ! -f package-lock.json ]; then
             npm install --package-lock-only --ignore-scripts
           fi
-      - name: npm audit (${{ matrix.dir }})
-        working-directory: ./${{ matrix.dir }}
+      - name: npm audit (${{ matrix.path }})
+        working-directory: ./${{ matrix.path }}
         run: npm audit --audit-level=high
 
   unit-tests:

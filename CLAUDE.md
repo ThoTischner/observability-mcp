@@ -110,7 +110,9 @@ All config lives in `mcp-server/config/sources.yaml` and is editable via the Web
 
 ## Agent Behavior
 
-The agent (`agent/src/index.ts`):
+The agent (`examples/agent/src/index.ts`) is an optional demo client. The MCP server itself is LLM-agnostic.
+
+It:
 - Syncs settings from MCP server API each loop iteration
 - Reconnects automatically if MCP server restarts
 - Deduplicates anomalies (5 min TTL)
