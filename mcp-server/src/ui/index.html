@@ -408,6 +408,21 @@
     .health-card .hc-score.healthy  { color: var(--success); }
     .health-card .hc-score.degraded { color: var(--warning); }
     .health-card .hc-score.critical { color: var(--danger); }
+    .health-card .hc-spark {
+      display: block; width: 100%; height: 36px;
+      margin: var(--sp-1) 0 var(--sp-3); opacity: 0.85;
+    }
+    .health-card .hc-spark.healthy  .spark-fill { fill: rgba(63, 185, 80, 0.12); }
+    .health-card .hc-spark.healthy  .spark-line { stroke: var(--success); }
+    .health-card .hc-spark.degraded .spark-fill { fill: rgba(210, 153, 34, 0.12); }
+    .health-card .hc-spark.degraded .spark-line { stroke: var(--warning); }
+    .health-card .hc-spark.critical .spark-fill { fill: rgba(248, 81, 73, 0.12); }
+    .health-card .hc-spark.critical .spark-line { stroke: var(--danger); }
+    .health-card .hc-spark .spark-line { stroke-width: 1.5; fill: none; }
+    .health-card .hc-spark .spark-dot  { fill: currentColor; }
+    .health-card .hc-spark .spark-empty {
+      stroke: var(--border); stroke-dasharray: 3 3; stroke-width: 1; fill: none;
+    }
     .health-card .hc-status {
       display: inline-flex; align-items: center; gap: 6px;
       padding: 3px 10px;
@@ -1015,6 +1030,39 @@ function saveMetric() {
 // --- Health Dashboard ---
 let healthData={};
 let healthInterval=null;
+// Score history per service, kept client-side. The server doesn't yet
+// expose a per-service score timeseries — this gives an at-a-glance trend
+// for the last ~7.5 minutes (30 points × 15s refresh).
+const SPARK_MAX = 30;
+const scoreHistory = {};
+function pushScore(name, score) {
+  if (typeof score !== 'number') return;
+  const arr = scoreHistory[name] || (scoreHistory[name] = []);
+  arr.push(score);
+  if (arr.length > SPARK_MAX) arr.shift();
+}
+function sparkSvg(name, status) {
+  const pts = scoreHistory[name] || [];
+  const w = 100, h = 36, pad = 2;
+  if (pts.length < 2) {
+    // Placeholder dashed midline until we have ≥2 samples.
+    return `<svg class="hc-spark ${status}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">`
+      + `<line class="spark-empty" x1="0" y1="${h/2}" x2="${w}" y2="${h/2}"/></svg>`;
+  }
+  const min = 0, max = 100;
+  const step = (w - pad*2) / (pts.length - 1);
+  const y = v => h - pad - ((v - min) / (max - min)) * (h - pad*2);
+  const coords = pts.map((v, i) => `${pad + i*step},${y(v)}`);
+  const line = coords.join(' ');
+  const area = `M${coords[0]} L${line.split(' ').join(' L')} L${pad + (pts.length-1)*step},${h-pad} L${pad},${h-pad} Z`;
+  const last = coords[coords.length - 1].split(',');
+  return `<svg class="hc-spark ${status}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">`
+    + `<path class="spark-fill" d="${area}"/>`
+    + `<polyline class="spark-line" points="${line}"/>`
+    + `<circle class="spark-dot" cx="${last[0]}" cy="${last[1]}" r="1.8"/>`
+    + `</svg>`;
+}
+
 async function loadHealthData() {
   try {
     healthData=await(await fetch('/api/health')).json();
@@ -1031,11 +1079,13 @@ function renderHealthCards() {
     const s=h.status||'healthy';
     const m=h.signals?.metrics||{};
     const l=h.signals?.logs||{};
+    pushScore(name, h.score);
     return `<div class="health-card">
       <div class="hc-header">
         <div><span class="hc-name">${esc(name)}</span> <span class="hc-status ${s}">${s}</span></div>
         <span class="hc-score ${s}">${h.score ?? '-'}</span>
       </div>
+      ${sparkSvg(name, s)}
       <div class="hc-metrics">
         <div class="hc-metric"><div class="label">CPU</div><div class="val">${typeof m.cpu==='number'?m.cpu.toFixed(1)+'%':'-'}</div></div>
         <div class="hc-metric"><div class="label">Memory</div><div class="val">${typeof m.memory==='number'?m.memory.toFixed(0)+' MB':'-'}</div></div>

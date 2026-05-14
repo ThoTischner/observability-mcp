@@ -6,6 +6,6 @@
 repositoryID: ""    # set after first claim — ArtifactHub assigns one
 owners:
   - name: ThoTischner
-    email: info@holzbau-konfigurator.de
+    email: ai-solutions-camp@email.de
 
 ignore: []          # no chart paths to ignore — only helm/observability-mcp/
