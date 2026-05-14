@@ -1,0 +1,45 @@
+{{- /*
+A throwaway pod that `helm test <release>` runs to verify the service is
+reachable and /readyz responds 200. Doesn't require curl in the app image
+— uses busybox so it stays light and platform-independent.
+*/ -}}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "observability-mcp.fullname" . }}-test-connection
+  labels:
+    {{- include "observability-mcp.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: probe
+      image: busybox:1.37
+      command:
+        - sh
+        - -c
+        - |
+          set -eu
+          host="{{ include "observability-mcp.fullname" . }}"
+          port="{{ .Values.service.port }}"
+          for i in $(seq 1 30); do
+            if wget -q -O- "http://${host}:${port}/readyz" >/dev/null; then
+              echo "readyz OK"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "readyz never responded"
+          exit 1
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]
