@@ -1,4 +1,7 @@
 version: 2
+# Weekly scans on Monday; major bumps open individual PRs (not grouped).
+# Closed major-bump PRs remain dismissed until a newer version appears
+# or the config is re-validated — touching this file forces a rescan.
 updates:
   - package-ecosystem: npm
     directory: /mcp-server
