@@ -1,0 +1,120 @@
+name: Integration smoke test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build & start the full stack
+        run: docker compose up -d --build --wait --wait-timeout 300
+
+      - name: List running services
+        if: always()
+        run: docker compose ps
+
+      - name: Wait for MCP server /api/sources to report all connected
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 60); do
+            body=$(curl -fsS http://localhost:3000/api/sources || true)
+            if [ -n "$body" ] && [ "$(echo "$body" | jq 'type')" = '"array"' ]; then
+              echo "$body" | jq '[.[] | {name, type, status}]'
+              total=$(echo "$body" | jq 'length')
+              ok=$(echo "$body" | jq '[.[] | select(.status == "up")] | length')
+              if [ "$total" -gt 0 ] && [ "$total" = "$ok" ]; then
+                echo "all $total sources connected"
+                exit 0
+              fi
+            fi
+            sleep 5
+          done
+          echo "MCP server did not become healthy in time"
+          curl -s http://localhost:3000/api/sources | jq . || true
+          exit 1
+
+      - name: Probe aggregated /api/health (service health map)
+        run: |
+          set -euo pipefail
+          body=$(curl -fsS http://localhost:3000/api/health)
+          echo "$body" | jq 'keys'
+          # at least one service should be discovered
+          n=$(echo "$body" | jq 'keys | length')
+          [ "$n" -gt 0 ] || (echo "no services discovered"; exit 1)
+
+      - name: Probe Prometheus
+        run: curl -fsS 'http://localhost:9090/-/ready'
+
+      - name: Probe Loki
+        run: curl -fsS 'http://localhost:3100/ready' | head -5
+
+      - name: Probe example services
+        run: |
+          for port in 8080 8081 8082; do
+            echo "--- port $port ---"
+            curl -fsS "http://localhost:${port}/health"
+          done
+
+      - name: MCP Streamable HTTP — initialize, list tools, list resources
+        run: |
+          set -euo pipefail
+          # MCP Streamable HTTP transport: initialize returns Mcp-Session-Id
+          # header which must be replayed on subsequent calls. Responses are
+          # SSE-framed (lines prefixed with "data: ").
+          hdr=/tmp/mcp-hdr
+          body=/tmp/mcp-body
+
+          curl -sS -D "$hdr" -o "$body" -X POST http://localhost:3000/mcp \
+            -H 'Content-Type: application/json' \
+            -H 'Accept: application/json, text/event-stream' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"ci-smoke","version":"1.0"}}}'
+          echo "--- init headers ---"; cat "$hdr"
+          echo "--- init body ---";    cat "$body"
+
+          sid=$(grep -i '^mcp-session-id:' "$hdr" | awk '{print $2}' | tr -d '\r\n')
+          [ -n "$sid" ] || (echo "no mcp-session-id returned"; exit 1)
+          grep -q '"serverInfo"' "$body" || (echo "initialize did not return serverInfo"; exit 1)
+
+          # Required follow-up per spec
+          curl -fsS -X POST http://localhost:3000/mcp \
+            -H "Mcp-Session-Id: $sid" \
+            -H 'Content-Type: application/json' \
+            -H 'Accept: application/json, text/event-stream' \
+            -d '{"jsonrpc":"2.0","method":"notifications/initialized"}' >/dev/null || true
+
+          curl -fsS -X POST http://localhost:3000/mcp \
+            -H "Mcp-Session-Id: $sid" \
+            -H 'Content-Type: application/json' \
+            -H 'Accept: application/json, text/event-stream' \
+            -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' -o "$body"
+          echo "--- tools/list ---"; cat "$body"
+          for t in list_sources list_services query_metrics query_logs get_service_health detect_anomalies; do
+            grep -q "\"$t\"" "$body" || (echo "missing tool: $t"; exit 1)
+          done
+          echo "all 6 tools advertised"
+
+      - name: Trigger a chaos mode and verify it sticks
+        run: |
+          set -euo pipefail
+          curl -fsS -X POST http://localhost:8081/chaos/error-spike
+          sleep 3
+          curl -fsS http://localhost:8081/health | head -5
+          curl -fsS -X POST http://localhost:8081/chaos/reset
+
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          docker compose logs --no-color --tail=200 mcp-server || true
+          docker compose logs --no-color --tail=100 agent || true
+          docker compose logs --no-color --tail=50 prometheus loki || true
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
