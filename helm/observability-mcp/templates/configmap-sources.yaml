@@ -1,0 +1,11 @@
+{{- if .Values.sources.config }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "observability-mcp.fullname" . }}-sources
+  labels:
+    {{- include "observability-mcp.labels" . | nindent 4 }}
+data:
+  sources.yaml: |
+    {{- .Values.sources.config | nindent 4 }}
+{{- end }}
