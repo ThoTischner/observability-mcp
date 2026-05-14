@@ -1,13 +1,13 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { Agent } from "node:https";
-import { writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { writeFileSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { buildTlsAgent } from "./tls.js";
 import type { SourceConfig } from "../types.js";
 
-const TMP_DIR = join(tmpdir(), "tls-test-" + Date.now());
+let TMP_DIR: string;
 
 function makeConfig(overrides: Partial<SourceConfig> = {}): SourceConfig {
   return { name: "test", type: "prometheus", url: "https://localhost:9090", enabled: true, ...overrides };
@@ -47,7 +47,7 @@ describe("buildTlsAgent", () => {
 
   describe("with certificate files", () => {
     before(() => {
-      mkdirSync(TMP_DIR, { recursive: true });
+      TMP_DIR = mkdtempSync(join(tmpdir(), "tls-test-"));
       writeFileSync(join(TMP_DIR, "ca.pem"), "-----BEGIN CERTIFICATE-----\nfake-ca\n-----END CERTIFICATE-----\n");
       writeFileSync(join(TMP_DIR, "client.pem"), "-----BEGIN CERTIFICATE-----\nfake-client\n-----END CERTIFICATE-----\n");
       writeFileSync(join(TMP_DIR, "client-key.pem"), "-----BEGIN PRIVATE KEY-----\nfake-key\n-----END PRIVATE KEY-----\n");
