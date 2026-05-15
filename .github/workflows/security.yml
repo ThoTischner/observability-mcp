@@ -54,6 +54,18 @@ jobs:
         run: |
           node hub/build-catalog.mjs --check
           node --test hub/build-catalog.test.mjs
+      - name: Datadog connector (tests + manifest integrity in sync)
+        run: |
+          node --test connectors/datadog/*.test.mjs
+          node -e '
+            const c=require("crypto"),fs=require("fs");
+            const i="sha256-"+c.createHash("sha256").update(fs.readFileSync("connectors/datadog/index.js")).digest("base64");
+            const m=JSON.parse(fs.readFileSync("connectors/datadog/manifest.json"));
+            if(m.integrity!==i){console.error("manifest.integrity stale: "+m.integrity+" != "+i);process.exit(1)}
+            const cat=JSON.parse(fs.readFileSync("hub/catalog/datadog.json"));
+            if(cat.versions[0].integrity!==i){console.error("catalog integrity stale");process.exit(1)}
+            console.log("datadog integrity in sync");
+          '
 
   trivy:
     runs-on: ubuntu-latest

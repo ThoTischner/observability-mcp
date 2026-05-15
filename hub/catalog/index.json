@@ -2,6 +2,27 @@
   "catalogVersion": 1,
   "connectors": [
     {
+      "name": "datadog",
+      "displayName": "Datadog",
+      "description": "Datadog connector — metrics via the v1 query API and logs via the v2 logs search API. The first optional, hub-installable connector.",
+      "tier": "official",
+      "builtin": false,
+      "signalTypes": [
+        "metrics",
+        "logs"
+      ],
+      "latest": "1.0.0",
+      "versions": [
+        {
+          "version": "1.0.0",
+          "releasedAt": "2026-05-15",
+          "serverCompat": ">=1.4.0",
+          "integrity": "sha256-dTTTxcNMEiHv6sbkMf9UQu7tUDZrt45bd1JKvoiymxI=",
+          "changelog": "Initial release: metrics + logs, API/Application key auth, service discovery via the service tag."
+        }
+      ]
+    },
+    {
       "name": "loki",
       "displayName": "Grafana Loki",
       "description": "LogQL-based logs backend. Service discovery from log streams and label-scoped log queries.",

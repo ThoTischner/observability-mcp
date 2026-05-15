@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "name": "datadog",
+  "displayName": "Datadog",
+  "version": "1.0.0",
+  "description": "Datadog connector — metrics via the v1 query API and logs via the v2 logs search API. Auth with a Datadog API key (+ Application key for queries).",
+  "signalTypes": ["metrics", "logs"],
+  "homepage": "https://github.com/ThoTischner/observability-mcp",
+  "license": "MIT",
+  "capabilities": {
+    "queryMetrics": true,
+    "queryLogs": true,
+    "listServices": true
+  },
+  "compat": {
+    "serverVersion": ">=1.4.0"
+  },
+  "integrity": "sha256-dTTTxcNMEiHv6sbkMf9UQu7tUDZrt45bd1JKvoiymxI="
+}
