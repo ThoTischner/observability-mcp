@@ -122,7 +122,35 @@ Three supported workflows:
 
 - **Sideloaded tarballs.** For VM / bare-metal deployments, operators `wget <url>` the connector tarball, `tar -xzf` into `/app/plugins/`, restart. The tarball is a published `*.tgz` from the hub (or a mirror) — the same format `npm pack` produces.
 
-Signing: each tarball is accompanied by a sigstore signature published alongside. The server's `--verify-plugins=true` flag (default in prod) checks the signature against a configured trust root before loading.
+### Verification (airgapped trust root)
+
+Plugin verification is **fully offline** — no Fulcio/Rekor, no cosign binary, no network. That is a deliberate choice: a sigstore keyless flow needs to reach a transparency log, which an airgapped site cannot. Instead the server checks a local trust root with Node's built-in crypto.
+
+A plugin is loaded only when **both** hold:
+
+1. **Integrity.** The plugin's `manifest.json` carries an `integrity` field — `sha256-<base64>` of the entry file — and it matches the on-disk entry.
+2. **Authenticity.** A detached signature `manifest.json.sig` (sibling of the manifest) verifies the raw manifest bytes against the configured trust-root public key. Ed25519 and RSA/EC PEM keys are supported; the `.sig` may be raw DER or base64-armored.
+
+Because the signature covers the manifest and the manifest pins the entry-file hash, signing the manifest transitively authenticates the code.
+
+| Setting | Env | Default | Meaning |
+|---------|-----|---------|---------|
+| Verify  | `VERIFY_PLUGINS` | off | When `true/1/yes`, filesystem plugins are gated. |
+| Trust root | `PLUGIN_TRUST_ROOT` | — | Path to the PEM public key. |
+
+**Fail-closed.** With `VERIFY_PLUGINS=true` and no/invalid trust root, *no* filesystem plugin loads (builtin Prometheus/Loki, part of the trusted image, are never gated, so the server stays functional). Any plugin missing a manifest, signature, or failing either check is skipped with a logged reason — it is never loaded "best effort".
+
+Producing the artifacts (offline, from the connector dir):
+
+```bash
+node -e 'const{createHash}=require("crypto"),fs=require("fs");
+  const h="sha256-"+createHash("sha256").update(fs.readFileSync("index.js")).digest("base64");
+  const m=JSON.parse(fs.readFileSync("manifest.json"));m.integrity=h;
+  fs.writeFileSync("manifest.json",JSON.stringify(m,null,2)+"\n")'
+openssl pkeyutl -sign -inkey signing.key -rawin -in manifest.json | base64 > manifest.json.sig
+```
+
+The operator distributes only the **public** key as `PLUGIN_TRUST_ROOT`. The Helm chart sets `VERIFY_PLUGINS=true` and mounts the trust root for any non-builtin plugin (chart wiring is the next milestone). The future connector hub publishes the same `integrity` + detached signature per release, so the hub CLI reuses this exact check.
 
 ## The connector hub
 
@@ -151,7 +179,7 @@ These will be separate PRs so each can pass smoke independently:
 | 3  | Add `PLUGINS_DIR` env, document it. Plugin scan + manifest validation against a Zod schema. Per-plugin enable/disable. |
 | 4  | Publish `@thotischner/observability-mcp-sdk` to npm. Move the prometheus connector into its own package, mark the shim as deprecated. |
 | 5  | Loki connector → own package. |
-| 6  | Sigstore verification (`--verify-plugins`). Document the trust root setup. |
+| 6  | ✅ Offline verification (`VERIFY_PLUGINS` + local trust root) — fail-closed manifest signature + entry integrity. (Local trust root, not sigstore: airgapped sites can't reach a transparency log.) |
 | 7  | Helm chart: `plugins.image` + init container extraction. |
 | 8  | Connector hub catalog repo + minimal static site. |
 

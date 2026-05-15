@@ -9,6 +9,13 @@ import { PrometheusConnector } from "./prometheus.js";
 import { LokiConnector } from "./loki.js";
 import { sanitizeForLog } from "../util/sanitize.js";
 import { instrumentConnector } from "../metrics/instrument-connector.js";
+import {
+  loadTrustRoot,
+  verifyIntegrity,
+  verifyManifestSignature,
+  PluginVerificationError,
+} from "./verify.js";
+import type { KeyObject } from "node:crypto";
 
 export interface LoadedConnector {
   /** Connector type id, e.g. "prometheus". Matches `source.type` in sources.yaml. */
@@ -36,7 +43,17 @@ export class PluginLoader {
 
   private disabled: Set<string>;
 
-  constructor(opts: { pluginsDir?: string; disabled?: string[] } = {}) {
+  // Fail-closed verification for filesystem plugins. Builtins are part
+  // of the trusted image and are never gated. Default off so existing
+  // deployments are unchanged; recommended on in prod/airgapped (the
+  // Helm chart sets it).
+  private verify: boolean;
+  private trustRootPath?: string;
+  private trustRoot?: KeyObject;
+
+  constructor(
+    opts: { pluginsDir?: string; disabled?: string[]; verify?: boolean; trustRoot?: string } = {}
+  ) {
     this.pluginsDir = opts.pluginsDir
       ?? process.env.PLUGINS_DIR
       ?? "/app/plugins";
@@ -46,10 +63,33 @@ export class PluginLoader {
       .map((s) => s.trim())
       .filter(Boolean);
     this.disabled = new Set([...(opts.disabled ?? []), ...envDisabled]);
+    this.verify = opts.verify ?? /^(1|true|yes)$/i.test(process.env.VERIFY_PLUGINS ?? "");
+    this.trustRootPath = opts.trustRoot ?? process.env.PLUGIN_TRUST_ROOT;
   }
 
   async load(): Promise<void> {
     this.loadBuiltins();
+    if (this.verify) {
+      if (!this.trustRootPath) {
+        console.warn(
+          "VERIFY_PLUGINS is on but PLUGIN_TRUST_ROOT is unset — refusing to load any filesystem plugins (fail-closed). Builtins remain available."
+        );
+        return;
+      }
+      try {
+        this.trustRoot = loadTrustRoot(this.trustRootPath);
+        console.log(
+          "Plugin verification enabled; trust root loaded from %s",
+          sanitizeForLog(this.trustRootPath)
+        );
+      } catch (err) {
+        console.warn(
+          "VERIFY_PLUGINS is on but trust root failed to load (%s) — refusing to load any filesystem plugins (fail-closed). Builtins remain available.",
+          sanitizeForLog(String(err))
+        );
+        return;
+      }
+    }
     await this.loadFilesystem();
   }
 
@@ -127,10 +167,13 @@ export class PluginLoader {
     if (!marker || marker.kind !== "connector" || !marker.name) return;
 
     let manifest: ConnectorManifest | undefined;
+    let manifestPath: string | undefined;
+    let manifestBytes: Buffer | undefined;
     if (marker.manifest) {
-      const manifestPath = resolve(pluginRoot, marker.manifest);
+      manifestPath = resolve(pluginRoot, marker.manifest);
       if (existsSync(manifestPath)) {
-        const raw = JSON.parse(readFileSync(manifestPath, "utf8"));
+        manifestBytes = readFileSync(manifestPath);
+        const raw = JSON.parse(manifestBytes.toString("utf8"));
         const parsed = manifestSchema.safeParse(raw);
         if (!parsed.success) {
           const issues = parsed.error.issues
@@ -161,6 +204,47 @@ export class PluginLoader {
       console.warn("Plugin %s missing entry file %s", sanitizeForLog(marker.name), sanitizeForLog(entryFile));
       return;
     }
+
+    // Fail-closed verification gate. A plugin only loads under
+    // VERIFY_PLUGINS if it ships a manifest whose `integrity` matches
+    // the entry file AND a detached `<manifest>.sig` that verifies
+    // against the trust root. Everything is local — airgapped-safe.
+    if (this.verify) {
+      if (!manifest || !manifestPath || !manifestBytes) {
+        console.warn(
+          "VERIFY_PLUGINS: plugin %s has no manifest.json — skipping (fail-closed)",
+          sanitizeForLog(marker.name)
+        );
+        return;
+      }
+      const sigPath = manifestPath + ".sig";
+      if (!existsSync(sigPath)) {
+        console.warn(
+          "VERIFY_PLUGINS: plugin %s missing manifest signature %s — skipping (fail-closed)",
+          sanitizeForLog(marker.name),
+          sanitizeForLog(marker.manifest + ".sig")
+        );
+        return;
+      }
+      try {
+        verifyManifestSignature(manifestBytes, readFileSync(sigPath), this.trustRoot!);
+        verifyIntegrity(entryPath, manifest.integrity);
+      } catch (err) {
+        const detail =
+          err instanceof PluginVerificationError ? err.message : String(err);
+        console.warn(
+          "VERIFY_PLUGINS: plugin %s failed verification (%s) — skipping (fail-closed)",
+          sanitizeForLog(marker.name),
+          sanitizeForLog(detail)
+        );
+        return;
+      }
+      console.log(
+        "VERIFY_PLUGINS: plugin %s signature + integrity OK",
+        sanitizeForLog(marker.name)
+      );
+    }
+
     const mod = await import(pathToFileURL(entryPath).href);
     const factory: ConnectorFactory | undefined = mod.default ?? mod.createConnector;
     if (typeof factory !== "function") {
