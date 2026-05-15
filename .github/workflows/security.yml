@@ -49,7 +49,7 @@ jobs:
         run: npm ci
       - name: Run tests
         working-directory: ./mcp-server
-        run: npx tsx --test src/analysis/*.test.ts src/config/*.test.ts src/sdk/*.test.ts src/connectors/verify.test.ts
+        run: npx tsx --test src/analysis/*.test.ts src/config/*.test.ts src/sdk/*.test.ts src/connectors/verify.test.ts src/cli/*.test.ts
       - name: Connector hub catalog (validate + in-sync)
         run: |
           node hub/build-catalog.mjs --check

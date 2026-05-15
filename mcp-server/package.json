@@ -22,7 +22,8 @@
     "anomaly-detection"
   ],
   "bin": {
-    "observability-mcp": "./dist/index.js"
+    "observability-mcp": "./dist/index.js",
+    "omcp": "./dist/cli/index.js"
   },
   "files": [
     "dist",
