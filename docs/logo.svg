@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- observability-mcp logo: eye/scope motif with a signal dot in the iris.
+       The eye references "observability"; the central dot suggests a detected
+       anomaly / signal. Accent colour matches the Web UI. -->
+  <rect width="256" height="256" rx="48" fill="#0d1117"/>
+  <!-- outer eye contour -->
+  <path
+    d="M 28 128 Q 128 36 228 128 Q 128 220 28 128 Z"
+    fill="none"
+    stroke="#4f8cff"
+    stroke-width="10"
+    stroke-linejoin="round"/>
+  <!-- iris ring -->
+  <circle cx="128" cy="128" r="44" fill="none" stroke="#4f8cff" stroke-width="8"/>
+  <!-- pupil -->
+  <circle cx="128" cy="128" r="20" fill="#4f8cff"/>
+  <!-- detected-signal pulse dot -->
+  <circle cx="180" cy="80" r="10" fill="#3fb950"/>
+  <circle cx="180" cy="80" r="18" fill="none" stroke="#3fb950" stroke-width="2" opacity="0.6"/>
+</svg>

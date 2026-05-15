@@ -3,7 +3,7 @@
 # registered as a Helm chart source.
 # Spec: https://artifacthub.io/docs/topics/repositories/
 
-repositoryID: ""    # set after first claim — ArtifactHub assigns one
+repositoryID: 5470709b-d6ae-4b64-b72f-27fa1fd4881c
 owners:
   - name: ThoTischner
     email: ai-solutions-camp@email.de
