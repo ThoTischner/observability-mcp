@@ -47,6 +47,24 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- default .Chart.AppVersion .Values.image.tag -}}
 {{- end -}}
 
+{{/*
+A plugin trust root is required whenever fail-closed verification is on
+(verify.enabled) OR the runtime UI/upload install endpoints are enabled
+(uiInstall.enabled — the server refuses to install unverified code).
+*/}}
+{{- define "observability-mcp.needsTrustRoot" -}}
+{{- if or .Values.plugins.verify.enabled .Values.plugins.uiInstall.enabled -}}true{{- end -}}
+{{- end -}}
+
+{{/*
+/app/plugins must be writable when connectors are installed at runtime
+(uiInstall) or persisted across restarts (persistence) — otherwise the
+init container only needs to seed a read-only emptyDir.
+*/}}
+{{- define "observability-mcp.pluginsWritable" -}}
+{{- if or .Values.plugins.uiInstall.enabled .Values.plugins.persistence.enabled -}}true{{- end -}}
+{{- end -}}
+
 {{- define "observability-mcp.authSecretName" -}}
 {{- if .Values.auth.existingSecret -}}
 {{- .Values.auth.existingSecret -}}

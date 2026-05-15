@@ -79,6 +79,24 @@
             "trustRootPem": { "type": "string" },
             "existingSecret": { "type": "string" }
           }
+        },
+        "persistence": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "existingClaim": { "type": "string" },
+            "size": { "type": "string" },
+            "accessMode": { "type": "string" },
+            "storageClass": { "type": "string" }
+          }
+        },
+        "uiInstall": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" }
+          }
         }
       }
     },
