@@ -120,7 +120,7 @@ Three supported workflows:
   ```
   This translates into an init container that extracts the listed paths from the plugin image into an `emptyDir` mounted at `/app/plugins`. No registry access from the main container.
 
-- **Sideloaded tarballs.** For VM / bare-metal deployments, operators `wget <url>` the connector tarball, `tar -xzf` into `/app/plugins/`, restart. The tarball is a published `*.tgz` from the hub (or a mirror) — the same format `npm pack` produces.
+- **Sideloaded tarballs.** For VM / bare-metal deployments, operators `wget <url>` the connector tarball, `tar -xzf` into `/app/plugins/`, restart. The tarball is a published `*.tgz` from the hub (or a mirror) — the same format `npm pack` produces. Or, with `ENABLE_UI_INSTALL=true` + a trust root, drag the same `.tgz` into the Web UI's **Connectors → Upload a connector bundle** (no shell access needed).
 
 ### Verification (airgapped trust root)
 
@@ -150,26 +150,42 @@ node -e 'const{createHash}=require("crypto"),fs=require("fs");
 openssl pkeyutl -sign -inkey signing.key -rawin -in manifest.json | base64 > manifest.json.sig
 ```
 
-The operator distributes only the **public** key as `PLUGIN_TRUST_ROOT`. The Helm chart sets `VERIFY_PLUGINS=true` and mounts the trust root for any non-builtin plugin (chart wiring is the next milestone). The future connector hub publishes the same `integrity` + detached signature per release, so the hub CLI reuses this exact check.
+The operator distributes only the **public** key as `PLUGIN_TRUST_ROOT`. The Helm chart wires `plugins.verify` (sets `VERIFY_PLUGINS=true` and mounts the trust root for any non-builtin plugin) and `plugins.uiInstall` (sets `ENABLE_UI_INSTALL`); the trust root is rendered/mounted whenever verification *or* runtime install is enabled. The connector hub publishes the same `integrity` + detached signature per release, so the hub CLI and the Web UI install path reuse this exact check.
 
 ## The connector hub
 
-The catalog contract now exists in-repo at [`hub/`](../hub/README.md): a
+The catalog contract lives in-repo at [`hub/`](../hub/README.md): a
 schema-validated `catalog/<name>.json` per connector aggregated into a
-static `catalog/index.json` (CI keeps it in sync). The web UI / install
-CLI below are still future work, but they consume this format as-is.
+static `catalog/index.json` (CI keeps it in sync). It is **live** today:
 
-- A static catalog (think `helm/charts` repo): each connector's manifest, signed tarball URL, screenshots, and changelog live as `hub/catalog/<name>.json`; `hub/build-catalog.mjs` validates and aggregates them.
-- A web UI at `hub.observability-mcp.dev` (or similar) that browses the catalog. Search by signal type, capability, vendor.
-- A CLI command `observability-mcp install <name>` that:
-  1. Fetches the manifest from the catalog
-  2. Verifies the signature
-  3. Downloads the tarball into `${PLUGINS_DIR}/<name>-<version>/`
-  4. Hot-load via SIGHUP if the server supports it, otherwise prompts to restart.
-- A "third-party / certified / official" rating tiers, like Confluent Hub.
-- Telemetry-free by default. The hub serves static files; no install pingback.
+- **Static catalog** (think `helm/charts` repo): each connector's manifest, signed tarball URL, versions, and changelog live as `hub/catalog/<name>.json`; `hub/build-catalog.mjs` validates and aggregates them. Telemetry-free — the hub serves static files, no install pingback. The hub *publishes* tarballs but does not host the server; operators can mirror the whole catalog into their own static-file CDN with a single rsync.
+- **Hosted site** at <https://thotischner.github.io/observability-mcp/hub/> — an ArtifactHub-style browser: clickable connectors, per-connector detail pages with a version table and copy-paste install boxes for every scenario (omcp CLI / air-gapped / Helm / manual).
+- **omcp CLI**: `omcp plugin list|info|install|verify` resolves the catalog (`--from <dir|url>` for air-gapped), verifies the signature, and extracts into `${PLUGINS_DIR}/<name>/`. See the CLI section in the main README.
+- **Web UI Connectors page** + JSON API on the running server (next section).
 
-The hub *publishes* tarballs but does not host the server. Operators can mirror the catalog into their own static-file CDN with a single rsync.
+### Runtime install from the running server (Web UI / API)
+
+The server exposes the hub directly so operators can manage connectors without a redeploy:
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/connectors` | Installed connectors (builtin + filesystem) with manifest info. |
+| `GET /api/hub/catalog` | The hub catalog, server-proxied, merged with what's installed (`HUB_CATALOG_URL` overrides the source). |
+| `POST /api/connectors/install` | Install a connector by name from the catalog (downloads only catalog `tarballUrl`s — no arbitrary URL, avoids SSRF). |
+| `POST /api/connectors/upload` | Install an uploaded connector `.tgz` (raw `application/octet-stream`) — for air-gapped operators with no catalog reach. |
+
+Both install paths run the **exact same fail-closed verification** as the loader and the CLI (signature + integrity against `PLUGIN_TRUST_ROOT`), then persist into `PLUGINS_DIR` and re-scan the loader.
+
+**Guardrails** — runtime code-load is powerful, so it is doubly gated and off by default:
+
+| Setting | Env | Default | Meaning |
+|---------|-----|---------|---------|
+| Enable UI install/upload | `ENABLE_UI_INSTALL` | off | Both endpoints return `403` unless this is `true`. |
+| Trust root | `PLUGIN_TRUST_ROOT` | — | Required (`412` otherwise) — the server refuses to install unverified code, even when `VERIFY_PLUGINS` is off. |
+
+A tampered/unsigned bundle is rejected (`400`, `PluginVerificationError`) and never written. On Kubernetes, `PLUGINS_DIR` is an `emptyDir` reseeded from the bundle image on every start, so set `plugins.persistence.enabled=true` (PVC) and `plugins.uiInstall.enabled=true` in the Helm chart for runtime-installed connectors to survive pod restarts.
+
+Future: a "third-party / certified / official" rating tier like Confluent Hub.
 
 ## Implementation milestones
 
@@ -184,9 +200,12 @@ These will be separate PRs so each can pass smoke independently:
 | 5  | Loki connector → own package. |
 | 6  | ✅ Offline verification (`VERIFY_PLUGINS` + local trust root) — fail-closed manifest signature + entry integrity. (Local trust root, not sigstore: airgapped sites can't reach a transparency log.) |
 | 7  | ✅ Helm `plugins.image` + init-container extraction, plus an official signed multi-connector bundle image (`observability-mcp-plugins`) so no image build is needed. |
-| 8  | ✅ Catalog contract in `hub/` (schema + validated `index.json` + generator + CI). Hosted static site / install CLI remain future work on top of this format. |
+| 8  | ✅ Catalog contract in `hub/` (schema + validated `index.json` + generator + CI). |
+| 9  | ✅ Hosted hub site (GitHub Pages, ArtifactHub-style detail pages) + `omcp` CLI (`plugin list/info/install/verify`, `--from` for air-gapped). |
+| 10 | ✅ Web UI Connectors page + JSON API: list installed, browse hub, server-side install from catalog, upload a bundle `.tgz` — all behind `ENABLE_UI_INSTALL` + trust root, fail-closed. |
+| 11 | ✅ Helm `plugins.persistence` (PVC for `/app/plugins`) + `plugins.uiInstall` so runtime-installed connectors survive pod restarts. |
 
-The first three PRs unlock airgapped deployments. Everything after is incremental polish.
+The first three PRs unlock airgapped deployments. Everything after is incremental polish — milestones 1–11 are complete.
 
 ## Open questions
 

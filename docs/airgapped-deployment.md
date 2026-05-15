@@ -108,18 +108,19 @@ COPY ./internal-connector /app/plugins/internal-connector
 
 The PluginLoader scans `/app/plugins/` at startup and validates each manifest. Failed validation rejects the plugin (with a logged reason) but doesn't block server startup — the operator can `PLUGINS_DISABLED=internal-connector` to opt out at runtime without rebuilding.
 
+### Installing a connector at runtime (no rebuild)
+
+Baking into a derived image is the most locked-down path, but the running server can also install a connector bundle without a redeploy — useful when you cannot rebuild quickly:
+
+- **Web UI**: Connectors → *Upload a connector bundle* → pick the signed `.tgz`. No shell access to the pod needed.
+- **API**: `POST /api/connectors/upload` with the raw `.tgz` (`application/octet-stream`), or `POST /api/connectors/install` to pull a named connector from a mirrored catalog.
+- **CLI**: `omcp plugin install <name> --from <local-dir-or-mirror-url> --trust-root <pub.pem>`.
+
+All three are **off by default** and fail-closed: set `ENABLE_UI_INSTALL=true` *and* a `PLUGIN_TRUST_ROOT`, and every bundle is signature+integrity verified before it is written to `PLUGINS_DIR` (a tampered/unsigned bundle is rejected, never loaded). On Kubernetes, back `PLUGINS_DIR` with a PVC (`plugins.persistence.enabled=true`, `plugins.uiInstall.enabled=true`) so runtime installs survive pod restarts — otherwise the bundle init container reseeds the volume on every start.
+
 ### Verifying plugin provenance
 
-If your security policy requires signed plugins, run the verification step in a pre-build hook before `COPY`:
-
-```bash
-cosign verify-blob \
-  --signature internal-connector.sig \
-  --certificate internal-connector.cert \
-  internal-connector.tar.gz
-```
-
-A future release will fold this into the PluginLoader as an opt-in `PLUGIN_REQUIRE_SIGNATURE=true` mode.
+Provenance verification is **offline and built in** — no `cosign`, no Fulcio/Rekor, no network (an airgapped site cannot reach a transparency log). The server checks a local trust root with Node's built-in crypto: a plugin loads only when its `manifest.json` `integrity` (sha256 of the entry file) matches *and* the detached `manifest.json.sig` verifies against `PLUGIN_TRUST_ROOT`. Enable with `VERIFY_PLUGINS=true` (filesystem plugins) — see [`docs/plugin-architecture.md`](plugin-architecture.md#verification-airgapped-trust-root) for producing the artifacts. Runtime install/upload is *always* verified regardless of `VERIFY_PLUGINS`.
 
 ## Configuration without the Web UI
 
