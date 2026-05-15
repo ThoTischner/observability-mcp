@@ -5,15 +5,24 @@ name: Publish Helm chart
 #   helm repo add observability-mcp https://thotischner.github.io/observability-mcp
 #   helm install obs ./observability-mcp/observability-mcp
 #
-# Triggered on tag push (so the chart version matches the app release)
-# or manually. ArtifactHub picks up the index via the gh-pages URL.
+# Triggered on:
+#   - any push to main that touches the chart (so a Chart.yaml version
+#     bump publishes immediately — chart releases are decoupled from
+#     app releases), or
+#   - any v* tag push (an app release also refreshes the chart's
+#     appVersion), or
+#   - manually.
+# chart-releaser runs with skip_existing, so re-running with an
+# unchanged chart version is a harmless no-op. ArtifactHub picks up the
+# index via the gh-pages URL.
 
 on:
   push:
-    tags: ['v*']
+    branches: [main]
     paths:
       - 'helm/**'
       - '.github/workflows/helm-release.yml'
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
