@@ -1,0 +1,14 @@
+{
+  "name": "@observability-mcp/connector-grafana",
+  "version": "1.0.0",
+  "description": "Grafana connector for observability-mcp — metrics + logs through Grafana's datasource proxy.",
+  "type": "module",
+  "main": "./index.js",
+  "license": "MIT",
+  "files": ["index.js", "manifest.json"],
+  "observabilityMcp": {
+    "kind": "connector",
+    "name": "grafana",
+    "manifest": "./manifest.json"
+  }
+}

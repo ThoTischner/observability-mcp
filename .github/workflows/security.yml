@@ -54,17 +54,23 @@ jobs:
         run: |
           node hub/build-catalog.mjs --check
           node --test hub/build-catalog.test.mjs
-      - name: Datadog connector (tests + manifest integrity in sync)
+      - name: Connectors (tests + manifest/catalog integrity in sync)
         run: |
-          node --test connectors/datadog/*.test.mjs connectors/datadog/contract/*.test.mjs
+          node --test connectors/*/*.test.mjs connectors/*/contract/*.test.mjs
           node -e '
-            const c=require("crypto"),fs=require("fs");
-            const i="sha256-"+c.createHash("sha256").update(fs.readFileSync("connectors/datadog/index.js")).digest("base64");
-            const m=JSON.parse(fs.readFileSync("connectors/datadog/manifest.json"));
-            if(m.integrity!==i){console.error("manifest.integrity stale: "+m.integrity+" != "+i);process.exit(1)}
-            const cat=JSON.parse(fs.readFileSync("hub/catalog/datadog.json"));
-            if(cat.versions[0].integrity!==i){console.error("catalog integrity stale");process.exit(1)}
-            console.log("datadog integrity in sync");
+            const c=require("crypto"),fs=require("fs"),p=require("path");
+            for (const d of fs.readdirSync("connectors",{withFileTypes:true})) {
+              if (!d.isDirectory()) continue;
+              const dir="connectors/"+d.name;
+              const pkg=JSON.parse(fs.readFileSync(p.join(dir,"package.json")));
+              if (pkg.observabilityMcp?.kind!=="connector") continue;
+              const i="sha256-"+c.createHash("sha256").update(fs.readFileSync(p.join(dir,"index.js"))).digest("base64");
+              const m=JSON.parse(fs.readFileSync(p.join(dir,"manifest.json")));
+              if(m.integrity!==i){console.error(d.name+": manifest.integrity stale "+m.integrity+" != "+i);process.exit(1)}
+              const cat=JSON.parse(fs.readFileSync("hub/catalog/"+d.name+".json"));
+              if(cat.versions[0].integrity!==i){console.error(d.name+": catalog integrity stale");process.exit(1)}
+              console.log(d.name+" integrity in sync");
+            }
           '
       - name: Connector packer tests
         run: node --test connectors/pack.test.mjs

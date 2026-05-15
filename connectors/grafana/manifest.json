@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "name": "grafana",
+  "displayName": "Grafana",
+  "version": "1.0.0",
+  "description": "Grafana connector — queries a Prometheus-compatible datasource (metrics) and a Loki datasource (logs) through Grafana's datasource proxy, behind Grafana auth. Auth with a Grafana service-account token.",
+  "signalTypes": ["metrics", "logs"],
+  "homepage": "https://github.com/ThoTischner/observability-mcp",
+  "license": "MIT",
+  "capabilities": {
+    "queryMetrics": true,
+    "queryLogs": true,
+    "listServices": true
+  },
+  "compat": {
+    "serverVersion": ">=1.4.0"
+  },
+  "integrity": "sha256-zEaoTRdorQYbNvSKTjo4iDYNCfCogWG3m6nS28zeBjA="
+}

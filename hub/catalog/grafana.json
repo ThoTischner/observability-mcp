@@ -1,0 +1,20 @@
+{
+  "catalogVersion": 1,
+  "name": "grafana",
+  "displayName": "Grafana",
+  "description": "Grafana connector — metrics from a Prometheus-compatible datasource and logs from a Loki datasource, queried through Grafana's datasource proxy behind Grafana auth.",
+  "vendor": "observability-mcp",
+  "homepage": "https://github.com/ThoTischner/observability-mcp",
+  "tier": "official",
+  "signalTypes": ["metrics", "logs"],
+  "versions": [
+    {
+      "version": "1.0.0",
+      "releasedAt": "2026-05-15",
+      "serverCompat": ">=1.4.0",
+      "tarballUrl": "https://github.com/ThoTischner/observability-mcp/releases/download/connector-grafana-1.0.0/grafana-1.0.0.tgz",
+      "integrity": "sha256-zEaoTRdorQYbNvSKTjo4iDYNCfCogWG3m6nS28zeBjA=",
+      "changelog": "Initial release: Prometheus-proxied metrics + Loki-proxied logs via Grafana datasource proxy, auto datasource-UID resolution, service-account token auth."
+    }
+  ]
+}
