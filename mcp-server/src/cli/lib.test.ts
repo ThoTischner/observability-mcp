@@ -138,3 +138,28 @@ test("resolveInstall: picks latest then specific version", () => {
   assert.throws(() => resolveInstall(CAT, "tempo@9.9.9"), /not found/);
   assert.throws(() => resolveInstall(CAT, "ghost"), /no connector/);
 });
+
+import { splitPassthrough, helmReleaseArgs, HELM_CHART } from "./lib.js";
+
+test("splitPassthrough: splits at first -- ", () => {
+  assert.deepEqual(splitPassthrough(["helm", "install", "obs"]), {
+    argv: ["helm", "install", "obs"],
+    passthrough: [],
+  });
+  assert.deepEqual(
+    splitPassthrough(["helm", "upgrade", "obs", "--", "-n", "mon", "--set", "a=b"]),
+    { argv: ["helm", "upgrade", "obs"], passthrough: ["-n", "mon", "--set", "a=b"] }
+  );
+});
+
+test("helmReleaseArgs: install vs upgrade --install, passthrough appended", () => {
+  assert.deepEqual(helmReleaseArgs("install", "obs", []), ["install", "obs", HELM_CHART]);
+  assert.deepEqual(helmReleaseArgs("upgrade", "obs", ["-n", "mon"]), [
+    "upgrade",
+    "--install",
+    "obs",
+    HELM_CHART,
+    "-n",
+    "mon",
+  ]);
+});

@@ -24,6 +24,10 @@ import {
   formatPluginList,
   formatPluginInfo,
   resolveInstall,
+  splitPassthrough,
+  helmReleaseArgs,
+  HELM_REPO_NAME,
+  HELM_REPO_URL,
   HELP,
   type Catalog,
 } from "./lib.js";
@@ -338,13 +342,37 @@ async function demo(sub: string | undefined): Promise<void> {
   process.exit(code);
 }
 
+function helm(sub: string | undefined, release: string, passthrough: string[]): void {
+  if (sub !== "install" && sub !== "upgrade") {
+    fail(`unknown 'helm' subcommand: ${sub ?? "(none)"} (install|upgrade)`);
+  }
+  if (!which("helm", ["version", "--short"])) {
+    fail("helm not found on PATH (see: https://helm.sh/docs/intro/install/)");
+  }
+  const cwd = process.cwd();
+  // Idempotent: --force-update tolerates an existing repo entry.
+  if (run("helm", ["repo", "add", HELM_REPO_NAME, HELM_REPO_URL, "--force-update"], cwd) !== 0) {
+    fail("helm repo add failed");
+  }
+  if (run("helm", ["repo", "update", HELM_REPO_NAME], cwd) !== 0) {
+    fail("helm repo update failed");
+  }
+  const args = helmReleaseArgs(sub, release, passthrough);
+  const code = run("helm", args, cwd);
+  if (code === 0) {
+    console.log(`\nhelm ${sub} ok: release '${release}' from the signed ${HELM_REPO_NAME} chart.`);
+  }
+  process.exit(code);
+}
+
 function run(cmd: string, args: string[], cwd: string): number {
   const r = spawnSync(cmd, args, { cwd, stdio: "inherit" });
   return r.status ?? 1;
 }
 
 async function main(): Promise<void> {
-  const { command, sub, flags, positionals } = parseArgs(process.argv.slice(2));
+  const { argv: pre, passthrough } = splitPassthrough(process.argv.slice(2));
+  const { command, sub, flags, positionals } = parseArgs(pre);
   const json = flags.json === true;
   switch (command) {
     case "":
@@ -362,6 +390,8 @@ async function main(): Promise<void> {
       return demo(sub);
     case "plugin":
       return plugin(sub, positionals, flags);
+    case "helm":
+      return helm(sub, positionals[0] ?? "observability-mcp", passthrough);
     default:
       fail(`unknown command: ${command}\n\n${HELP}`);
   }
