@@ -1,0 +1,81 @@
+name: Publish connector hub site
+
+# Deploys the static connector-hub site to the gh-pages branch under
+# /hub/ — served at https://thotischner.github.io/observability-mcp/hub/.
+#
+# The gh-pages branch ROOT belongs to the Helm chart-releaser
+# (index.yaml + artifacthub-repo.yml). This workflow ONLY ever writes
+# the hub/ subtree and rebases before pushing, so the two never clobber
+# each other even if they run close together.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'hub/**'
+      - '.github/workflows/hub-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  # Serialize anything that writes gh-pages.
+  group: gh-pages-write
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+
+      - name: Validate catalog + index in sync
+        run: |
+          node hub/build-catalog.mjs --check
+          node --test hub/build-catalog.test.mjs
+
+      - name: Stage site
+        run: |
+          mkdir -p /tmp/site
+          cp hub/site/index.html /tmp/site/index.html
+          cp hub/catalog/index.json /tmp/site/index.json
+          # Per-connector JSON too, so deep links / tooling can fetch them.
+          mkdir -p /tmp/site/catalog
+          cp hub/catalog/*.json /tmp/site/catalog/
+
+      - name: Publish to gh-pages/hub (rebase-safe)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          tmp="$(mktemp -d)"
+          git clone --depth 1 --branch gh-pages \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$tmp"
+          rm -rf "$tmp/hub"
+          mkdir -p "$tmp/hub"
+          cp -r /tmp/site/. "$tmp/hub/"
+          cd "$tmp"
+          git add hub
+          if git diff --cached --quiet; then
+            echo "hub/ unchanged — nothing to publish."
+            exit 0
+          fi
+          git commit -m "chore(hub): publish connector hub site [skip ci]"
+          # The chart-releaser may push to gh-pages root meanwhile; only
+          # our hub/ is staged, so a rebase merges cleanly. Retry a few
+          # times for the rare concurrent push.
+          for i in 1 2 3 4 5; do
+            if git push origin gh-pages; then echo "pushed"; exit 0; fi
+            echo "push rejected (attempt $i) — rebasing"
+            git fetch origin gh-pages
+            git rebase origin/gh-pages
+          done
+          echo "::error::could not push hub site after 5 attempts"
+          exit 1

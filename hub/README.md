@@ -1,5 +1,9 @@
 # Connector hub catalog
 
+**Live site:** https://thotischner.github.io/observability-mcp/hub/
+(deployed by `.github/workflows/hub-pages.yml` into the `gh-pages`
+`/hub/` subtree — the Helm chart repo at the gh-pages root is untouched).
+
 A **static** catalog of observability-mcp connectors (think the `helm/charts`
 index, or Confluent Hub). No server, no telemetry: a single
 `catalog/index.json` that a static site or the future
