@@ -9,6 +9,10 @@
     "type": "git",
     "url": "https://github.com/ThoTischner/observability-mcp"
   },
+  "homepage": "https://github.com/ThoTischner/observability-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/ThoTischner/observability-mcp/issues"
+  },
   "keywords": [
     "mcp",
     "observability",
