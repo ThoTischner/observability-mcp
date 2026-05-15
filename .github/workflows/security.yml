@@ -56,7 +56,7 @@ jobs:
           node --test hub/build-catalog.test.mjs
       - name: Datadog connector (tests + manifest integrity in sync)
         run: |
-          node --test connectors/datadog/*.test.mjs
+          node --test connectors/datadog/*.test.mjs connectors/datadog/contract/*.test.mjs
           node -e '
             const c=require("crypto"),fs=require("fs");
             const i="sha256-"+c.createHash("sha256").update(fs.readFileSync("connectors/datadog/index.js")).digest("base64");
