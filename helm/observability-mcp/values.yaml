@@ -69,11 +69,13 @@ plugins:
   # OCI image containing ONLY a /plugins tree. An init container copies
   # the selected paths into an emptyDir mounted at /app/plugins, so the
   # main container never needs registry access (airgapped-friendly).
-  # Leave empty to disable the init container entirely. The official
-  # signed image bundles every connector:
-  #   ghcr.io/thotischner/observability-mcp-plugins:latest
-  # (mirror it for airgapped; pair with plugins.verify + paths).
-  image: ""
+  #
+  # Defaults to the official signed multi-connector bundle so a plain
+  # `helm install` already has the optional connectors available (they
+  # stay inert until a matching source is configured). For airgapped
+  # clusters mirror this image and override with the mirror. Set to ""
+  # to disable the init container entirely (builtin Prometheus/Loki only).
+  image: "ghcr.io/thotischner/observability-mcp-plugins:latest"
   imagePullPolicy: IfNotPresent
   # Subdirectories of /plugins to extract. Empty = copy everything.
   paths: []
