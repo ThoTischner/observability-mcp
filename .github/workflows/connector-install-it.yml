@@ -1,0 +1,37 @@
+name: Connector install integration
+
+# Deterministic, network-free end-to-end test of the connector install
+# flows the hub advertises (air-gapped --offline-dir, manual verify,
+# fail-closed tamper + missing-trust-root). Complements the unit/contract
+# tests (which mock fetch) and helm-integration (which covers the Helm
+# init-container path).
+
+on:
+  pull_request:
+    paths:
+      - 'connectors/**'
+      - 'mcp-server/src/cli/**'
+      - 'mcp-server/src/connectors/verify.ts'
+      - '.github/workflows/connector-install-it.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'connectors/**'
+      - 'mcp-server/src/cli/**'
+  workflow_dispatch:
+
+jobs:
+  install-it:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+      - name: Build CLI
+        working-directory: ./mcp-server
+        run: npm ci && npm run build
+      - name: Connector install flows (datadog + grafana)
+        run: |
+          sh connectors/install-it.sh datadog
+          sh connectors/install-it.sh grafana
