@@ -64,6 +64,24 @@
         "required": ["name"]
       }
     },
+    "plugins": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "image": { "type": "string" },
+        "imagePullPolicy": { "type": "string", "enum": ["Always", "IfNotPresent", "Never"] },
+        "paths": { "type": "array", "items": { "type": "string" } },
+        "verify": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "trustRootPem": { "type": "string" },
+            "existingSecret": { "type": "string" }
+          }
+        }
+      }
+    },
     "service": {
       "type": "object",
       "properties": {
