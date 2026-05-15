@@ -8,7 +8,10 @@
 
 runtime: container
 build:
-  dockerfile: mcp-server/Dockerfile
+  # dockerfile is resolved relative to context, so with context
+  # ./mcp-server the Dockerfile is just "Dockerfile" (matches the
+  # docker-publish workflow's build context exactly).
+  dockerfile: Dockerfile
   context: ./mcp-server
 
 startCommand:
