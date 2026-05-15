@@ -31,9 +31,15 @@ jobs:
       - name: Build CLI
         working-directory: ./mcp-server
         run: npm ci && npm run build
-      - name: Connector install flows (datadog + grafana)
+      - name: Connector install flows (every connectors/*)
         run: |
-          sh connectors/install-it.sh datadog
-          sh connectors/install-it.sh grafana
+          for d in connectors/*/; do
+            [ -f "$d/package.json" ] || continue
+            kind=$(node -e "try{console.log(JSON.parse(require('fs').readFileSync('$d/package.json')).observabilityMcp?.kind||'')}catch{console.log('')}")
+            [ "$kind" = "connector" ] || continue
+            name=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$d/package.json')).observabilityMcp.name)")
+            echo "=== install-it: $name ==="
+            sh connectors/install-it.sh "$name"
+          done
       - name: Loader functional smoke (connectors load & are callable)
         run: node connectors/loader-smoke.mjs

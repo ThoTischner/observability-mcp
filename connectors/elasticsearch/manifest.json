@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "name": "elasticsearch",
+  "displayName": "Elasticsearch",
+  "version": "1.0.0",
+  "description": "Elasticsearch connector — logs via _search and log-derived metrics (doc/error rate) via date_histogram aggregations. ECS-style fields; API-key or basic auth; index pattern via ES_INDEX.",
+  "signalTypes": ["logs", "metrics"],
+  "homepage": "https://github.com/ThoTischner/observability-mcp",
+  "license": "MIT",
+  "capabilities": {
+    "queryMetrics": true,
+    "queryLogs": true,
+    "listServices": true
+  },
+  "compat": {
+    "serverVersion": ">=1.4.0"
+  },
+  "integrity": "sha256-US/Lpr1+/P+2vmRcL910WiPIc2k9jxrbvChF4DVH8Us="
+}
