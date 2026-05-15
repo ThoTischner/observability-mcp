@@ -8,6 +8,12 @@ import { z } from "zod";
 import { loadConfig, saveConfig, DEFAULT_HEALTH_THRESHOLDS, DEFAULT_SETTINGS } from "./config/loader.js";
 import { ConnectorRegistry, getSupportedTypes } from "./connectors/registry.js";
 import { getPluginLoader } from "./connectors/loader.js";
+import {
+  resolveHubCatalogUrl,
+  describeInstalled,
+  mergeCatalog,
+  fetchHubCatalog,
+} from "./connectors/hub.js";
 import { selfRegistry, withToolMetrics, apiRequests, mcpActiveSessions } from "./metrics/self.js";
 import { buildOpenApiSpec } from "./openapi.js";
 import { listSourcesHandler } from "./tools/list-sources.js";
@@ -281,6 +287,28 @@ async function main() {
         signalTypes: p.manifest?.signalTypes ?? null,
       })),
     });
+  });
+
+  // Connectors currently loaded into this server (builtin + filesystem
+  // plugins), with manifest metadata — drives the UI "Connectors" page.
+  app.get("/api/connectors", (_req, res) => {
+    res.json({ connectors: describeInstalled(getPluginLoader().list()) });
+  });
+
+  // Server-side proxy of the connector hub catalog (so the browser
+  // needn't reach the hub directly — works behind a proxy / against a
+  // mirror via HUB_CATALOG_URL). Installed status merged in.
+  app.get("/api/hub/catalog", async (_req, res) => {
+    const url = resolveHubCatalogUrl();
+    try {
+      const catalog = await fetchHubCatalog(url);
+      res.json({
+        url,
+        connectors: mergeCatalog(catalog, describeInstalled(getPluginLoader().list())),
+      });
+    } catch (e) {
+      res.status(502).json({ url, error: e instanceof Error ? e.message : String(e), connectors: [] });
+    }
   });
 
   // Add a new source
