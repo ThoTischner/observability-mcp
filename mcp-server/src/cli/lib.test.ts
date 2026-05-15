@@ -111,3 +111,30 @@ test("formatPluginInfo: versions + integrity/signature surfaced", () => {
   assert.match(info, /integrity: sha256-AAAA=/);
   assert.match(info, /signature: https:\/\/x\/s\.sig/);
 });
+
+import { parsePluginRef, resolveInstall } from "./lib.js";
+
+test("parsePluginRef: name and name@version, rejects junk", () => {
+  assert.deepEqual(parsePluginRef("tempo"), { name: "tempo", version: undefined });
+  assert.deepEqual(parsePluginRef("tempo@1.2.3"), { name: "tempo", version: "1.2.3" });
+  assert.deepEqual(parsePluginRef("x@1.0.0-rc.1"), { name: "x", version: "1.0.0-rc.1" });
+  assert.throws(() => parsePluginRef("Bad Name"), /invalid plugin ref/);
+  assert.throws(() => parsePluginRef("tempo@v1"), /invalid plugin ref/);
+});
+
+test("resolveInstall: builtin short-circuits", () => {
+  const r = resolveInstall(CAT, "prometheus");
+  assert.equal(r.builtin, true);
+  assert.equal(r.name, "prometheus");
+});
+
+test("resolveInstall: picks latest then specific version", () => {
+  const def = resolveInstall(CAT, "tempo");
+  assert.equal(def.version, "1.0.0");
+  assert.equal(def.builtin, false);
+  assert.equal(def.integrity, "sha256-AAAA=");
+  const pinned = resolveInstall(CAT, "tempo@1.0.0");
+  assert.equal(pinned.version, "1.0.0");
+  assert.throws(() => resolveInstall(CAT, "tempo@9.9.9"), /not found/);
+  assert.throws(() => resolveInstall(CAT, "ghost"), /no connector/);
+});
