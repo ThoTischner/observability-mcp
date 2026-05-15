@@ -5,6 +5,74 @@ entries:
       artifacthub.io/category: monitoring-logging
       artifacthub.io/changes: |
         - kind: fixed
+          description: Chart packages are now actually GPG-signed (.prov shipped) — signing key regenerated, CI import fixed
+        - kind: fixed
+          description: Chart icon points at an existing SVG (logo.png 404 fixed)
+        - kind: added
+          description: GPG signing of chart packages — \"signed\" badge on ArtifactHub
+        - kind: fixed
+          description: Chart icon points at an existing SVG (logo.png 404 fixed)
+        - kind: added
+          description: values.schema.json — Helm validates input types before render
+        - kind: added
+          description: Helm test pod (`helm test <release>`) that probes /readyz on the service
+        - kind: added
+          description: Optional prometheus.io/scrape annotations on the Service for clusters without prometheus-operator
+        - kind: added
+          description: NOTES.txt with post-install instructions
+        - kind: added
+          description: artifacthub.io/images and artifacthub.io/changes annotations
+      artifacthub.io/containsSecurityUpdates: "false"
+      artifacthub.io/images: |
+        - name: observability-mcp
+          image: ghcr.io/thotischner/observability-mcp:1.4.0
+          platforms:
+            - linux/amd64
+            - linux/arm64
+      artifacthub.io/license: MIT
+      artifacthub.io/links: |
+        - name: Source
+          url: https://github.com/ThoTischner/observability-mcp
+        - name: Container image
+          url: https://github.com/ThoTischner/observability-mcp/pkgs/container/observability-mcp
+        - name: npm
+          url: https://www.npmjs.com/package/@thotischner/observability-mcp
+      artifacthub.io/operator: "false"
+      artifacthub.io/prerelease: "false"
+      artifacthub.io/signKey: |
+        fingerprint: C240A58EC3B9D596C685FB0079826B0CB9A6329F
+        url: https://raw.githubusercontent.com/ThoTischner/observability-mcp/main/docs/helm-signing.pub.asc
+    apiVersion: v2
+    appVersion: 1.4.0
+    created: "2026-05-15T12:18:08.109854657Z"
+    description: Unified observability gateway for AI agents — one MCP server for
+      Prometheus, Loki, and any backend
+    digest: 78a4e0f49067b3020c3e14c33fbde33240a1fc69c9351dfe8ab14391735e862d
+    home: https://github.com/ThoTischner/observability-mcp
+    icon: https://raw.githubusercontent.com/ThoTischner/observability-mcp/main/docs/logo.svg
+    keywords:
+    - mcp
+    - model-context-protocol
+    - observability
+    - prometheus
+    - loki
+    - sre
+    - monitoring
+    - ai-agents
+    maintainers:
+    - name: ThoTischner
+      url: https://github.com/ThoTischner
+    name: observability-mcp
+    sources:
+    - https://github.com/ThoTischner/observability-mcp
+    type: application
+    urls:
+    - https://github.com/ThoTischner/observability-mcp/releases/download/observability-mcp-0.6.0/observability-mcp-0.6.0.tgz
+    version: 0.6.0
+  - annotations:
+      artifacthub.io/category: monitoring-logging
+      artifacthub.io/changes: |
+        - kind: fixed
           description: Chart icon points at an existing SVG (logo.png 404 fixed)
         - kind: added
           description: GPG signing of chart packages — \"signed\" badge on ArtifactHub
@@ -124,4 +192,4 @@ entries:
     urls:
     - https://github.com/ThoTischner/observability-mcp/releases/download/observability-mcp-0.3.0/observability-mcp-0.3.0.tgz
     version: 0.3.0
-generated: "2026-05-15T11:49:56.171507928Z"
+generated: "2026-05-15T12:18:08.109870006Z"
