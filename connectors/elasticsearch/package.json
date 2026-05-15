@@ -1,0 +1,14 @@
+{
+  "name": "@observability-mcp/connector-elasticsearch",
+  "version": "1.0.0",
+  "description": "Elasticsearch connector for observability-mcp — logs via _search and log-derived metrics via aggregations.",
+  "type": "module",
+  "main": "./index.js",
+  "license": "MIT",
+  "files": ["index.js", "manifest.json"],
+  "observabilityMcp": {
+    "kind": "connector",
+    "name": "elasticsearch",
+    "manifest": "./manifest.json"
+  }
+}
