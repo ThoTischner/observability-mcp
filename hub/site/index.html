@@ -202,24 +202,24 @@ curl -fsSL -O ${TRUST_ROOT_URL}
 # --- On the AIR-GAPPED host ----------------------------------------
 omcp plugin install ${c.name}@${ver} \\
   --offline-dir . --trust-root plugin-signing.pub.pem`],
-    ["Helm", `# Bake the connector into a plugins-only OCI image, then let the
-# chart's init-container extract it (no registry pull from the app pod).
+    ["Helm", `# The official signed plugins image already bundles every
+# connector — point plugins.image at it; the chart's init-container
+# extracts only what you list, the app pod pulls no registry itself.
+#
+# Airgapped: mirror the image once
+#   skopeo copy docker://ghcr.io/thotischner/observability-mcp-plugins:latest \\
+#     docker://registry.internal/observability-mcp-plugins:latest
 
-mkdir -p plugins/${c.name} && tar -xzf ${file} -C plugins/${c.name}
-printf 'FROM scratch\\nCOPY plugins /plugins\\n' > Dockerfile.plugins
-docker build -f Dockerfile.plugins -t registry.example.com/obs-mcp-plugins:1 .
-docker push registry.example.com/obs-mcp-plugins:1
-
-# values.yaml — mount it, fail-closed verified against the trust root:
-cat <<'YAML'
+cat > values.yaml <<'YAML'
 plugins:
-  image: registry.example.com/obs-mcp-plugins:1
+  image: ghcr.io/thotischner/observability-mcp-plugins:latest
   paths: ["${c.name}"]
   verify:
     enabled: true
     trustRootPem: |
 $(curl -fsSL ${TRUST_ROOT_URL} | sed 's/^/      /')
 YAML
+helm repo add observability-mcp https://thotischner.github.io/observability-mcp/
 helm upgrade --install obs observability-mcp/observability-mcp -f values.yaml`],
     ["Manual", `# Plain filesystem install into PLUGINS_DIR (default /app/plugins)
 curl -fsSL -O ${tgz}
