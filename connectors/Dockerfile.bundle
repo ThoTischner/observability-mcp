@@ -1,0 +1,15 @@
+# Official multi-connector plugins image. NOT a runnable service — it
+# only carries signed connector dirs under /plugins/<name>/. The Helm
+# chart's init-container (sh + cp) extracts the requested paths into an
+# emptyDir, so the base needs a shell + coreutils (busybox), not scratch.
+#
+# Build context is the staged tree produced by connectors/build-bundle.sh
+# (plugins/<name>/{index.js,package.json,manifest.json,manifest.json.sig}).
+FROM busybox:1.36
+LABEL org.opencontainers.image.source="https://github.com/ThoTischner/observability-mcp" \
+      org.opencontainers.image.description="observability-mcp connectors (signed) for the Helm chart plugins.image / airgapped mounts"
+COPY plugins /plugins
+# Sanity: fail the build if a connector is missing its signed manifest.
+RUN set -eu; for d in /plugins/*/; do \
+      [ -f "$d/manifest.json" ] || { echo "missing manifest in $d"; exit 1; }; \
+    done; echo "bundled: $(ls -1 /plugins | tr '\n' ' ')"

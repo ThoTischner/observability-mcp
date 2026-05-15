@@ -1,0 +1,89 @@
+name: Publish plugins bundle image
+
+# Builds and pushes the official multi-connector plugins OCI image to
+# GHCR: ghcr.io/<repo>-plugins. The Helm chart's plugins.image can point
+# straight at it (init-container extracts the requested connectors) — no
+# hand-built image, and it doubles as the airgapped "bundled image".
+#
+# Connectors are packed + signed with the SAME pack.mjs + signing key as
+# the per-connector hub tarballs (fail-open if the key is absent).
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'connectors/**'
+      - '.github/workflows/connector-bundle-image.yml'
+    tags: ['connector-*']
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+
+      - name: Image name (lowercase) + restore signing key
+        id: prep
+        env:
+          KEY_B64: ${{ secrets.PLUGIN_SIGNING_KEY_B64 }}
+        run: |
+          set -euo pipefail
+          echo "image=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')-plugins" >> "$GITHUB_OUTPUT"
+          if [ -n "${KEY_B64:-}" ]; then
+            echo "$KEY_B64" | base64 -d > /tmp/plugin-signing.key
+            chmod 600 /tmp/plugin-signing.key
+            echo "key=/tmp/plugin-signing.key" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::PLUGIN_SIGNING_KEY_B64 unset — bundle ships UNSIGNED."
+            echo "key=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Stage signed plugins
+        run: |
+          if [ -n "${{ steps.prep.outputs.key }}" ]; then
+            sh connectors/build-bundle.sh /tmp/bundle "${{ steps.prep.outputs.key }}"
+          else
+            sh connectors/build-bundle.sh /tmp/bundle
+          fi
+
+      - name: Wipe signing key
+        if: always()
+        run: shred -u /tmp/plugin-signing.key 2>/dev/null || rm -f /tmp/plugin-signing.key
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ steps.prep.outputs.image }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha
+            type=raw,value=bundle
+
+      - name: Build and push (multi-arch)
+        uses: docker/build-push-action@v7
+        with:
+          context: /tmp/bundle
+          file: /tmp/bundle/Dockerfile.bundle
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

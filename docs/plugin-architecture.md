@@ -107,12 +107,12 @@ The pain point of airgapped setups is **no `npm install` at runtime**, no GitHub
 
 Three supported workflows:
 
-- **Bundled image.** The Dockerfile copies a `plugins/` dir into the image. Operators rebuild the image when they want a new connector. CI builds an `:airgap-bundle` tag that includes every blessed connector.
+- **Bundled image.** CI publishes an official multi-connector image — `ghcr.io/thotischner/observability-mcp-plugins:latest` (`.github/workflows/connector-bundle-image.yml`; connectors signed with the same key as the hub tarballs). Operators just reference or mirror it — no hand-built image.
 
 - **Mounted volume (k8s).** The Helm chart accepts:
   ```yaml
   plugins:
-    image: registry.internal/observability-mcp-plugins:1.0.0   # an OCI image that *only* contains plugins/
+    image: ghcr.io/thotischner/observability-mcp-plugins:latest   # official signed bundle (or a mirror)
     paths:
       - prometheus
       - loki
@@ -183,7 +183,7 @@ These will be separate PRs so each can pass smoke independently:
 | 4  | Publish `@thotischner/observability-mcp-sdk` to npm. Move the prometheus connector into its own package, mark the shim as deprecated. |
 | 5  | Loki connector → own package. |
 | 6  | ✅ Offline verification (`VERIFY_PLUGINS` + local trust root) — fail-closed manifest signature + entry integrity. (Local trust root, not sigstore: airgapped sites can't reach a transparency log.) |
-| 7  | Helm chart: `plugins.image` + init container extraction. |
+| 7  | ✅ Helm `plugins.image` + init-container extraction, plus an official signed multi-connector bundle image (`observability-mcp-plugins`) so no image build is needed. |
 | 8  | ✅ Catalog contract in `hub/` (schema + validated `index.json` + generator + CI). Hosted static site / install CLI remain future work on top of this format. |
 
 The first three PRs unlock airgapped deployments. Everything after is incremental polish.
