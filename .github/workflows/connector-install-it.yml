@@ -35,3 +35,5 @@ jobs:
         run: |
           sh connectors/install-it.sh datadog
           sh connectors/install-it.sh grafana
+      - name: Loader functional smoke (connectors load & are callable)
+        run: node connectors/loader-smoke.mjs
