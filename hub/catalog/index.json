@@ -24,6 +24,28 @@
       ]
     },
     {
+      "name": "elasticsearch",
+      "displayName": "Elasticsearch",
+      "description": "Elasticsearch connector — logs via _search and log-derived metrics (doc/error rate) via date_histogram aggregations. ECS-style fields, API-key or basic auth.",
+      "tier": "official",
+      "builtin": false,
+      "signalTypes": [
+        "logs",
+        "metrics"
+      ],
+      "latest": "1.0.0",
+      "versions": [
+        {
+          "version": "1.0.0",
+          "releasedAt": "2026-05-16",
+          "serverCompat": ">=1.4.0",
+          "tarballUrl": "https://github.com/ThoTischner/observability-mcp/releases/download/connector-elasticsearch-1.0.0/elasticsearch-1.0.0.tgz",
+          "integrity": "sha256-US/Lpr1+/P+2vmRcL910WiPIc2k9jxrbvChF4DVH8Us=",
+          "changelog": "Initial release: _search logs + date_histogram log-derived metrics, service-name aggregation discovery, API-key/basic auth, ES_INDEX pattern."
+        }
+      ]
+    },
+    {
       "name": "grafana",
       "displayName": "Grafana",
       "description": "Grafana connector — metrics from a Prometheus-compatible datasource and logs from a Loki datasource, queried through Grafana's datasource proxy behind Grafana auth.",
