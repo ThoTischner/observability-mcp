@@ -2,6 +2,8 @@
 
 Deploys [observability-mcp](https://github.com/ThoTischner/observability-mcp) — a Model Context Protocol server that gives AI agents unified access to Prometheus, Loki, and other observability backends.
 
+Browse available connectors in the **[Connector Hub](https://thotischner.github.io/observability-mcp/hub/)** — pair it with the chart's `plugins.image` / `plugins.verify` values for signed, airgapped connector delivery.
+
 ## Quick start
 
 ```bash
