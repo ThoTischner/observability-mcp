@@ -50,6 +50,10 @@ jobs:
       - name: Run tests
         working-directory: ./mcp-server
         run: npx tsx --test src/analysis/*.test.ts src/config/*.test.ts src/sdk/*.test.ts src/connectors/verify.test.ts
+      - name: Connector hub catalog (validate + in-sync)
+        run: |
+          node hub/build-catalog.mjs --check
+          node --test hub/build-catalog.test.mjs
 
   trivy:
     runs-on: ubuntu-latest

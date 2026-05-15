@@ -1,0 +1,19 @@
+{
+  "catalogVersion": 1,
+  "name": "prometheus",
+  "displayName": "Prometheus",
+  "description": "PromQL-based metrics backend. Service discovery, default metric set, and ad-hoc range/instant queries.",
+  "vendor": "observability-mcp",
+  "homepage": "https://github.com/ThoTischner/observability-mcp",
+  "tier": "official",
+  "builtin": true,
+  "signalTypes": ["metrics"],
+  "versions": [
+    {
+      "version": "1.4.0",
+      "releasedAt": "2026-05-15",
+      "serverCompat": ">=1.4.0",
+      "changelog": "Bundled with the server image — no install step. Listed for discoverability and to anchor the catalog format."
+    }
+  ]
+}

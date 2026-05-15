@@ -154,9 +154,12 @@ The operator distributes only the **public** key as `PLUGIN_TRUST_ROOT`. The Hel
 
 ## The connector hub
 
-Long-term — out of v1 scope but the architecture above is shaped by it.
+The catalog contract now exists in-repo at [`hub/`](../hub/README.md): a
+schema-validated `catalog/<name>.json` per connector aggregated into a
+static `catalog/index.json` (CI keeps it in sync). The web UI / install
+CLI below are still future work, but they consume this format as-is.
 
-- A static catalog (think `helm/charts` repo): a Git repo where each connector's manifest, signed tarball URL, screenshots, and changelog live.
+- A static catalog (think `helm/charts` repo): each connector's manifest, signed tarball URL, screenshots, and changelog live as `hub/catalog/<name>.json`; `hub/build-catalog.mjs` validates and aggregates them.
 - A web UI at `hub.observability-mcp.dev` (or similar) that browses the catalog. Search by signal type, capability, vendor.
 - A CLI command `observability-mcp install <name>` that:
   1. Fetches the manifest from the catalog
@@ -181,7 +184,7 @@ These will be separate PRs so each can pass smoke independently:
 | 5  | Loki connector → own package. |
 | 6  | ✅ Offline verification (`VERIFY_PLUGINS` + local trust root) — fail-closed manifest signature + entry integrity. (Local trust root, not sigstore: airgapped sites can't reach a transparency log.) |
 | 7  | Helm chart: `plugins.image` + init container extraction. |
-| 8  | Connector hub catalog repo + minimal static site. |
+| 8  | ✅ Catalog contract in `hub/` (schema + validated `index.json` + generator + CI). Hosted static site / install CLI remain future work on top of this format. |
 
 The first three PRs unlock airgapped deployments. Everything after is incremental polish.
 
