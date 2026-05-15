@@ -36,7 +36,7 @@ helm install obs-mcp ./helm/observability-mcp \
 | `persistence.enabled` | `false` | Persist `sources.yaml` updates from the Web UI |
 | `autoscaling.enabled` | `false` | HPA — only with sticky-session ingress |
 | `podSecurityContext.runAsNonRoot` | `true` | Hardened defaults |
-| `plugins.image` | `""` | OCI image with a `/plugins` tree; an init container extracts it into `/app/plugins` (no registry access from the main pod) |
+| `plugins.image` | `ghcr.io/thotischner/observability-mcp-plugins:latest` | Official signed connector bundle; an init container extracts it into `/app/plugins` (no registry access from the main pod). Connectors stay inert until a matching source is configured. `""` disables it (builtin Prometheus/Loki only) |
 | `plugins.paths` | `[]` | Subdirs of `/plugins` to extract (empty = all) |
 | `plugins.verify.enabled` | `false` | Fail-closed connector verification (`VERIFY_PLUGINS`) — builtin Prometheus/Loki are never gated |
 | `plugins.verify.trustRootPem` | `""` | PEM public key trust root (rendered into a Secret) |
