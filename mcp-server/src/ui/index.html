@@ -558,6 +558,14 @@
         <div id="conn-installed"><div class="empty">Loading...</div></div>
       </div>
       <div class="card">
+        <div class="card-header"><h2>Upload a connector bundle</h2></div>
+        <p class="empty" style="margin:0 0 12px">Install a signed connector <code>.tgz</code> directly — handy for air-gapped environments. The bundle is always verified against the configured trust root before it is loaded.</p>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input type="file" id="conn-upload-file" accept=".tgz,.tar.gz,application/octet-stream">
+          <button class="btn btn-primary btn-sm" onclick="uploadConnector(this)">Upload &amp; install</button>
+        </div>
+      </div>
+      <div class="card">
         <div class="card-header"><h2>Available from the Connector Hub</h2>
           <a class="btn btn-ghost btn-sm" href="https://thotischner.github.io/observability-mcp/hub/" target="_blank" rel="noopener">Open Hub ↗</a></div>
         <div id="conn-hub"><div class="empty">Loading...</div></div>
@@ -817,6 +825,20 @@ async function installConnector(name, btn){
     else if(r.status===403){ toast('UI install disabled — use the CLI tab, or set ENABLE_UI_INSTALL=true + PLUGIN_TRUST_ROOT.'); if(btn){btn.disabled=false;btn.textContent='Install';} }
     else { toast('Install failed: '+(d.error||r.status)); if(btn){btn.disabled=false;btn.textContent='Install';} }
   } catch(e){ toast('Install error: '+e.message); if(btn){btn.disabled=false;btn.textContent='Install';} }
+}
+async function uploadConnector(btn){
+  const inp=document.getElementById('conn-upload-file');
+  const f=inp&&inp.files&&inp.files[0];
+  if(!f){ toast('Choose a connector .tgz first'); return; }
+  if(btn){ btn.disabled=true; btn.textContent='Uploading…'; }
+  try {
+    const r=await fetch('/api/connectors/upload',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:f});
+    const d=await r.json().catch(()=>({}));
+    if(r.ok){ toast(`Installed ${d.name||'connector'}${d.version?(' v'+d.version):''}`); inp.value=''; loadConnectors(); }
+    else if(r.status===403){ toast('UI install disabled — set ENABLE_UI_INSTALL=true + PLUGIN_TRUST_ROOT.'); }
+    else { toast('Upload failed: '+(d.error||r.status)); }
+  } catch(e){ toast('Upload error: '+e.message); }
+  finally { if(btn){btn.disabled=false;btn.textContent='Upload & install';} }
 }
 function showTab(name) {
   document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));

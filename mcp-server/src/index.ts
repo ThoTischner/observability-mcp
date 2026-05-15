@@ -374,6 +374,53 @@ async function main() {
     }
   });
 
+  // Upload a connector bundle (.tgz) and install it into the running
+  // server. Same fail-closed guardrails as /install: the upload is
+  // ALWAYS verified against PLUGIN_TRUST_ROOT (signature + integrity),
+  // so an unsigned/tampered bundle is rejected. Body is the raw tarball
+  // bytes (application/octet-stream). Persists to PLUGINS_DIR.
+  app.post(
+    "/api/connectors/upload",
+    express.raw({ type: "application/octet-stream", limit: "50mb" }),
+    async (req, res) => {
+      if (process.env.ENABLE_UI_INSTALL !== "true") {
+        return res.status(403).json({
+          error: "UI install is disabled. Set ENABLE_UI_INSTALL=true and PLUGIN_TRUST_ROOT to enable it.",
+        });
+      }
+      const trustRootPath = process.env.PLUGIN_TRUST_ROOT;
+      if (!trustRootPath) {
+        return res.status(412).json({
+          error: "PLUGIN_TRUST_ROOT not configured — refusing to install unverified code.",
+        });
+      }
+      const body = req.body;
+      if (!Buffer.isBuffer(body) || body.length === 0) {
+        return res.status(400).json({ error: "empty body — POST the connector .tgz as application/octet-stream" });
+      }
+      const pluginsDir = process.env.PLUGINS_DIR ?? "/app/plugins";
+      let work: string | null = null;
+      try {
+        work = mkdtempSync(join(tmpdir(), "obsmcp-up-"));
+        const tgz = join(work, "c.tgz");
+        writeFileSync(tgz, body);
+        const result = installTarball({ tgzPath: tgz, pluginsDir, trustRootPath });
+        await getPluginLoader().load(); // re-scan so /api/connectors reflects it
+        res.json({
+          ok: true,
+          ...result,
+          note: "uploaded, verified & persisted to PLUGINS_DIR. Add a source of this type to use it; a server restart is recommended for full availability in existing MCP sessions.",
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        const code = e instanceof PluginVerificationError ? 400 : 500;
+        res.status(code).json({ error: `upload install failed (fail-closed): ${msg}` });
+      } finally {
+        if (work) rmSync(work, { recursive: true, force: true });
+      }
+    },
+  );
+
   // Add a new source
   app.post("/api/sources", async (req, res) => {
     const { name, type, url, enabled, auth, tls } = req.body;
