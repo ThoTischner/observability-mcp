@@ -114,15 +114,32 @@ async function main() {
 
   mcpServer.tool(
     "list_sources",
-    "List all configured observability backends and their connection status. Use this to discover what data sources are available.",
+    [
+      "List the configured observability backends (Prometheus, Loki, and any connector) and whether each is currently reachable.",
+      "When to use: call this first to learn which source names exist and are healthy before passing `source` to other tools, or to debug why a query returns no data.",
+      "Behavior: read-only, no side effects. Returns one entry per source with its name, type, configured URL, signal types (metrics/logs), and a live up/down status. Never throws for an unreachable backend — the backend is reported as down instead.",
+      "Related: use `list_services` to see what is monitored within these sources.",
+    ].join(" "),
     {},
     async () => withToolMetrics("list_sources", () => listSourcesHandler(registry))
   );
 
   mcpServer.tool(
     "list_services",
-    "List all monitored services discovered across all connected backends. Returns service names, their data sources, and signal types (metrics/logs).",
-    { filter: z.string().optional().describe("Optional filter to match service names") },
+    [
+      "Discover the service names that can be queried, aggregated across every connected backend.",
+      "When to use: call this before `query_metrics`, `query_logs`, or `get_service_health` to obtain the exact, case-sensitive service name those tools require.",
+      "Behavior: read-only, no side effects. Returns one entry per service with the service name, the source(s) it was discovered in, and which signals are available for it (metrics, logs, or both).",
+      "Related: `list_sources` for backend health; `get_service_health` for a per-service overview.",
+    ].join(" "),
+    {
+      filter: z
+        .string()
+        .optional()
+        .describe(
+          "Optional case-insensitive substring to narrow the result to matching service names (e.g. 'payment'). Omit to list every discovered service.",
+        ),
+    },
     async (args) => withToolMetrics("list_services", () => listServicesHandler(registry, args))
   );
 
@@ -132,46 +149,135 @@ async function main() {
 
   mcpServer.tool(
     "query_metrics",
-    `Query a specific metric for a service over a given timeframe. Returns time-series data with pre-computed summary statistics (current, average, min, max, trend). Available metrics: ${metricsList}`,
+    [
+      "Fetch the raw time-series for ONE metric of ONE service over a look-back window, returned together with pre-computed summary statistics.",
+      "When to use: when you need the actual numeric values or the trend of a known metric. For a 'is this service OK?' verdict use `get_service_health`; to find which services are misbehaving use `detect_anomalies`.",
+      "Prerequisites: get the exact service name from `list_services` and choose a metric from the list at the end of this description.",
+      "Behavior: read-only, no side effects. Returns an ordered array of {timestamp, value} points plus a summary {current, average, min, max, trend}. With `groupBy` set, returns one labelled series per distinct label value under `groups` instead of a single aggregated series. Units depend on the metric (e.g. CPU as %, latency as ms, rates as per-second). An unknown service/metric or an unreachable backend yields a structured explanatory error, never an exception.",
+      `Available metrics: ${metricsList}`,
+    ].join(" "),
     {
-      service: z.string().describe("Service name (e.g. 'api-gateway', 'payment-service')"),
-      metric: z.string().describe(`Metric name. Available: ${uniqueNames.join(", ")}`),
-      duration: z.string().optional().describe("Time range (e.g. '5m', '1h', '24h'). Default: '5m'"),
-      source: z.string().optional().describe("Specific source name. If omitted, queries all metrics backends."),
-      groupBy: z.string().optional().describe("Label to break the result down by, e.g. 'instance', 'pod', 'node'. Returns one series per distinct value in 'groups'."),
+      service: z
+        .string()
+        .describe(
+          "Required. Exact, case-sensitive service name exactly as returned by `list_services` (e.g. 'api-gateway', 'payment-service').",
+        ),
+      metric: z
+        .string()
+        .describe(
+          `Required. Exact metric name to query. One of: ${uniqueNames.join(", ")}.`,
+        ),
+      duration: z
+        .string()
+        .optional()
+        .describe(
+          "Optional. Look-back window ending at 'now', written as <number><unit> with unit s|m|h|d (e.g. '5m', '90m', '1h', '24h'). Default: '5m'.",
+        ),
+      source: z
+        .string()
+        .optional()
+        .describe(
+          "Optional. Restrict the query to a single backend by its source name (see `list_sources`). Default: query and merge all metrics backends.",
+        ),
+      groupBy: z
+        .string()
+        .optional()
+        .describe(
+          "Optional. Metric label to break the result down by, e.g. 'instance', 'pod', 'node'. When set, the response contains one series per distinct label value under `groups`. Default: a single aggregated series.",
+        ),
     },
     async (args) => withToolMetrics("query_metrics", () => queryMetricsHandler(registry, args))
   );
 
   mcpServer.tool(
     "query_logs",
-    "Query logs for a service over a given timeframe. Returns log entries with a summary including error/warning counts and top error patterns.",
+    [
+      "Fetch recent log entries for ONE service over a look-back window, with a pre-computed summary (error/warning counts and the most frequent error patterns).",
+      "When to use: to inspect what a service actually logged, or to investigate an error spike surfaced by `detect_anomalies` / `get_service_health`. For numeric metrics use `query_metrics` instead.",
+      "Prerequisites: get the exact service name from `list_services` (the service must expose a logs signal).",
+      "Behavior: read-only, no side effects. Returns the matching log entries (newest first, capped by `limit`) plus a summary with total/error/warn counts and top recurring error patterns. No matches yields an empty result with a zeroed summary; an unreachable backend yields a structured explanatory error, never an exception.",
+    ].join(" "),
     {
-      service: z.string().describe("Service name (e.g. 'payment-service')"),
-      query: z.string().optional().describe("Optional search query to filter log messages (regex supported)"),
-      duration: z.string().optional().describe("Time range (e.g. '5m', '1h', '24h'). Default: '5m'"),
-      level: z.string().optional().describe("Filter by log level: 'error', 'warn', 'info', 'debug'"),
-      limit: z.number().optional().describe("Maximum log entries to return. Default: 100"),
+      service: z
+        .string()
+        .describe(
+          "Required. Exact, case-sensitive service name exactly as returned by `list_services` (e.g. 'payment-service').",
+        ),
+      query: z
+        .string()
+        .optional()
+        .describe(
+          "Optional. Filter expression matched against the log message; regular expressions are supported. Omit to return all entries in the window.",
+        ),
+      duration: z
+        .string()
+        .optional()
+        .describe(
+          "Optional. Look-back window ending at 'now', written as <number><unit> with unit s|m|h|d (e.g. '5m', '1h', '24h'). Default: '5m'.",
+        ),
+      level: z
+        .enum(["error", "warn", "info", "debug"])
+        .optional()
+        .describe(
+          "Optional. Return only entries at this severity. Default: all levels.",
+        ),
+      limit: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe(
+          "Optional. Maximum number of log entries to return (most recent first). Default: 100.",
+        ),
     },
     async (args) => withToolMetrics("query_logs", () => queryLogsHandler(registry, args))
   );
 
   mcpServer.tool(
     "get_service_health",
-    "Get an aggregated health overview for a service combining metrics AND logs. Returns health score (0-100), status (healthy/degraded/critical), key metrics, log error summary, anomalies, and cross-signal correlations.",
+    [
+      "Produce a single aggregated health verdict for ONE service by combining its metrics and logs.",
+      "When to use: the fastest way to answer 'is this service healthy right now and why?'. Use `query_metrics`/`query_logs` to drill into the underlying numbers, or `detect_anomalies` to scan many services at once.",
+      "Prerequisites: get the exact service name from `list_services`.",
+      "Behavior: read-only, no side effects. Returns a weighted health score (0–100), a status of healthy | degraded | critical, the key contributing metrics, a log error summary, detected anomalies, and cross-signal correlations explaining the score. A service with no data yields an explanatory result rather than an exception.",
+    ].join(" "),
     {
-      service: z.string().describe("Service name to check health for"),
+      service: z
+        .string()
+        .describe(
+          "Required. Exact, case-sensitive service name exactly as returned by `list_services` (e.g. 'payment-service').",
+        ),
     },
     async (args) => withToolMetrics("get_service_health", () => getServiceHealthHandler(registry, args))
   );
 
   mcpServer.tool(
     "detect_anomalies",
-    "Scan for anomalies across all monitored services (or a specific one). Uses z-score analysis on metrics, checks log error spikes, and correlates signals. Returns anomalies with severity ratings.",
+    [
+      "Scan one or all monitored services for abnormal behavior and return the findings ranked by severity.",
+      "When to use: the entry point for 'is anything wrong anywhere?' triage. Once a service is flagged, follow up with `get_service_health` for the verdict or `query_metrics`/`query_logs` for the raw evidence.",
+      "Behavior: read-only, no side effects. Applies z-score analysis to metrics, detects log error-rate spikes, and correlates the two. Returns a list of anomalies, each with the affected service, metric/signal, severity, the deviation (e.g. σ and % change), and a short explanation. No anomalies yields an empty list, not an error.",
+      "Related: `get_service_health` (single-service verdict), `query_metrics` (raw series behind a flagged metric).",
+    ].join(" "),
     {
-      service: z.string().optional().describe("Specific service to scan. If omitted, scans all."),
-      duration: z.string().optional().describe("Time range to analyze (e.g. '5m', '15m', '1h'). Default: '10m'"),
-      sensitivity: z.enum(["low", "medium", "high"]).optional().describe("Detection sensitivity: low (>3σ), medium (>2σ), high (>1.5σ). Default: 'medium'"),
+      service: z
+        .string()
+        .optional()
+        .describe(
+          "Optional. Restrict the scan to one service (exact, case-sensitive name from `list_services`). Default: scan every monitored service.",
+        ),
+      duration: z
+        .string()
+        .optional()
+        .describe(
+          "Optional. Look-back window analyzed for anomalies, written as <number><unit> with unit s|m|h|d (e.g. '5m', '15m', '1h'). Default: '10m'.",
+        ),
+      sensitivity: z
+        .enum(["low", "medium", "high"])
+        .optional()
+        .describe(
+          "Optional. Detection threshold: 'low' flags only strong deviations (>3σ), 'medium' is balanced (>2σ), 'high' is most sensitive and noisier (>1.5σ). Default: 'medium'.",
+        ),
     },
     async (args) => withToolMetrics("detect_anomalies", () => detectAnomaliesHandler(registry, args))
   );
