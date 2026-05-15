@@ -143,6 +143,48 @@ export function formatPluginInfo(c: CatalogConnector): string {
   return out.join("\n");
 }
 
+/** Split "name" or "name@1.2.3" into parts. Throws on a malformed ref. */
+export function parsePluginRef(ref: string): { name: string; version?: string } {
+  const m = ref.match(/^([a-z][a-z0-9-]*)(?:@(\d+\.\d+\.\d+(?:-[a-z0-9.-]+)?))?$/);
+  if (!m) throw new Error(`invalid plugin ref '${ref}' (expected name or name@x.y.z)`);
+  return { name: m[1], version: m[2] };
+}
+
+export interface ResolvedInstall {
+  name: string;
+  version: string;
+  builtin: boolean;
+  tarballUrl?: string;
+  signatureUrl?: string;
+  manifestUrl?: string;
+  integrity?: string;
+}
+
+/**
+ * Resolve a catalog + ref into the concrete artifact to install.
+ * Returns {builtin:true} for image-bundled connectors (caller should
+ * no-op). Throws if the connector/version is unknown.
+ */
+export function resolveInstall(cat: Catalog, ref: string): ResolvedInstall {
+  const { name, version } = parsePluginRef(ref);
+  const c = cat.connectors.find((x) => x.name === name);
+  if (!c) throw new Error(`no connector '${name}' in catalog (try: omcp plugin list)`);
+  if (c.builtin) return { name, version: version ?? c.latest ?? "", builtin: true };
+  const v = version
+    ? c.versions.find((x) => x.version === version)
+    : c.versions.find((x) => x.version === (c.latest ?? c.versions[0]?.version)) ?? c.versions[0];
+  if (!v) throw new Error(`version '${version}' not found for '${name}'`);
+  return {
+    name,
+    version: v.version,
+    builtin: false,
+    tarballUrl: v.tarballUrl,
+    signatureUrl: v.signatureUrl,
+    manifestUrl: v.manifestUrl,
+    integrity: v.integrity,
+  };
+}
+
 export const HELP = `omcp — observability-mcp control CLI
 
 Usage:
@@ -153,9 +195,15 @@ Usage:
   omcp demo status             Show demo container status
   omcp plugin list             List connectors from the hub catalog
   omcp plugin info <name>      Show one connector's versions + verification info
+  omcp plugin install <ref>    Install name[@version]: download, verify, extract
   omcp help                    Show this help
 
 Flags:
   --json                       Machine-readable output (doctor, status, plugin)
   --from <url|path>            Catalog source (default: local checkout or the public hub)
+  --offline-dir <dir>          Airgapped: read <name>-<ver>.tgz[.sig] + manifest from <dir>
+  --trust-root <pem>           Verify signature+integrity against this PEM (fail-closed)
+  --insecure                   Skip verification (NOT recommended; explicit opt-out)
+  --dest <dir>                 Install target (default: $PLUGINS_DIR or ./plugins)
+  --force                      Overwrite an existing install dir
 `;

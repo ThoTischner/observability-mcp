@@ -1,8 +1,18 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
 import { createConnection } from "node:net";
-import { existsSync, readFileSync, writeFileSync, mkdtempSync } from "node:fs";
-import { join, dirname } from "node:path";
+import {
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  mkdtempSync,
+  mkdirSync,
+  rmSync,
+  readdirSync,
+  statSync,
+  cpSync,
+} from "node:fs";
+import { join, dirname, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
@@ -13,9 +23,16 @@ import {
   resolveCatalogSource,
   formatPluginList,
   formatPluginInfo,
+  resolveInstall,
   HELP,
   type Catalog,
 } from "./lib.js";
+import {
+  loadTrustRoot,
+  verifyIntegrity,
+  verifyManifestSignature,
+  PluginVerificationError,
+} from "../connectors/verify.js";
 
 function pkgVersion(): string {
   try {
@@ -91,7 +108,117 @@ async function plugin(sub: string | undefined, args: string[], flags: Record<str
     console.log(json ? JSON.stringify(c, null, 2) : formatPluginInfo(c));
     return;
   }
-  fail(`unknown 'plugin' subcommand: ${sub ?? "(none)"} (list|info)`);
+  if (sub === "install") {
+    return installPlugin(cat, args[0], flags);
+  }
+  fail(`unknown 'plugin' subcommand: ${sub ?? "(none)"} (list|info|install)`);
+}
+
+function tarExtract(tgz: string, dest: string): void {
+  const r = spawnSync("tar", ["-xzf", tgz, "-C", dest], { stdio: "inherit" });
+  if (r.status !== 0) fail(`tar extraction failed for ${tgz}`);
+}
+
+// Find the dir containing a package.json with the observabilityMcp
+// connector marker (npm pack nests under package/; airgapped tarballs
+// may not).
+function findPluginRoot(base: string): string | null {
+  const candidates = [base, ...readdirSync(base).map((e) => join(base, e))];
+  for (const dir of candidates) {
+    try {
+      if (!statSync(dir).isDirectory()) continue;
+      const pkgPath = join(dir, "package.json");
+      if (!existsSync(pkgPath)) continue;
+      const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
+      if (pkg.observabilityMcp?.kind === "connector") return dir;
+    } catch {
+      /* skip */
+    }
+  }
+  return null;
+}
+
+async function installPlugin(
+  cat: Catalog,
+  ref: string | undefined,
+  flags: Record<string, string | boolean>
+): Promise<void> {
+  if (!ref) fail("usage: omcp plugin install <name>[@version]");
+  let r;
+  try {
+    r = resolveInstall(cat, ref);
+  } catch (e) {
+    fail(e instanceof Error ? e.message : String(e));
+  }
+  if (r.builtin) {
+    console.log(`'${r.name}' is builtin — it ships in the server image, no install needed.`);
+    return;
+  }
+
+  const offlineDir = typeof flags["offline-dir"] === "string" ? (flags["offline-dir"] as string) : undefined;
+  const dest = resolve(
+    typeof flags.dest === "string" ? (flags.dest as string) : process.env.PLUGINS_DIR ?? "./plugins"
+  );
+  const targetDir = join(dest, r.name);
+  if (existsSync(targetDir) && flags.force !== true) {
+    fail(`${targetDir} already exists (pass --force to overwrite)`);
+  }
+
+  const work = mkdtempSync(join(tmpdir(), "omcp-inst-"));
+  const tgz = join(work, "plugin.tgz");
+
+  if (offlineDir) {
+    const local = join(offlineDir, `${r.name}-${r.version}.tgz`);
+    if (!existsSync(local)) fail(`offline tarball not found: ${local}`);
+    cpSync(local, tgz);
+  } else {
+    if (!r.tarballUrl) fail(`catalog entry for ${r.name}@${r.version} has no tarballUrl`);
+    const resp = await fetch(r.tarballUrl).catch((e) => fail(`download failed: ${String(e)}`));
+    if (!resp.ok) fail(`tarball HTTP ${resp.status}`);
+    writeFileSync(tgz, Buffer.from(await resp.arrayBuffer()));
+  }
+
+  const stage = join(work, "stage");
+  mkdirSync(stage);
+  tarExtract(tgz, stage);
+  const root = findPluginRoot(stage);
+  if (!root) fail("no connector package.json (observabilityMcp marker) in tarball");
+
+  const pkg = JSON.parse(readFileSync(join(root!, "package.json"), "utf8"));
+  const manifestRel = pkg.observabilityMcp?.manifest;
+  if (!manifestRel) fail("package.json has no observabilityMcp.manifest");
+  const manifestPath = resolve(root!, manifestRel);
+  if (!existsSync(manifestPath)) fail(`manifest not found: ${manifestRel}`);
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  const entryPath = resolve(root!, pkg.main || "index.js");
+
+  if (flags.insecure === true) {
+    console.warn("WARNING: --insecure — skipping signature + integrity verification.");
+  } else {
+    const trustRootPath = typeof flags["trust-root"] === "string" ? (flags["trust-root"] as string) : undefined;
+    if (!trustRootPath) {
+      fail(
+        "verification required: pass --trust-root <pem> (or --insecure to explicitly opt out)"
+      );
+    }
+    const sigPath = manifestPath + ".sig";
+    if (!existsSync(sigPath)) fail(`missing manifest signature: ${manifestRel}.sig`);
+    try {
+      const trustRoot = loadTrustRoot(trustRootPath!);
+      verifyManifestSignature(readFileSync(manifestPath), readFileSync(sigPath), trustRoot);
+      verifyIntegrity(entryPath, manifest.integrity);
+    } catch (e) {
+      const msg = e instanceof PluginVerificationError ? e.message : String(e);
+      fail(`verification failed (fail-closed): ${msg}`);
+    }
+    console.log("signature + integrity OK");
+  }
+
+  mkdirSync(dest, { recursive: true });
+  if (existsSync(targetDir)) rmSync(targetDir, { recursive: true, force: true });
+  cpSync(root!, targetDir, { recursive: true });
+  rmSync(work, { recursive: true, force: true });
+  console.log(`installed ${r.name}@${r.version} → ${targetDir}`);
 }
 
 function portInUse(port: number, host = "127.0.0.1"): Promise<boolean> {
