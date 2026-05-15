@@ -4,6 +4,8 @@ Each backend is a connector that owns its native query language. The MCP tool la
 
 Currently shipped: **Prometheus** (PromQL) and **Loki** (LogQL). Adding a new one means implementing one interface.
 
+Optional connectors (Datadog, Grafana, Elasticsearch, …) are distributed via the [Connector Hub](https://thotischner.github.io/observability-mcp/hub/) and can be added to a running server without a rebuild — via the Web UI's **Connectors** page (browse the hub, install, or upload a signed `.tgz`), the `omcp plugin install` CLI, or the Helm bundle image. The runtime install paths are fail-closed and off by default; see [`docs/plugin-architecture.md`](plugin-architecture.md#the-connector-hub) for the API, guardrails (`ENABLE_UI_INSTALL` + trust root), and Kubernetes persistence.
+
 ## Adding a new connector
 
 1. Create `mcp-server/src/connectors/<name>.ts`.
