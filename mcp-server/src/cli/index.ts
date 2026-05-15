@@ -95,6 +95,15 @@ async function loadCatalog(from: string | undefined): Promise<Catalog> {
 async function plugin(sub: string | undefined, args: string[], flags: Record<string, string | boolean>): Promise<void> {
   const from = typeof flags.from === "string" ? flags.from : undefined;
   const json = flags.json === true;
+  // `verify` operates on a local dir — no catalog needed (works offline).
+  if (sub === "verify") {
+    const dir = args[0];
+    if (!dir) fail("usage: omcp plugin verify <dir> --trust-root <pem>");
+    const abs = resolve(dir);
+    if (!existsSync(abs)) fail(`directory not found: ${abs}`);
+    verifyPluginDir(abs, flags);
+    return;
+  }
   const cat = await loadCatalog(from);
   if (sub === "list") {
     console.log(json ? JSON.stringify(cat, null, 2) : formatPluginList(cat));
@@ -111,7 +120,7 @@ async function plugin(sub: string | undefined, args: string[], flags: Record<str
   if (sub === "install") {
     return installPlugin(cat, args[0], flags);
   }
-  fail(`unknown 'plugin' subcommand: ${sub ?? "(none)"} (list|info|install)`);
+  fail(`unknown 'plugin' subcommand: ${sub ?? "(none)"} (list|info|install|verify)`);
 }
 
 function tarExtract(tgz: string, dest: string): void {
@@ -136,6 +145,42 @@ function findPluginRoot(base: string): string | null {
     }
   }
   return null;
+}
+
+// Shared fail-closed verification of an extracted/installed plugin dir.
+// Used by `plugin install` and `plugin verify`. --insecure explicitly
+// opts out; otherwise --trust-root is mandatory.
+function verifyPluginDir(root: string, flags: Record<string, string | boolean>): void {
+  const pkgPath = join(root, "package.json");
+  if (!existsSync(pkgPath)) fail(`no package.json in ${root}`);
+  const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
+  if (pkg.observabilityMcp?.kind !== "connector") fail("not a connector (observabilityMcp marker)");
+  const manifestRel = pkg.observabilityMcp?.manifest;
+  if (!manifestRel) fail("package.json has no observabilityMcp.manifest");
+  const manifestPath = resolve(root, manifestRel);
+  if (!existsSync(manifestPath)) fail(`manifest not found: ${manifestRel}`);
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  const entryPath = resolve(root, pkg.main || "index.js");
+
+  if (flags.insecure === true) {
+    console.warn("WARNING: --insecure — skipping signature + integrity verification.");
+    return;
+  }
+  const trustRootPath = typeof flags["trust-root"] === "string" ? (flags["trust-root"] as string) : undefined;
+  if (!trustRootPath) {
+    fail("verification required: pass --trust-root <pem> (or --insecure to explicitly opt out)");
+  }
+  const sigPath = manifestPath + ".sig";
+  if (!existsSync(sigPath)) fail(`missing manifest signature: ${manifestRel}.sig`);
+  try {
+    const trustRoot = loadTrustRoot(trustRootPath!);
+    verifyManifestSignature(readFileSync(manifestPath), readFileSync(sigPath), trustRoot);
+    verifyIntegrity(entryPath, manifest.integrity);
+  } catch (e) {
+    const msg = e instanceof PluginVerificationError ? e.message : String(e);
+    fail(`verification failed (fail-closed): ${msg}`);
+  }
+  console.log(`signature + integrity OK (${pkg.observabilityMcp.name}@${manifest.version ?? "?"})`);
 }
 
 async function installPlugin(
@@ -184,35 +229,7 @@ async function installPlugin(
   const root = findPluginRoot(stage);
   if (!root) fail("no connector package.json (observabilityMcp marker) in tarball");
 
-  const pkg = JSON.parse(readFileSync(join(root!, "package.json"), "utf8"));
-  const manifestRel = pkg.observabilityMcp?.manifest;
-  if (!manifestRel) fail("package.json has no observabilityMcp.manifest");
-  const manifestPath = resolve(root!, manifestRel);
-  if (!existsSync(manifestPath)) fail(`manifest not found: ${manifestRel}`);
-  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-  const entryPath = resolve(root!, pkg.main || "index.js");
-
-  if (flags.insecure === true) {
-    console.warn("WARNING: --insecure — skipping signature + integrity verification.");
-  } else {
-    const trustRootPath = typeof flags["trust-root"] === "string" ? (flags["trust-root"] as string) : undefined;
-    if (!trustRootPath) {
-      fail(
-        "verification required: pass --trust-root <pem> (or --insecure to explicitly opt out)"
-      );
-    }
-    const sigPath = manifestPath + ".sig";
-    if (!existsSync(sigPath)) fail(`missing manifest signature: ${manifestRel}.sig`);
-    try {
-      const trustRoot = loadTrustRoot(trustRootPath!);
-      verifyManifestSignature(readFileSync(manifestPath), readFileSync(sigPath), trustRoot);
-      verifyIntegrity(entryPath, manifest.integrity);
-    } catch (e) {
-      const msg = e instanceof PluginVerificationError ? e.message : String(e);
-      fail(`verification failed (fail-closed): ${msg}`);
-    }
-    console.log("signature + integrity OK");
-  }
+  verifyPluginDir(root!, flags);
 
   mkdirSync(dest, { recursive: true });
   if (existsSync(targetDir)) rmSync(targetDir, { recursive: true, force: true });
