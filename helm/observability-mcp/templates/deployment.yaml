@@ -88,8 +88,14 @@ spec:
             {{- if .Values.plugins.verify.enabled }}
             - name: VERIFY_PLUGINS
               value: "true"
+            {{- end }}
+            {{- if include "observability-mcp.needsTrustRoot" . }}
             - name: PLUGIN_TRUST_ROOT
               value: /app/trust/trust-root.pem
+            {{- end }}
+            {{- if .Values.plugins.uiInstall.enabled }}
+            - name: ENABLE_UI_INSTALL
+              value: "true"
             {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
@@ -111,12 +117,12 @@ spec:
             - name: data
               mountPath: /app/config
             {{- end }}
-            {{- if .Values.plugins.image }}
+            {{- if or .Values.plugins.image .Values.plugins.persistence.enabled }}
             - name: plugins
               mountPath: /app/plugins
-              readOnly: true
+              readOnly: {{ if include "observability-mcp.pluginsWritable" . }}false{{ else }}true{{ end }}
             {{- end }}
-            {{- if .Values.plugins.verify.enabled }}
+            {{- if include "observability-mcp.needsTrustRoot" . }}
             - name: trust-root
               mountPath: /app/trust
               readOnly: true
@@ -132,11 +138,16 @@ spec:
           persistentVolumeClaim:
             claimName: {{ include "observability-mcp.fullname" . }}
         {{- end }}
-        {{- if .Values.plugins.image }}
+        {{- if or .Values.plugins.image .Values.plugins.persistence.enabled }}
         - name: plugins
+          {{- if .Values.plugins.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.plugins.persistence.existingClaim | default (printf "%s-plugins" (include "observability-mcp.fullname" .)) }}
+          {{- else }}
           emptyDir: {}
+          {{- end }}
         {{- end }}
-        {{- if .Values.plugins.verify.enabled }}
+        {{- if include "observability-mcp.needsTrustRoot" . }}
         - name: trust-root
           secret:
             secretName: {{ .Values.plugins.verify.existingSecret | default (printf "%s-trust-root" (include "observability-mcp.fullname" .)) }}

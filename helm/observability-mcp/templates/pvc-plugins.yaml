@@ -1,0 +1,17 @@
+{{- if and .Values.plugins.persistence.enabled (not .Values.plugins.persistence.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "observability-mcp.fullname" . }}-plugins
+  labels:
+    {{- include "observability-mcp.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.plugins.persistence.accessMode | quote }}
+  resources:
+    requests:
+      storage: {{ .Values.plugins.persistence.size | quote }}
+  {{- with .Values.plugins.persistence.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+{{- end }}

@@ -41,6 +41,16 @@ helm install obs-mcp ./helm/observability-mcp \
 | `plugins.verify.enabled` | `false` | Fail-closed connector verification (`VERIFY_PLUGINS`) — builtin Prometheus/Loki are never gated |
 | `plugins.verify.trustRootPem` | `""` | PEM public key trust root (rendered into a Secret) |
 | `plugins.verify.existingSecret` | `""` | Instead reference a Secret with key `trust-root.pem` |
+| `plugins.uiInstall.enabled` | `false` | Enable the fail-closed Web UI / API connector install + upload endpoints (`ENABLE_UI_INSTALL`). Requires a trust root (`plugins.verify.trustRootPem`/`existingSecret`) |
+| `plugins.persistence.enabled` | `false` | Back `/app/plugins` with a PVC so connectors installed at runtime (Web UI / bundle upload / `omcp`) survive pod restarts. The bundle init container still refreshes its connectors on top (additive) |
+| `plugins.persistence.existingClaim` | `""` | Use an existing PVC instead of letting the chart create one |
+| `plugins.persistence.size` | `1Gi` | Size of the chart-created plugins PVC |
+| `plugins.persistence.accessMode` | `ReadWriteOnce` | Access mode of the plugins PVC |
+| `plugins.persistence.storageClass` | `""` | StorageClass for the plugins PVC (empty = cluster default) |
+
+To let operators add connectors from the running server and keep them
+across restarts, pair the two: `--set plugins.uiInstall.enabled=true
+--set plugins.persistence.enabled=true` plus a trust root.
 
 See [`values.yaml`](./values.yaml) for the full schema and
 [`docs/plugin-architecture.md`](../../docs/plugin-architecture.md) for the

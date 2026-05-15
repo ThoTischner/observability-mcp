@@ -4,7 +4,7 @@ description: Unified observability gateway for AI agents — one MCP server for 
 type: application
 
 # Chart version (this chart). Bumped on chart changes.
-version: 0.9.0
+version: 0.10.0
 
 # App version (the mcp-server image tag the chart defaults to).
 # Update with each release of the mcp-server image.
@@ -56,6 +56,10 @@ annotations:
         - linux/amd64
         - linux/arm64
   artifacthub.io/changes: |
+    - kind: added
+      description: plugins.persistence — back /app/plugins with a PVC so connectors installed at runtime (Web UI / bundle upload / omcp) survive pod restarts
+    - kind: added
+      description: plugins.uiInstall — enable the fail-closed Web UI / API connector install + upload endpoints (ENABLE_UI_INSTALL; requires a plugin trust root)
     - kind: changed
       description: plugins.image now defaults to the official signed bundle (ghcr.io/thotischner/observability-mcp-plugins:latest) — connectors available on a plain helm install; set plugins.image="" to opt out
     - kind: added

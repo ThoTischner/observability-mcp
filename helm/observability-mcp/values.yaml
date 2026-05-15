@@ -88,6 +88,25 @@ plugins:
     # key `trust-root.pem`.
     trustRootPem: ""
     existingSecret: ""
+  # Persist runtime-installed connectors. By default /app/plugins is an
+  # emptyDir reseeded from `image` on every start, so connectors added at
+  # runtime (Web UI / bundle upload / `omcp plugin install`) are LOST on
+  # pod restart. Enable this to back /app/plugins with a PVC so they
+  # survive restarts; the init container still refreshes the bundled
+  # connectors on top (additive copy — your installs are kept).
+  persistence:
+    enabled: false
+    existingClaim: ""
+    size: 1Gi
+    accessMode: ReadWriteOnce
+    storageClass: ""
+  # Enable the Web UI / API connector install + upload endpoints
+  # (ENABLE_UI_INSTALL). Runtime code-load is powerful, so this is OFF
+  # by default and ALWAYS fail-closed verified — it requires a plugin
+  # trust root (set verify.trustRootPem or verify.existingSecret).
+  # Pair with persistence.enabled so UI-installed connectors survive.
+  uiInstall:
+    enabled: false
 
 service:
   type: ClusterIP
