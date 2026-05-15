@@ -14,6 +14,8 @@ import {
   mergeCatalog,
   fetchHubCatalog,
 } from "./connectors/hub.js";
+import { isValidConnectorName, installTarball } from "./connectors/install.js";
+import { PluginVerificationError } from "./connectors/verify.js";
 import { selfRegistry, withToolMetrics, apiRequests, mcpActiveSessions } from "./metrics/self.js";
 import { buildOpenApiSpec } from "./openapi.js";
 import { listSourcesHandler } from "./tools/list-sources.js";
@@ -25,7 +27,8 @@ import { detectAnomaliesHandler } from "./tools/detect-anomalies.js";
 import type { Config } from "./types.js";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -308,6 +311,66 @@ async function main() {
       });
     } catch (e) {
       res.status(502).json({ url, error: e instanceof Error ? e.message : String(e), connectors: [] });
+    }
+  });
+
+  // Install a connector from the hub into the running server.
+  //
+  // Runtime code-load is powerful, so this is doubly gated:
+  //   1. ENABLE_UI_INSTALL=true must be set (default OFF).
+  //   2. PLUGIN_TRUST_ROOT must be configured — install is ALWAYS
+  //      fail-closed verified (no insecure bypass over HTTP).
+  // Only catalog tarballUrls are fetched (no arbitrary URL in the body)
+  // to avoid SSRF. The connector persists to PLUGINS_DIR (back it with
+  // a PVC on k8s so it survives restarts).
+  app.post("/api/connectors/install", async (req, res) => {
+    if (process.env.ENABLE_UI_INSTALL !== "true") {
+      return res.status(403).json({
+        error: "UI install is disabled. Set ENABLE_UI_INSTALL=true and PLUGIN_TRUST_ROOT to enable it.",
+      });
+    }
+    const trustRootPath = process.env.PLUGIN_TRUST_ROOT;
+    if (!trustRootPath) {
+      return res.status(412).json({
+        error: "PLUGIN_TRUST_ROOT not configured — refusing to install unverified code.",
+      });
+    }
+    const name = (req.body || {}).name;
+    const version = (req.body || {}).version as string | undefined;
+    if (!isValidConnectorName(name)) {
+      return res.status(400).json({ error: "invalid connector name" });
+    }
+    const pluginsDir = process.env.PLUGINS_DIR ?? "/app/plugins";
+    let work: string | null = null;
+    try {
+      const catalog = await fetchHubCatalog(resolveHubCatalogUrl());
+      const entry = catalog.connectors.find((c) => c.name === name);
+      if (!entry) return res.status(404).json({ error: `'${name}' is not in the catalog` });
+      if (entry.builtin) return res.status(409).json({ error: `'${name}' is builtin — no install needed` });
+      const v = version
+        ? entry.versions.find((x) => x.version === version)
+        : entry.versions.find((x) => x.version === (entry.latest ?? entry.versions[0]?.version)) ?? entry.versions[0];
+      if (!v || !v.tarballUrl) {
+        return res.status(422).json({ error: `no tarball for ${name}@${version ?? "latest"}` });
+      }
+      const resp = await fetch(v.tarballUrl);
+      if (!resp.ok) return res.status(502).json({ error: `tarball download HTTP ${resp.status}` });
+      work = mkdtempSync(join(tmpdir(), "obsmcp-dl-"));
+      const tgz = join(work, "c.tgz");
+      writeFileSync(tgz, Buffer.from(await resp.arrayBuffer()));
+      const result = installTarball({ tgzPath: tgz, pluginsDir, trustRootPath, expectedName: name });
+      await getPluginLoader().load(); // re-scan so /api/connectors reflects it
+      res.json({
+        ok: true,
+        ...result,
+        note: "installed & persisted to PLUGINS_DIR. Add a source of this type to use it; a server restart is recommended for full availability in existing MCP sessions.",
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      const code = e instanceof PluginVerificationError ? 400 : 500;
+      res.status(code).json({ error: `install failed (fail-closed): ${msg}` });
+    } finally {
+      if (work) rmSync(work, { recursive: true, force: true });
     }
   });
 

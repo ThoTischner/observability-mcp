@@ -799,13 +799,24 @@ async function loadConnectors(){
       return `<div class="card" style="margin:0 0 10px">
         <div class="card-header"><h2 style="font-size:15px">${escHtml(c.displayName)}
           <span class="badge">${escHtml(c.tier)}</span> ${status}</h2>
-          ${c.installed||c.builtin?'':`<button class="btn btn-ghost btn-sm" onclick="document.getElementById('${id}').classList.toggle('hidden')">Install…</button>`}</div>
+          ${c.installed||c.builtin?'':`<span style="display:flex;gap:6px"><button class="btn btn-primary btn-sm" onclick="installConnector('${escHtml(c.name)}',this)">Install</button><button class="btn btn-ghost btn-sm" onclick="document.getElementById('${id}').classList.toggle('hidden')">CLI…</button></span>`}</div>
         <div style="color:var(--text-muted);font-size:13px">${escHtml(c.description)}</div>
         <div style="font-size:12px;color:var(--text-muted);margin-top:6px">type <code>${escHtml(c.name)}</code> · signals ${(c.signalTypes||[]).map(escHtml).join(', ')||'—'} · latest <code>${escHtml(ver)||'—'}</code></div>
         <pre id="${id}" class="hidden" style="margin-top:8px;background:var(--surface-2);padding:10px;border-radius:6px;font-size:12px;overflow:auto">${escHtml(cmd)}</pre>
       </div>`;
     }).join('') : '<div class="empty">Catalog empty.</div>';
   } catch(e){ hub.innerHTML='<div class="empty">Failed to reach the hub catalog.</div>'; }
+}
+
+async function installConnector(name, btn){
+  if(btn){ btn.disabled=true; btn.textContent='Installing…'; }
+  try {
+    const r=await fetch('/api/connectors/install',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});
+    const d=await r.json().catch(()=>({}));
+    if(r.ok){ toast(`Installed ${name}${d.version?(' v'+d.version):''}`); loadConnectors(); }
+    else if(r.status===403){ toast('UI install disabled — use the CLI tab, or set ENABLE_UI_INSTALL=true + PLUGIN_TRUST_ROOT.'); if(btn){btn.disabled=false;btn.textContent='Install';} }
+    else { toast('Install failed: '+(d.error||r.status)); if(btn){btn.disabled=false;btn.textContent='Install';} }
+  } catch(e){ toast('Install error: '+e.message); if(btn){btn.disabled=false;btn.textContent='Install';} }
 }
 function showTab(name) {
   document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
