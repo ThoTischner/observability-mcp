@@ -21,6 +21,7 @@ normalizes the data, adds intelligent analysis, and provides a web UI for config
 [![Helm chart](https://img.shields.io/badge/helm-observability--mcp-0F1689?logo=helm&logoColor=white)](./helm/observability-mcp)
 [![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/observability-mcp)](https://artifacthub.io/packages/search?repo=observability-mcp)
 [![Provenance](https://img.shields.io/badge/npm-provenance-success?logo=npm)](https://docs.npmjs.com/generating-provenance-statements)
+[![Connector Hub](https://img.shields.io/badge/connector-hub-38bdf8?logo=googlechrome&logoColor=white)](https://thotischner.github.io/observability-mcp/hub/)
 
 ![Web UI Dashboard](docs/dashboard.png)
 
@@ -291,6 +292,7 @@ The agent ([docs/agent.md](docs/agent.md)) detects anomalies within 30 seconds a
 - [Troubleshooting](docs/troubleshooting.md) — common pitfalls and fixes
 - [Security](docs/security.md) — automation pipeline, vulnerability reporting, built-in protections
 - [Airgapped deployment](docs/airgapped-deployment.md) — mirroring images, private plugins, GitOps-friendly config
+- [Connector Hub](https://thotischner.github.io/observability-mcp/hub/) — browse versioned, signed connectors (catalog: [`hub/`](hub/README.md))
 - [Use cases](USECASES.md) — five scenarios with the prompts that drive them
 
 ## Endpoints
