@@ -29,6 +29,50 @@ The repo runs a self-driving security pipeline so issues get caught and patched 
 - **Non-root user** in the Docker image (`USER node`).
 - **npm provenance** on every published version (SLSA build attestation).
 
+## Helm chart signing
+
+Released Helm charts are GPG-signed. Each `observability-mcp-X.Y.Z.tgz` ships
+with a matching `.tgz.prov` provenance file, and ArtifactHub shows the
+"signed" badge.
+
+- **Public key**: [`docs/helm-signing.pub.asc`](helm-signing.pub.asc) (also
+  referenced by `artifacthub.io/signKey` in `helm/observability-mcp/Chart.yaml`).
+- **Private key**: held only as the `HELM_SIGNING_KEY_B64` /
+  `HELM_SIGNING_KEY_PASSPHRASE` repository secrets. It is a dedicated,
+  CI-only key — it signs nothing but charts and is never used locally.
+- **Verify a release**:
+  ```bash
+  helm pull observability-mcp/observability-mcp --prov
+  gpg --import docs/helm-signing.pub.asc
+  helm verify observability-mcp-*.tgz
+  ```
+
+### Key rotation / revocation
+
+The signing key has no expiry, so rotation is manual. Rotate immediately if
+the private key (or its passphrase) is suspected exposed; otherwise rotate
+on a routine cadence.
+
+1. Generate a fresh key (RSA 4096, empty or stored passphrase):
+   `gpg --batch --gen-key` with a `Name-Real: observability-mcp helm signing`.
+2. Export and update the **secrets**:
+   `gpg --export-secret-keys <fpr> | base64 -w0` → `HELM_SIGNING_KEY_B64`;
+   update `HELM_SIGNING_KEY_PASSPHRASE` to match (empty if none).
+3. Export the **public key** over the old one:
+   `gpg --armor --export <fpr> > docs/helm-signing.pub.asc`.
+4. Update the fingerprint in `helm/observability-mcp/Chart.yaml`
+   (`artifacthub.io/signKey.fingerprint`), bump the chart `version`, and
+   open a PR. The next publish signs with the new key; older releases stay
+   verifiable with the previous public key from git history.
+5. **Revocation**: generate and publish a revocation certificate for the
+   retired key (`gpg --gen-revoke <fpr>`), and note the retirement date in
+   `CHANGELOG.md`. Already-published `.prov` files remain valid against the
+   archived public key; only future releases use the new key.
+
+The CI signing step is best-effort and fail-open: if the key is missing or
+unimportable the chart still publishes (unsigned), and gpg error detail is
+kept out of the public Actions log.
+
 ## Token / secret handling
 
 - Do not bake secrets into `sources.yaml`. Use `${VAR}` substitution and supply them via env or a `.env` file.

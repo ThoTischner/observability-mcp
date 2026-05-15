@@ -75,8 +75,13 @@ jobs:
           # GnuPG 2.1+ dropped the legacy secring.gpg format, so import
           # into the real keyring first, then re-export a binary secret
           # keyring that the cr/Helm openpgp signer can read.
+          # gpg stderr goes to a temp file, NOT into the ::warning:: — the
+          # Actions log is public and import errors can echo back fragments
+          # of the (masked, but still) key material. Keep the public message
+          # generic; the detail is wiped with the rest of the signing
+          # material in the final step.
           echo "$KEY_B64" | base64 -d | gpg --batch --import 2>/tmp/gpgerr \
-            || unsigned "GPG import failed: $(cat /tmp/gpgerr 2>/dev/null)"
+            || unsigned "GPG import failed (details withheld from public log)"
           fpr=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr:/{print $10; exit}')
           uid=$(gpg --list-secret-keys --with-colons | awk -F: '/^uid:/{print $10; exit}')
           [ -n "$fpr" ] && [ -n "$uid" ] || unsigned "could not resolve imported key"
