@@ -66,6 +66,12 @@ export interface ConnectorManifest {
     /** Semver range of mcp-server versions this connector supports. */
     serverVersion?: string;
   };
+  /**
+   * Subresource-integrity-style digest of the entry file
+   * ("sha256-<base64>"). Required (and signature-checked) when the
+   * server runs with VERIFY_PLUGINS=true. See docs/plugin-architecture.md.
+   */
+  integrity?: string;
 }
 
 /**
