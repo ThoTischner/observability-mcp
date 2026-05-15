@@ -196,6 +196,7 @@ Usage:
   omcp plugin list             List connectors from the hub catalog
   omcp plugin info <name>      Show one connector's versions + verification info
   omcp plugin install <ref>    Install name[@version]: download, verify, extract
+  omcp plugin verify <dir>     Verify an installed plugin dir against a trust root
   omcp help                    Show this help
 
 Flags:
