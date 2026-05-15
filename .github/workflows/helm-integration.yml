@@ -78,6 +78,16 @@ jobs:
           kubectl exec "$pod" -- wget -qO- http://localhost:3000/api/info | head -c 400
           echo
 
+      - name: Assert plugins bundle extracted (init-container path)
+        run: |
+          pod=$(kubectl get pod -l app.kubernetes.io/name=observability-mcp -o jsonpath='{.items[0].metadata.name}')
+          # The default chart pulls the official signed bundle image; its
+          # init-container must have populated /app/plugins.
+          got=$(kubectl exec "$pod" -- sh -c 'ls /app/plugins' | tr '\n' ' ')
+          echo "plugins: $got"
+          echo "$got" | grep -q datadog
+          echo "$got" | grep -q grafana
+
       - name: Uninstall (default)
         run: helm uninstall obs
 
