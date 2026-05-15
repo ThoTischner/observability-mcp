@@ -1,0 +1,74 @@
+name: Publish connectors
+
+# Packs every connector under connectors/* into a signed tarball and
+# publishes it as a GitHub Release asset at a deterministic URL
+# (connector-<name>-<version> / <name>-<version>.tgz) — the URL the hub
+# catalog already points at.
+#
+# Signing is best-effort/fail-open: a missing key publishes UNSIGNED
+# (operators then need --insecure, matching the server's fail-closed
+# default). The signature is over manifest.json and travels INSIDE the
+# tarball, verified by the same trust-root model as the server.
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['connector-*']
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+
+      - name: Restore signing key
+        id: key
+        env:
+          KEY_B64: ${{ secrets.PLUGIN_SIGNING_KEY_B64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KEY_B64:-}" ]; then
+            echo "::warning::PLUGIN_SIGNING_KEY_B64 unset — connectors publish UNSIGNED."
+            echo "key=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "$KEY_B64" | base64 -d > /tmp/plugin-signing.key
+          chmod 600 /tmp/plugin-signing.key
+          echo "key=/tmp/plugin-signing.key" >> "$GITHUB_OUTPUT"
+
+      - name: Pack + publish each connector
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SIGN_KEY: ${{ steps.key.outputs.key }}
+        run: |
+          set -euo pipefail
+          for d in connectors/*/; do
+            [ -f "$d/package.json" ] || continue
+            node -e "process.exit(JSON.parse(require('fs').readFileSync('$d/package.json')).observabilityMcp?.kind==='connector'?0:1)" || continue
+            name=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$d/package.json')).observabilityMcp.name)")
+            ver=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$d/manifest.json')).version)")
+            if [ -n "$SIGN_KEY" ]; then
+              node connectors/pack.mjs "$d" --out dist-connectors --key "$SIGN_KEY"
+            else
+              node connectors/pack.mjs "$d" --out dist-connectors
+            fi
+            tag="connector-${name}-${ver}"
+            asset="dist-connectors/${name}-${ver}.tgz"
+            if gh release view "$tag" >/dev/null 2>&1; then
+              gh release upload "$tag" "$asset" --clobber
+            else
+              gh release create "$tag" "$asset" \
+                --title "connector: ${name} ${ver}" \
+                --notes "Signed connector tarball for \`omcp plugin install ${name}\`. Verify with docs/plugin-signing.pub.pem."
+            fi
+          done
+
+      - name: Wipe signing key
+        if: always()
+        run: shred -u /tmp/plugin-signing.key 2>/dev/null || rm -f /tmp/plugin-signing.key

@@ -66,6 +66,8 @@ jobs:
             if(cat.versions[0].integrity!==i){console.error("catalog integrity stale");process.exit(1)}
             console.log("datadog integrity in sync");
           '
+      - name: Connector packer tests
+        run: node --test connectors/pack.test.mjs
 
   trivy:
     runs-on: ubuntu-latest

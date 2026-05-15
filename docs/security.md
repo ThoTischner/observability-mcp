@@ -29,6 +29,42 @@ The repo runs a self-driving security pipeline so issues get caught and patched 
 - **Non-root user** in the Docker image (`USER node`).
 - **npm provenance** on every published version (SLSA build attestation).
 
+## Connector signing
+
+Hub-distributed connectors (e.g. Datadog) ship a detached signature of
+their `manifest.json` *inside* the tarball. The server and `omcp plugin
+install/verify` check it fail-closed against a trust root — fully
+offline, no transparency log (airgapped-safe).
+
+- **Public key (trust root)**: [`docs/plugin-signing.pub.pem`](plugin-signing.pub.pem)
+  (Ed25519). Operators pass it as `PLUGIN_TRUST_ROOT` / `--trust-root`.
+- **Private key**: only the `PLUGIN_SIGNING_KEY_B64` repo secret (base64
+  PKCS#8). CI-only, scoped to connector signing. Never in git.
+- **Pipeline**: `.github/workflows/connector-publish.yml` runs
+  `connectors/pack.mjs` (validates `manifest.integrity` ==
+  sha256(entry), signs `manifest.json`, tars the dir) and uploads
+  `<name>-<version>.tgz` to the `connector-<name>-<version>` release —
+  the URL the hub catalog points at. Signing is fail-open (missing key
+  → unsigned tarball; install then needs `--insecure`).
+- **Verify manually**:
+  ```bash
+  omcp plugin verify ./plugins/datadog --trust-root docs/plugin-signing.pub.pem
+  ```
+
+### Rotation / revocation
+
+The key has no expiry; rotate if exposure is suspected.
+
+1. `node -e 'c=require("crypto");k=c.generateKeyPairSync("ed25519");
+   require("fs").writeFileSync("docs/plugin-signing.pub.pem",
+   k.publicKey.export({type:"spki",format:"pem"}));
+   process.stdout.write(Buffer.from(k.privateKey.export({type:"pkcs8",
+   format:"pem"})).toString("base64"))'` → set the output as
+   `PLUGIN_SIGNING_KEY_B64`.
+2. Commit the regenerated `docs/plugin-signing.pub.pem`, bump connector
+   versions, re-run the publish workflow. Already-published tarballs
+   stay verifiable with the previous public key from git history.
+
 ## Helm chart signing
 
 Released Helm charts are GPG-signed. Each `observability-mcp-X.Y.Z.tgz` ships
