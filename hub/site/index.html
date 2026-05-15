@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>observability-mcp · connector hub</title>
+<meta name="description" content="Static catalog of observability-mcp connectors — Prometheus, Loki, and more. Versioned, signed, airgapped-friendly.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%230f172a'/%3E%3Cpath d='M3 11l3-4 2 2 2-4 3 6' stroke='%2338bdf8' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<style>
+  :root{
+    --bg:#0b0f17; --panel:#111827; --panel2:#0f1623; --border:#1f2937;
+    --fg:#e5e7eb; --muted:#94a3b8; --faint:#64748b; --accent:#38bdf8;
+    --official:#34d399; --certified:#fbbf24; --third:#94a3b8;
+    --radius:10px;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; background:var(--bg); color:var(--fg);
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:960px;margin:0 auto;padding:0 20px}
+  header{border-bottom:1px solid var(--border);background:linear-gradient(180deg,#0d1320,#0b0f17)}
+  .hd{display:flex;align-items:center;gap:14px;padding:26px 0 22px}
+  .logo{width:38px;height:38px;flex:none}
+  h1{font-size:20px;font-weight:650;margin:0;letter-spacing:-.01em}
+  .tag{color:var(--muted);font-size:13.5px;margin-top:2px}
+  .hd-meta{margin-left:auto;text-align:right;font-size:12.5px;color:var(--faint)}
+  .toolbar{display:flex;gap:10px;align-items:center;margin:22px 0 18px;flex-wrap:wrap}
+  input[type=search]{
+    flex:1;min-width:200px;background:var(--panel2);border:1px solid var(--border);
+    color:var(--fg);padding:9px 12px;border-radius:var(--radius);font-size:14px;outline:none
+  }
+  input[type=search]:focus{border-color:var(--accent)}
+  select{
+    background:var(--panel2);border:1px solid var(--border);color:var(--fg);
+    padding:9px 12px;border-radius:var(--radius);font-size:14px;outline:none
+  }
+  .count{color:var(--faint);font-size:12.5px;margin-left:auto}
+  .grid{display:grid;grid-template-columns:1fr;gap:12px;padding-bottom:48px}
+  @media(min-width:680px){.grid{grid-template-columns:1fr 1fr}}
+  .card{
+    background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);
+    padding:16px 17px;display:flex;flex-direction:column;gap:9px
+  }
+  .card h2{font-size:15.5px;margin:0;font-weight:600;display:flex;align-items:center;gap:8px}
+  .card .id{color:var(--faint);font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .desc{color:var(--muted);font-size:13.5px;margin:0;flex:1}
+  .row{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .pill{
+    font-size:11px;font-weight:600;padding:2.5px 8px;border-radius:999px;
+    border:1px solid var(--border);color:var(--muted);background:var(--panel2)
+  }
+  .pill.sig{color:#0b0f17}
+  .tier-official{background:rgba(52,211,153,.13);border-color:rgba(52,211,153,.35);color:var(--official)}
+  .tier-certified{background:rgba(251,191,36,.13);border-color:rgba(251,191,36,.35);color:var(--certified)}
+  .tier-third-party{background:rgba(148,163,184,.13);border-color:rgba(148,163,184,.3);color:var(--third)}
+  .sig-type{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--faint)}
+  .card footer{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--faint);border-top:1px solid var(--border);padding-top:9px;margin-top:2px}
+  .builtin{color:var(--accent)}
+  .empty{grid-column:1/-1;text-align:center;color:var(--faint);padding:60px 0}
+  .err{grid-column:1/-1;background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.3);color:#fca5a5;padding:14px;border-radius:var(--radius)}
+  .pagefoot{border-top:1px solid var(--border);color:var(--faint);font-size:12.5px;padding:20px 0 40px;text-align:center}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--panel2);border:1px solid var(--border);padding:1px 5px;border-radius:5px;font-size:12.5px;color:var(--fg)}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap hd">
+    <svg class="logo" viewBox="0 0 16 16" aria-hidden="true"><rect width="16" height="16" rx="3" fill="#0f172a"/><path d="M3 11l3-4 2 2 2-4 3 6" stroke="#38bdf8" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <div>
+      <h1>Connector hub</h1>
+      <div class="tag">observability-mcp · versioned, signed, airgapped-friendly connectors</div>
+    </div>
+    <div class="hd-meta">
+      <div><a href="https://github.com/ThoTischner/observability-mcp">GitHub</a> · <a href="https://github.com/ThoTischner/observability-mcp/blob/main/docs/plugin-architecture.md">Docs</a></div>
+      <div id="genmeta"></div>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="toolbar">
+    <input type="search" id="q" placeholder="Search connectors…" autocomplete="off" aria-label="Search connectors">
+    <select id="signal" aria-label="Filter by signal type">
+      <option value="">All signals</option>
+      <option value="metrics">metrics</option>
+      <option value="logs">logs</option>
+      <option value="traces">traces</option>
+    </select>
+    <select id="tier" aria-label="Filter by tier">
+      <option value="">All tiers</option>
+      <option value="official">official</option>
+      <option value="certified">certified</option>
+      <option value="third-party">third-party</option>
+    </select>
+    <span class="count" id="count"></span>
+  </div>
+  <section class="grid" id="grid" aria-live="polite"></section>
+</main>
+
+<div class="wrap pagefoot">
+  Static catalog — no telemetry. Mirror it offline with
+  <code>git clone</code> or <code>rsync</code>; entries are verified against a local trust root.
+  See <a href="https://github.com/ThoTischner/observability-mcp/blob/main/hub/README.md">hub/README.md</a>.
+</div>
+
+<script>
+const TIERS={official:"official",certified:"certified","third-party":"third-party"};
+const grid=document.getElementById("grid");
+const q=document.getElementById("q");
+const fSignal=document.getElementById("signal");
+const fTier=document.getElementById("tier");
+const count=document.getElementById("count");
+let DATA=[];
+
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+
+function card(c){
+  const tier=TIERS[c.tier]?c.tier:"third-party";
+  const signals=c.signalTypes.map(s=>`<span class="sig-type">${esc(s)}</span>`).join(" · ");
+  const v=c.versions&&c.versions[0];
+  const signed=v&&v.signatureUrl?`<span class="pill sig tier-official">signed</span>`:"";
+  const builtin=c.builtin?`<span class="builtin">builtin</span> · `:"";
+  return `<article class="card">
+    <h2>${esc(c.displayName)} <span class="pill tier-${tier}">${esc(tier)}</span></h2>
+    <div class="id">${esc(c.name)}</div>
+    <p class="desc">${esc(c.description)}</p>
+    <div class="row">${signals} ${signed}</div>
+    <footer>${builtin}latest <code>${esc(c.latest||(v&&v.version)||"—")}</code>${v&&v.serverCompat?` · server ${esc(v.serverCompat)}`:""}</footer>
+  </article>`;
+}
+
+function render(){
+  const term=q.value.trim().toLowerCase();
+  const sig=fSignal.value, tier=fTier.value;
+  const out=DATA.filter(c=>{
+    if(sig&&!c.signalTypes.includes(sig))return false;
+    if(tier&&c.tier!==tier)return false;
+    if(term){
+      const hay=(c.name+" "+c.displayName+" "+c.description).toLowerCase();
+      if(!hay.includes(term))return false;
+    }
+    return true;
+  });
+  count.textContent=out.length+" of "+DATA.length;
+  grid.innerHTML=out.length?out.map(card).join(""):`<div class="empty">No connectors match.</div>`;
+}
+
+fetch("./index.json",{cache:"no-cache"})
+  .then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.json();})
+  .then(d=>{
+    DATA=(d.connectors||[]).slice().sort((a,b)=>a.name.localeCompare(b.name));
+    document.getElementById("genmeta").textContent=DATA.length+" connectors · catalog v"+(d.catalogVersion||1);
+    render();
+  })
+  .catch(e=>{grid.innerHTML=`<div class="err">Could not load catalog (index.json): ${esc(e.message)}</div>`;});
+
+[q,fSignal,fTier].forEach(el=>el.addEventListener("input",render));
+</script>
+</body>
+</html>
