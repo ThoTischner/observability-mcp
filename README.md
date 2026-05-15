@@ -281,6 +281,23 @@ curl -X POST http://localhost:8081/chaos/reset
 
 The agent ([docs/agent.md](docs/agent.md)) detects anomalies within 30 seconds and produces an LLM incident analysis if Ollama is running.
 
+## CLI (`omcp`)
+
+A Confluent-style control CLI ships in the same npm package (`omcp` bin):
+
+```bash
+omcp doctor                       # check docker / compose / helm / node
+omcp demo up                      # full demo stack (auto-picks free host ports)
+omcp plugin list                  # browse the connector hub catalog
+omcp plugin install tempo@1.2.0 --trust-root key.pem    # download + verify + extract
+omcp plugin verify ./plugins/tempo --trust-root key.pem # offline audit
+omcp helm upgrade obs -- -n monitoring --set sources.prometheusUrl=http://prom:9090
+```
+
+Plugin install/verify reuse the server's fail-closed signature + integrity
+checks (offline-capable; `--offline-dir` for airgapped). Extra `helm`
+flags pass through after a literal `--`.
+
 ## Docs
 
 - [Configuration](docs/configuration.md) — paths, env vars, `${VAR}` substitution, full `sources.yaml` reference

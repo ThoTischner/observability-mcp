@@ -185,6 +185,34 @@ export function resolveInstall(cat: Catalog, ref: string): ResolvedInstall {
   };
 }
 
+export const HELM_REPO_NAME = "observability-mcp";
+export const HELM_REPO_URL = "https://thotischner.github.io/observability-mcp/";
+export const HELM_CHART = "observability-mcp/observability-mcp";
+
+/**
+ * Split argv at the first standalone "--": everything after it is
+ * passed verbatim to the wrapped tool (helm). Keeps omcp from having to
+ * re-implement helm's flag grammar (repeatable --set, -n, -f, ...).
+ */
+export function splitPassthrough(argv: string[]): { argv: string[]; passthrough: string[] } {
+  const i = argv.indexOf("--");
+  if (i === -1) return { argv, passthrough: [] };
+  return { argv: argv.slice(0, i), passthrough: argv.slice(i + 1) };
+}
+
+/** The helm argv for the install/upgrade step (repo add/update are fixed). */
+export function helmReleaseArgs(
+  action: "install" | "upgrade",
+  release: string,
+  passthrough: string[]
+): string[] {
+  const head =
+    action === "upgrade"
+      ? ["upgrade", "--install", release, HELM_CHART]
+      : ["install", release, HELM_CHART];
+  return [...head, ...passthrough];
+}
+
 export const HELP = `omcp — observability-mcp control CLI
 
 Usage:
@@ -197,7 +225,12 @@ Usage:
   omcp plugin info <name>      Show one connector's versions + verification info
   omcp plugin install <ref>    Install name[@version]: download, verify, extract
   omcp plugin verify <dir>     Verify an installed plugin dir against a trust root
+  omcp helm install [release]  helm repo add+update, then install the signed chart
+  omcp helm upgrade [release]  Same, as 'helm upgrade --install'
   omcp help                    Show this help
+
+Pass extra helm flags after a literal --, e.g.:
+  omcp helm upgrade obs -- -n monitoring --set sources.prometheusUrl=http://prom:9090
 
 Flags:
   --json                       Machine-readable output (doctor, status, plugin)
