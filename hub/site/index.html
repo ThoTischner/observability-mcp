@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>observability-mcp · connector hub</title>
-<meta name="description" content="Static catalog of observability-mcp connectors — Prometheus, Loki, and more. Versioned, signed, airgapped-friendly.">
+<meta name="description" content="Static catalog of observability-mcp connectors with per-connector install instructions for every scenario — omcp CLI, airgapped, Helm, manual. Versioned, signed.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%230f172a'/%3E%3Cpath d='M3 11l3-4 2 2 2-4 3 6' stroke='%2338bdf8' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <style>
   :root{
@@ -15,56 +15,83 @@
   }
   *{box-sizing:border-box}
   html{-webkit-text-size-adjust:100%}
-  body{
-    margin:0; background:var(--bg); color:var(--fg);
+  body{margin:0;background:var(--bg);color:var(--fg);
     font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
-    -webkit-font-smoothing:antialiased;
-  }
+    -webkit-font-smoothing:antialiased}
   a{color:var(--accent);text-decoration:none}
   a:hover{text-decoration:underline}
-  .wrap{max-width:960px;margin:0 auto;padding:0 20px}
+  .wrap{max-width:980px;margin:0 auto;padding:0 20px}
   header{border-bottom:1px solid var(--border);background:linear-gradient(180deg,#0d1320,#0b0f17)}
-  .hd{display:flex;align-items:center;gap:14px;padding:26px 0 22px}
-  .logo{width:38px;height:38px;flex:none}
-  h1{font-size:20px;font-weight:650;margin:0;letter-spacing:-.01em}
-  .tag{color:var(--muted);font-size:13.5px;margin-top:2px}
-  .hd-meta{margin-left:auto;text-align:right;font-size:12.5px;color:var(--faint)}
-  .toolbar{display:flex;gap:10px;align-items:center;margin:22px 0 18px;flex-wrap:wrap}
-  input[type=search]{
-    flex:1;min-width:200px;background:var(--panel2);border:1px solid var(--border);
-    color:var(--fg);padding:9px 12px;border-radius:var(--radius);font-size:14px;outline:none
-  }
+  .hd{display:flex;align-items:center;gap:14px;padding:24px 0 20px}
+  .logo{width:36px;height:36px;flex:none}
+  h1{font-size:19px;font-weight:650;margin:0;letter-spacing:-.01em}
+  .tag{color:var(--muted);font-size:13px;margin-top:2px}
+  .hd-meta{margin-left:auto;text-align:right;font-size:12px;color:var(--faint)}
+  .toolbar{display:flex;gap:10px;align-items:center;margin:22px 0 16px;flex-wrap:wrap}
+  input[type=search]{flex:1;min-width:200px;background:var(--panel2);border:1px solid var(--border);
+    color:var(--fg);padding:9px 12px;border-radius:var(--radius);font-size:14px;outline:none}
   input[type=search]:focus{border-color:var(--accent)}
-  select{
-    background:var(--panel2);border:1px solid var(--border);color:var(--fg);
-    padding:9px 12px;border-radius:var(--radius);font-size:14px;outline:none
-  }
-  .count{color:var(--faint);font-size:12.5px;margin-left:auto}
+  select{background:var(--panel2);border:1px solid var(--border);color:var(--fg);
+    padding:9px 12px;border-radius:var(--radius);font-size:14px;outline:none}
+  .count{color:var(--faint);font-size:12px;margin-left:auto}
   .grid{display:grid;grid-template-columns:1fr;gap:12px;padding-bottom:48px}
   @media(min-width:680px){.grid{grid-template-columns:1fr 1fr}}
-  .card{
-    background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);
-    padding:16px 17px;display:flex;flex-direction:column;gap:9px
-  }
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);
+    padding:16px 17px;display:flex;flex-direction:column;gap:9px;cursor:pointer;
+    transition:border-color .12s,transform .12s}
+  .card:hover{border-color:var(--accent);transform:translateY(-1px)}
+  .card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   .card h2{font-size:15.5px;margin:0;font-weight:600;display:flex;align-items:center;gap:8px}
   .card .id{color:var(--faint);font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
   .desc{color:var(--muted);font-size:13.5px;margin:0;flex:1}
   .row{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
-  .pill{
-    font-size:11px;font-weight:600;padding:2.5px 8px;border-radius:999px;
-    border:1px solid var(--border);color:var(--muted);background:var(--panel2)
-  }
-  .pill.sig{color:#0b0f17}
+  .pill{font-size:11px;font-weight:600;padding:2.5px 8px;border-radius:999px;
+    border:1px solid var(--border);color:var(--muted);background:var(--panel2)}
   .tier-official{background:rgba(52,211,153,.13);border-color:rgba(52,211,153,.35);color:var(--official)}
   .tier-certified{background:rgba(251,191,36,.13);border-color:rgba(251,191,36,.35);color:var(--certified)}
   .tier-third-party{background:rgba(148,163,184,.13);border-color:rgba(148,163,184,.3);color:var(--third)}
   .sig-type{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--faint)}
-  .card footer{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--faint);border-top:1px solid var(--border);padding-top:9px;margin-top:2px}
+  .card footer{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--faint);
+    border-top:1px solid var(--border);padding-top:9px;margin-top:2px}
   .builtin{color:var(--accent)}
   .empty{grid-column:1/-1;text-align:center;color:var(--faint);padding:60px 0}
-  .err{grid-column:1/-1;background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.3);color:#fca5a5;padding:14px;border-radius:var(--radius)}
-  .pagefoot{border-top:1px solid var(--border);color:var(--faint);font-size:12.5px;padding:20px 0 40px;text-align:center}
-  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--panel2);border:1px solid var(--border);padding:1px 5px;border-radius:5px;font-size:12.5px;color:var(--fg)}
+  .err{grid-column:1/-1;background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.3);
+    color:#fca5a5;padding:14px;border-radius:var(--radius)}
+  .pagefoot{border-top:1px solid var(--border);color:var(--faint);font-size:12px;padding:20px 0 40px;text-align:center}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--panel2);
+    border:1px solid var(--border);padding:1px 5px;border-radius:5px;font-size:12.5px;color:var(--fg)}
+  /* detail view */
+  .back{display:inline-flex;align-items:center;gap:6px;margin:20px 0 14px;font-size:13px}
+  .detail-hd{display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap;
+    border-bottom:1px solid var(--border);padding-bottom:18px;margin-bottom:18px}
+  .detail-hd h2{margin:0 0 4px;font-size:22px;letter-spacing:-.01em}
+  .detail-hd .id{color:var(--faint);font-size:12.5px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .detail-hd .desc{color:var(--muted);font-size:14px;margin:8px 0 0;max-width:640px}
+  .detail-grid{display:grid;grid-template-columns:1fr;gap:26px}
+  @media(min-width:820px){.detail-grid{grid-template-columns:1fr 220px}}
+  .meta dt{color:var(--faint);font-size:11px;text-transform:uppercase;letter-spacing:.04em;margin-top:12px}
+  .meta dd{margin:3px 0 0;font-size:13.5px}
+  h3{font-size:15px;margin:0 0 10px;font-weight:600}
+  .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+  .tab{background:var(--panel2);border:1px solid var(--border);color:var(--muted);
+    padding:7px 13px;border-radius:8px;font-size:13px;cursor:pointer}
+  .tab[aria-selected="true"]{border-color:var(--accent);color:var(--fg);background:rgba(56,189,248,.1)}
+  .tab:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .codewrap{position:relative}
+  pre{background:#0a0e16;border:1px solid var(--border);border-radius:var(--radius);
+    padding:14px 14px;overflow:auto;font-size:12.5px;line-height:1.5;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#cbd5e1;margin:0}
+  .copy{position:absolute;top:8px;right:8px;background:var(--panel);border:1px solid var(--border);
+    color:var(--muted);font-size:11px;padding:4px 9px;border-radius:6px;cursor:pointer}
+  .copy:hover{color:var(--fg);border-color:var(--accent)}
+  .note{color:var(--faint);font-size:12px;margin:8px 0 0}
+  table.vers{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
+  table.vers th,table.vers td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);
+    vertical-align:top}
+  table.vers th{color:var(--faint);font-weight:600;font-size:11px;text-transform:uppercase}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;
+    color:var(--faint);word-break:break-all}
+  .hidden{display:none}
 </style>
 </head>
 <body>
@@ -72,7 +99,7 @@
   <div class="wrap hd">
     <svg class="logo" viewBox="0 0 16 16" aria-hidden="true"><rect width="16" height="16" rx="3" fill="#0f172a"/><path d="M3 11l3-4 2 2 2-4 3 6" stroke="#38bdf8" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
     <div>
-      <h1>Connector hub</h1>
+      <h1><a href="#" id="hometitle" style="color:inherit">Connector hub</a></h1>
       <div class="tag">observability-mcp · versioned, signed, airgapped-friendly connectors</div>
     </div>
     <div class="hd-meta">
@@ -83,49 +110,50 @@
 </header>
 
 <main class="wrap">
-  <div class="toolbar">
-    <input type="search" id="q" placeholder="Search connectors…" autocomplete="off" aria-label="Search connectors">
-    <select id="signal" aria-label="Filter by signal type">
-      <option value="">All signals</option>
-      <option value="metrics">metrics</option>
-      <option value="logs">logs</option>
-      <option value="traces">traces</option>
-    </select>
-    <select id="tier" aria-label="Filter by tier">
-      <option value="">All tiers</option>
-      <option value="official">official</option>
-      <option value="certified">certified</option>
-      <option value="third-party">third-party</option>
-    </select>
-    <span class="count" id="count"></span>
-  </div>
-  <section class="grid" id="grid" aria-live="polite"></section>
+  <section id="listview">
+    <div class="toolbar">
+      <input type="search" id="q" placeholder="Search connectors…" autocomplete="off" aria-label="Search connectors">
+      <select id="signal" aria-label="Filter by signal type">
+        <option value="">All signals</option><option value="metrics">metrics</option>
+        <option value="logs">logs</option><option value="traces">traces</option>
+      </select>
+      <select id="tier" aria-label="Filter by tier">
+        <option value="">All tiers</option><option value="official">official</option>
+        <option value="certified">certified</option><option value="third-party">third-party</option>
+      </select>
+      <span class="count" id="count"></span>
+    </div>
+    <section class="grid" id="grid" aria-live="polite"></section>
+  </section>
+  <section id="detailview" class="hidden" aria-live="polite"></section>
 </main>
 
 <div class="wrap pagefoot">
   Static catalog — no telemetry. Mirror it offline with
-  <code>git clone</code> or <code>rsync</code>; entries are verified against a local trust root.
+  <code>git clone</code> or <code>rsync</code>; every connector is verified against a local trust root.
   See <a href="https://github.com/ThoTischner/observability-mcp/blob/main/hub/README.md">hub/README.md</a>.
 </div>
 
 <script>
-const TIERS={official:"official",certified:"certified","third-party":"third-party"};
+const TRUST_ROOT_URL="https://raw.githubusercontent.com/ThoTischner/observability-mcp/main/docs/plugin-signing.pub.pem";
+const TIERS={official:1,certified:1,"third-party":1};
+const listview=document.getElementById("listview");
+const detailview=document.getElementById("detailview");
 const grid=document.getElementById("grid");
-const q=document.getElementById("q");
-const fSignal=document.getElementById("signal");
-const fTier=document.getElementById("tier");
+const q=document.getElementById("q"),fSignal=document.getElementById("signal"),fTier=document.getElementById("tier");
 const count=document.getElementById("count");
 let DATA=[];
 
-function esc(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
 function card(c){
   const tier=TIERS[c.tier]?c.tier:"third-party";
   const signals=c.signalTypes.map(s=>`<span class="sig-type">${esc(s)}</span>`).join(" · ");
   const v=c.versions&&c.versions[0];
-  const signed=v&&v.signatureUrl?`<span class="pill sig tier-official">signed</span>`:"";
+  const signed=v&&(v.tarballUrl||v.signatureUrl)?`<span class="pill tier-official">signed</span>`:"";
   const builtin=c.builtin?`<span class="builtin">builtin</span> · `:"";
-  return `<article class="card">
+  return `<article class="card" tabindex="0" role="link" data-name="${esc(c.name)}"
+    aria-label="${esc(c.displayName)} — view install instructions">
     <h2>${esc(c.displayName)} <span class="pill tier-${tier}">${esc(tier)}</span></h2>
     <div class="id">${esc(c.name)}</div>
     <p class="desc">${esc(c.description)}</p>
@@ -135,31 +163,180 @@ function card(c){
 }
 
 function render(){
-  const term=q.value.trim().toLowerCase();
-  const sig=fSignal.value, tier=fTier.value;
+  const term=q.value.trim().toLowerCase(),sig=fSignal.value,tier=fTier.value;
   const out=DATA.filter(c=>{
     if(sig&&!c.signalTypes.includes(sig))return false;
     if(tier&&c.tier!==tier)return false;
-    if(term){
-      const hay=(c.name+" "+c.displayName+" "+c.description).toLowerCase();
-      if(!hay.includes(term))return false;
-    }
+    if(term&&!(c.name+" "+c.displayName+" "+c.description).toLowerCase().includes(term))return false;
     return true;
   });
   count.textContent=out.length+" of "+DATA.length;
   grid.innerHTML=out.length?out.map(card).join(""):`<div class="empty">No connectors match.</div>`;
 }
 
+// --- install instruction methods (selectable code boxes) ------------
+function methods(c){
+  const v=(c.versions&&c.versions[0])||{};
+  const ver=v.version||c.latest||"1.0.0";
+  const tgz=v.tarballUrl||`https://github.com/ThoTischner/observability-mcp/releases/download/connector-${c.name}-${ver}/${c.name}-${ver}.tgz`;
+  const file=`${c.name}-${ver}.tgz`;
+  if(c.builtin){
+    return [["Bundled",`# ${c.displayName} ships inside the observability-mcp server image.
+# It is already available — no install step. Just add a source of
+# type "${c.name}" via the Web UI or sources.yaml.`]];
+  }
+  return [
+    ["omcp CLI", `# 1. Fetch the trust root (public key) once
+curl -fsSL -o plugin-signing.pub.pem ${TRUST_ROOT_URL}
+
+# 2. Install — downloads, verifies signature + integrity, extracts
+omcp plugin install ${c.name}@${ver} --trust-root plugin-signing.pub.pem
+
+# Restart the server (or send SIGHUP); it loads ${c.name} from PLUGINS_DIR.`],
+    ["Air-gapped", `# --- On a CONNECTED host -------------------------------------------
+curl -fsSL -O ${tgz}
+curl -fsSL -O ${TRUST_ROOT_URL}
+#   transfer ${file} + plugin-signing.pub.pem into the air-gapped zone
+#   (USB / one-way diode / internal mirror) — no registry needed.
+
+# --- On the AIR-GAPPED host ----------------------------------------
+omcp plugin install ${c.name}@${ver} \\
+  --offline-dir . --trust-root plugin-signing.pub.pem`],
+    ["Helm", `# Bake the connector into a plugins-only OCI image, then let the
+# chart's init-container extract it (no registry pull from the app pod).
+
+mkdir -p plugins/${c.name} && tar -xzf ${file} -C plugins/${c.name}
+printf 'FROM scratch\\nCOPY plugins /plugins\\n' > Dockerfile.plugins
+docker build -f Dockerfile.plugins -t registry.example.com/obs-mcp-plugins:1 .
+docker push registry.example.com/obs-mcp-plugins:1
+
+# values.yaml — mount it, fail-closed verified against the trust root:
+cat <<'YAML'
+plugins:
+  image: registry.example.com/obs-mcp-plugins:1
+  paths: ["${c.name}"]
+  verify:
+    enabled: true
+    trustRootPem: |
+$(curl -fsSL ${TRUST_ROOT_URL} | sed 's/^/      /')
+YAML
+helm upgrade --install obs observability-mcp/observability-mcp -f values.yaml`],
+    ["Manual", `# Plain filesystem install into PLUGINS_DIR (default /app/plugins)
+curl -fsSL -O ${tgz}
+curl -fsSL -o plugin-signing.pub.pem ${TRUST_ROOT_URL}
+mkdir -p "$PLUGINS_DIR/${c.name}"
+tar -xzf ${file} -C "$PLUGINS_DIR/${c.name}"
+
+# Verify before trusting it (fail-closed):
+omcp plugin verify "$PLUGINS_DIR/${c.name}" --trust-root plugin-signing.pub.pem
+# then restart the server.`],
+  ];
+}
+
+function detail(c){
+  const tier=TIERS[c.tier]?c.tier:"third-party";
+  const ms=methods(c);
+  const verRows=(c.versions||[]).map(v=>`<tr>
+    <td><code>${esc(v.version)}</code></td>
+    <td>${esc(v.releasedAt||"—")}</td>
+    <td>${esc(v.serverCompat||"—")}</td>
+    <td class="mono">${esc(v.integrity||"—")}</td></tr>`).join("");
+  const tabs=ms.map((m,i)=>`<button class="tab" role="tab" data-i="${i}"
+    aria-selected="${i===0}">${esc(m[0])}</button>`).join("");
+  const v0=(c.versions&&c.versions[0])||{};
+  detailview.innerHTML=`
+   <a class="back" href="#" id="back">← All connectors</a>
+   <div class="detail-hd">
+     <div style="flex:1;min-width:240px">
+       <h2>${esc(c.displayName)} <span class="pill tier-${tier}">${esc(tier)}</span>
+         ${(v0.tarballUrl||v0.signatureUrl)?'<span class="pill tier-official">signed</span>':''}</h2>
+       <div class="id">${esc(c.name)}</div>
+       <p class="desc">${esc(c.description)}</p>
+     </div>
+   </div>
+   <div class="detail-grid">
+     <div>
+       <h3>Install</h3>
+       <div class="tabs" role="tablist" id="tabs">${tabs}</div>
+       <div class="codewrap">
+         <button class="copy" id="copybtn">Copy</button>
+         <pre id="codebox"></pre>
+       </div>
+       <p class="note">Verification is offline &amp; fail-closed — the trust root is
+         <a href="${TRUST_ROOT_URL}">docs/plugin-signing.pub.pem</a>. Mirror the tarball
+         + key into any air-gapped zone; no network or registry needed at install time.</p>
+       <h3 style="margin-top:26px">Versions</h3>
+       <table class="vers"><thead><tr><th>Version</th><th>Released</th>
+         <th>Server</th><th>Integrity (sha256)</th></tr></thead><tbody>${verRows}</tbody></table>
+     </div>
+     <div class="meta">
+       <h3>Details</h3>
+       <dl>
+         <dt>Signals</dt><dd>${c.signalTypes.map(esc).join(", ")}</dd>
+         <dt>Tier</dt><dd>${esc(tier)}</dd>
+         <dt>Latest</dt><dd><code>${esc(c.latest||v0.version||"—")}</code></dd>
+         ${c.vendor?`<dt>Vendor</dt><dd>${esc(c.vendor)}</dd>`:''}
+         ${c.homepage?`<dt>Homepage</dt><dd><a href="${esc(c.homepage)}">repository ↗</a></dd>`:''}
+         ${v0.changelog?`<dt>Latest changes</dt><dd>${esc(v0.changelog)}</dd>`:''}
+       </dl>
+     </div>
+   </div>`;
+  const codebox=document.getElementById("codebox");
+  const setTab=i=>{
+    codebox.textContent=ms[i][1];
+    document.querySelectorAll("#tabs .tab").forEach(t=>
+      t.setAttribute("aria-selected",String(+t.dataset.i===i)));
+  };
+  setTab(0);
+  document.getElementById("tabs").addEventListener("click",e=>{
+    const b=e.target.closest(".tab"); if(b) setTab(+b.dataset.i);
+  });
+  document.getElementById("copybtn").addEventListener("click",async()=>{
+    try{await navigator.clipboard.writeText(codebox.textContent);
+      const b=document.getElementById("copybtn");b.textContent="Copied";
+      setTimeout(()=>b.textContent="Copy",1400);}catch{}
+  });
+  document.getElementById("back").addEventListener("click",e=>{
+    e.preventDefault();location.hash="";
+  });
+}
+
+function route(){
+  const name=decodeURIComponent(location.hash.replace(/^#/,""));
+  const c=DATA.find(x=>x.name===name);
+  if(c){
+    listview.classList.add("hidden");
+    detailview.classList.remove("hidden");
+    detail(c);
+    window.scrollTo(0,0);
+    document.title=`${c.displayName} · connector hub`;
+  }else{
+    detailview.classList.add("hidden");
+    listview.classList.remove("hidden");
+    document.title="observability-mcp · connector hub";
+  }
+}
+
+grid.addEventListener("click",e=>{
+  const card=e.target.closest(".card"); if(card) location.hash=card.dataset.name;
+});
+grid.addEventListener("keydown",e=>{
+  if((e.key==="Enter"||e.key===" ")&&e.target.classList.contains("card")){
+    e.preventDefault(); location.hash=e.target.dataset.name;
+  }
+});
+document.getElementById("hometitle").addEventListener("click",e=>{e.preventDefault();location.hash="";});
+[q,fSignal,fTier].forEach(el=>el.addEventListener("input",render));
+window.addEventListener("hashchange",route);
+
 fetch("./index.json",{cache:"no-cache"})
   .then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.json();})
   .then(d=>{
     DATA=(d.connectors||[]).slice().sort((a,b)=>a.name.localeCompare(b.name));
     document.getElementById("genmeta").textContent=DATA.length+" connectors · catalog v"+(d.catalogVersion||1);
-    render();
+    render(); route();
   })
   .catch(e=>{grid.innerHTML=`<div class="err">Could not load catalog (index.json): ${esc(e.message)}</div>`;});
-
-[q,fSignal,fTier].forEach(el=>el.addEventListener("input",render));
 </script>
 </body>
 </html>
