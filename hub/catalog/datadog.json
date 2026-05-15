@@ -12,6 +12,7 @@
       "version": "1.0.0",
       "releasedAt": "2026-05-15",
       "serverCompat": ">=1.4.0",
+      "tarballUrl": "https://github.com/ThoTischner/observability-mcp/releases/download/connector-datadog-1.0.0/datadog-1.0.0.tgz",
       "integrity": "sha256-dTTTxcNMEiHv6sbkMf9UQu7tUDZrt45bd1JKvoiymxI=",
       "changelog": "Initial release: metrics + logs, API/Application key auth, service discovery via the service tag."
     }
