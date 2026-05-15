@@ -1,0 +1,19 @@
+{
+  "catalogVersion": 1,
+  "name": "datadog",
+  "displayName": "Datadog",
+  "description": "Datadog connector — metrics via the v1 query API and logs via the v2 logs search API. The first optional, hub-installable connector.",
+  "vendor": "observability-mcp",
+  "homepage": "https://github.com/ThoTischner/observability-mcp",
+  "tier": "official",
+  "signalTypes": ["metrics", "logs"],
+  "versions": [
+    {
+      "version": "1.0.0",
+      "releasedAt": "2026-05-15",
+      "serverCompat": ">=1.4.0",
+      "integrity": "sha256-dTTTxcNMEiHv6sbkMf9UQu7tUDZrt45bd1JKvoiymxI=",
+      "changelog": "Initial release: metrics + logs, API/Application key auth, service discovery via the service tag."
+    }
+  ]
+}
