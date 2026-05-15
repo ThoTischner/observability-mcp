@@ -122,6 +122,7 @@
     .badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 6px currentColor; }
     .badge-ok  { background: var(--success-soft); color: var(--success); border: 1px solid rgba(74,222,128,0.25); }
     .badge-err { background: var(--danger-soft);  color: var(--danger);  border: 1px solid rgba(239,91,110,0.30); }
+    .hidden { display: none !important; }
 
     .nav { display: flex; gap: 2px; margin-left: var(--sp-6); }
     .nav-btn {
@@ -490,6 +491,7 @@
       <button class="nav-btn active" data-page="dashboard" onclick="showPage('dashboard')">Dashboard</button>
       <button class="nav-btn" data-page="sources" onclick="showPage('sources')">Sources</button>
       <button class="nav-btn" data-page="services" onclick="showPage('services')">Services</button>
+      <button class="nav-btn" data-page="connectors" onclick="showPage('connectors')">Connectors</button>
       <button class="nav-btn" data-page="health" onclick="showPage('health')">Health</button>
       <button class="nav-btn" data-page="settings" onclick="showPage('settings')">Settings</button>
     </div>
@@ -547,6 +549,19 @@
     <!-- ===== Services ===== -->
     <div class="page" id="page-services">
       <div class="card"><div class="card-header"><h2>Discovered Services</h2></div><div id="services-list"><div class="empty">Loading...</div></div></div>
+    </div>
+
+    <!-- ===== Connectors ===== -->
+    <div class="page" id="page-connectors">
+      <div class="card">
+        <div class="card-header"><h2>Installed connectors</h2><button class="btn btn-ghost btn-sm" onclick="loadConnectors()">Refresh</button></div>
+        <div id="conn-installed"><div class="empty">Loading...</div></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h2>Available from the Connector Hub</h2>
+          <a class="btn btn-ghost btn-sm" href="https://thotischner.github.io/observability-mcp/hub/" target="_blank" rel="noopener">Open Hub ↗</a></div>
+        <div id="conn-hub"><div class="empty">Loading...</div></div>
+      </div>
     </div>
 
     <!-- ===== Health ===== -->
@@ -744,6 +759,53 @@ function showPage(name) {
   document.querySelector(`.nav-btn[data-page="${name}"]`).classList.add('active');
   if(name==='settings') loadSettingsData();
   if(name==='health') loadHealthData();
+  if(name==='connectors') loadConnectors();
+}
+
+function escHtml(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+
+async function loadConnectors(){
+  const inst=document.getElementById('conn-installed');
+  const hub=document.getElementById('conn-hub');
+  try {
+    const d=await(await fetch('/api/connectors')).json();
+    const cs=(d.connectors||[]);
+    inst.innerHTML = cs.length ? cs.map(c=>{
+      const caps=Object.entries(c.capabilities||{}).filter(([,v])=>v).map(([k])=>k).join(', ')||'—';
+      return `<div class="card" style="margin:0 0 10px">
+        <div class="card-header"><h2 style="font-size:15px">${escHtml(c.displayName)}
+          <span class="badge">${escHtml(c.source)}</span>
+          ${c.version?`<span class="badge">v${escHtml(c.version)}</span>`:''}</h2></div>
+        <div style="color:var(--text-muted);font-size:13px">${escHtml(c.description)||'<em>no description</em>'}</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:6px">type <code>${escHtml(c.name)}</code> · signals ${(c.signalTypes||[]).map(escHtml).join(', ')||'—'} · ${escHtml(caps)}</div>
+      </div>`;
+    }).join('') : '<div class="empty">No connectors loaded.</div>';
+  } catch(e){ inst.innerHTML='<div class="empty">Failed to load connectors.</div>'; }
+
+  try {
+    const d=await(await fetch('/api/hub/catalog')).json();
+    if(d.error){ hub.innerHTML=`<div class="empty">Hub catalog unreachable (${escHtml(d.url)}).<br>Set <code>HUB_CATALOG_URL</code> for a mirror. ${escHtml(d.error)}</div>`; return; }
+    const cs=(d.connectors||[]);
+    hub.innerHTML = cs.length ? cs.map(c=>{
+      const v=(c.versions&&c.versions[0])||{};
+      const ver=c.latest||v.version||'';
+      const status = c.installed
+        ? `<span class="badge badge-ok">installed${c.installedVersion?` v${escHtml(c.installedVersion)}`:''}</span>`
+        : (c.builtin?'<span class="badge">builtin</span>':'<span class="badge">available</span>');
+      const cmd = c.builtin
+        ? `# ${escHtml(c.displayName)} ships in the server image — no install needed.`
+        : `curl -fsSL -o plugin-signing.pub.pem https://raw.githubusercontent.com/ThoTischner/observability-mcp/main/docs/plugin-signing.pub.pem\nomcp plugin install ${escHtml(c.name)}@${escHtml(ver)} --trust-root plugin-signing.pub.pem`;
+      const id='ci-'+c.name;
+      return `<div class="card" style="margin:0 0 10px">
+        <div class="card-header"><h2 style="font-size:15px">${escHtml(c.displayName)}
+          <span class="badge">${escHtml(c.tier)}</span> ${status}</h2>
+          ${c.installed||c.builtin?'':`<button class="btn btn-ghost btn-sm" onclick="document.getElementById('${id}').classList.toggle('hidden')">Install…</button>`}</div>
+        <div style="color:var(--text-muted);font-size:13px">${escHtml(c.description)}</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:6px">type <code>${escHtml(c.name)}</code> · signals ${(c.signalTypes||[]).map(escHtml).join(', ')||'—'} · latest <code>${escHtml(ver)||'—'}</code></div>
+        <pre id="${id}" class="hidden" style="margin-top:8px;background:var(--surface-2);padding:10px;border-radius:6px;font-size:12px;overflow:auto">${escHtml(cmd)}</pre>
+      </div>`;
+    }).join('') : '<div class="empty">Catalog empty.</div>';
+  } catch(e){ hub.innerHTML='<div class="empty">Failed to reach the hub catalog.</div>'; }
 }
 function showTab(name) {
   document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
