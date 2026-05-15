@@ -59,35 +59,34 @@ jobs:
           PASSPHRASE: ${{ secrets.HELM_SIGNING_KEY_PASSPHRASE }}
         run: |
           set -uo pipefail
-          if [ -z "${KEY_B64:-}" ]; then
-            echo "::warning::HELM_SIGNING_KEY_B64 unset — publishing unsigned."
+          # chart-releaser-action does NOT accept sign/key/keyring as
+          # action inputs (they're silently ignored). The underlying `cr`
+          # tool only reads them from a config file passed via the
+          # action's `config:` input. So we always emit /tmp/cr.yaml:
+          # signed config on success, an empty (no-op) config otherwise,
+          # so the `config:` reference is always valid.
+          unsigned() {
+            echo "::warning::$1 — publishing unsigned."
+            echo "sign: false" > /tmp/cr.yaml
             echo "sign=false" >> "$GITHUB_OUTPUT"
             exit 0
-          fi
-          # GnuPG 2.1+ dropped the legacy secring.gpg file format, so the
-          # key must be *imported* into the real keyring first, then
-          # re-exported as a binary secret keyring that Helm 3's openpgp
-          # signer can read. Writing the raw export straight to
-          # secring.gpg (the old approach) fails on gpg 2.4 with
-          # "merging secret key blocks is not anymore available".
-          if ! echo "$KEY_B64" | base64 -d | gpg --batch --import 2>/tmp/gpgerr; then
-            echo "::warning::GPG import failed — publishing unsigned."
-            cat /tmp/gpgerr || true
-            echo "sign=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+          }
+          [ -n "${KEY_B64:-}" ] || unsigned "HELM_SIGNING_KEY_B64 unset"
+          # GnuPG 2.1+ dropped the legacy secring.gpg format, so import
+          # into the real keyring first, then re-export a binary secret
+          # keyring that the cr/Helm openpgp signer can read.
+          echo "$KEY_B64" | base64 -d | gpg --batch --import 2>/tmp/gpgerr \
+            || unsigned "GPG import failed: $(cat /tmp/gpgerr 2>/dev/null)"
           fpr=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr:/{print $10; exit}')
           uid=$(gpg --list-secret-keys --with-colons | awk -F: '/^uid:/{print $10; exit}')
-          if [ -z "$fpr" ] || [ -z "$uid" ]; then
-            echo "::warning::could not resolve imported key — publishing unsigned."
-            echo "sign=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+          [ -n "$fpr" ] && [ -n "$uid" ] || unsigned "could not resolve imported key"
           gpg --export-secret-keys "$fpr" > /tmp/secring.gpg
           echo "${PASSPHRASE:-}" > /tmp/helm-passphrase
-          echo "sign=true"      >> "$GITHUB_OUTPUT"
-          echo "key_uid=$uid"   >> "$GITHUB_OUTPUT"
-          echo "key_fpr=$fpr"   >> "$GITHUB_OUTPUT"
+          # cr config — keys mirror the cr flag names. printf (not a
+          # heredoc) so YAML block indentation can't leak into the file.
+          printf 'sign: true\nkey: "%s"\nkeyring: "/tmp/secring.gpg"\npgp-passphrase-file: "/tmp/helm-passphrase"\n' "$uid" > /tmp/cr.yaml
+          echo "sign=true"    >> "$GITHUB_OUTPUT"
+          echo "key_fpr=$fpr" >> "$GITHUB_OUTPUT"
           echo "imported signing key: $fpr ($uid)"
 
       - name: Lint chart
@@ -110,19 +109,17 @@ jobs:
           charts_dir: helm
           mark_as_latest: "true"
           skip_existing: "true"
-          # GPG signing — produces .tgz.prov alongside the chart tarball.
-          # ArtifactHub picks up the provenance file from the same URL as
-          # the chart and grants the "signed" label.
-          sign: ${{ steps.gpg.outputs.sign }}
-          key: ${{ steps.gpg.outputs.key_uid }}
-          keyring: /tmp/secring.gpg
-          passphrase-file: /tmp/helm-passphrase
+          # Signing config lives in /tmp/cr.yaml (written by the gpg
+          # step). chart-releaser-action has no sign/key/keyring inputs —
+          # the underlying `cr` only reads them from this config file.
+          # When unsigned, the file is `sign: false` (a harmless no-op).
+          config: /tmp/cr.yaml
         env:
           CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Wipe signing material
         if: always()
         run: |
-          shred -u /tmp/helm-passphrase /tmp/secring.gpg /tmp/gpgerr 2>/dev/null || \
-            rm -f /tmp/helm-passphrase /tmp/secring.gpg /tmp/gpgerr
+          shred -u /tmp/helm-passphrase /tmp/secring.gpg /tmp/gpgerr /tmp/cr.yaml 2>/dev/null || \
+            rm -f /tmp/helm-passphrase /tmp/secring.gpg /tmp/gpgerr /tmp/cr.yaml
           rm -rf ~/.gnupg
