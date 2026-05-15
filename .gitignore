@@ -10,3 +10,7 @@ coverage/
 *.local
 .claude/
 TASKS.md
+
+# connector packing artifacts
+dist-connectors/
+connectors/*/manifest.json.sig
