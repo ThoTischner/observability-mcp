@@ -322,6 +322,8 @@ flags pass through after a literal `--`.
 
 In the docker-compose demo: Prometheus on `:9090`, Loki on `:3100`, services on `:8080–:8082`.
 
+**Transports:** Streamable HTTP by default (`/mcp`). For stdio-based clients/catalogs (Claude Desktop, Glama's `mcp-proxy`, etc.) run with `--stdio` (or `MCP_TRANSPORT=stdio`) — one MCP server over stdin/stdout, all logs on stderr so the protocol stream stays clean.
+
 ## Tech Stack
 
 TypeScript + Node 20, `@modelcontextprotocol/sdk` (Streamable HTTP), Express, Zod, js-yaml, prom-client (example services), Prometheus, Loki, Promtail, Docker Compose, optional Ollama.

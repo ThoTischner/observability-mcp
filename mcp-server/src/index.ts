@@ -3,6 +3,7 @@ import express from "express";
 import { randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { loadConfig, saveConfig, DEFAULT_HEALTH_THRESHOLDS, DEFAULT_SETTINGS } from "./config/loader.js";
 import { ConnectorRegistry, getSupportedTypes } from "./connectors/registry.js";
@@ -72,6 +73,18 @@ function validateSourceUrl(url: string): string | null {
 }
 
 async function main() {
+  // Stdio transport mode (MCP catalogs / desktop clients / Glama's
+  // mcp-proxy spawn a stdio MCP server and read JSON-RPC from stdout).
+  // The protocol stream MUST be the only thing on stdout, so route all
+  // console.log to stderr before anything logs.
+  const STDIO =
+    process.argv.includes("--stdio") ||
+    process.env.MCP_TRANSPORT === "stdio" ||
+    !!process.env.MCP_STDIO;
+  if (STDIO) {
+    console.log = (...a: unknown[]) => console.error(...a);
+  }
+
   let config = loadConfig();
   await getPluginLoader().load();
   const registry = new ConnectorRegistry();
@@ -485,6 +498,19 @@ async function main() {
     saveConfig(config);
     res.json({ ok: true });
   });
+
+  // Stdio transport: one server over stdin/stdout, no HTTP listener.
+  if (STDIO) {
+    const server = createMcpServer();
+    await server.connect(new StdioServerTransport());
+    console.error(
+      `observability-mcp running on stdio transport · connectors: ${registry
+        .getAll()
+        .map((c) => c.name)
+        .join(", ")}`
+    );
+    return;
+  }
 
   // MCP Streamable HTTP transport — stateful sessions
   const transports = new Map<string, StreamableHTTPServerTransport>();
