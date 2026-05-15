@@ -1,0 +1,43 @@
+{
+  "catalogVersion": 1,
+  "connectors": [
+    {
+      "name": "loki",
+      "displayName": "Grafana Loki",
+      "description": "LogQL-based logs backend. Service discovery from log streams and label-scoped log queries.",
+      "tier": "official",
+      "builtin": true,
+      "signalTypes": [
+        "logs"
+      ],
+      "latest": "1.4.0",
+      "versions": [
+        {
+          "version": "1.4.0",
+          "releasedAt": "2026-05-15",
+          "serverCompat": ">=1.4.0",
+          "changelog": "Bundled with the server image — no install step. Listed for discoverability and to anchor the catalog format."
+        }
+      ]
+    },
+    {
+      "name": "prometheus",
+      "displayName": "Prometheus",
+      "description": "PromQL-based metrics backend. Service discovery, default metric set, and ad-hoc range/instant queries.",
+      "tier": "official",
+      "builtin": true,
+      "signalTypes": [
+        "metrics"
+      ],
+      "latest": "1.4.0",
+      "versions": [
+        {
+          "version": "1.4.0",
+          "releasedAt": "2026-05-15",
+          "serverCompat": ">=1.4.0",
+          "changelog": "Bundled with the server image — no install step. Listed for discoverability and to anchor the catalog format."
+        }
+      ]
+    }
+  ]
+}

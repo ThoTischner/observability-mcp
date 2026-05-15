@@ -1,0 +1,61 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "observability-mcp connector hub — catalog entry",
+  "description": "One file per connector under hub/catalog/<name>.json. build-catalog.mjs validates each against this schema and aggregates them into hub/catalog/index.json. The hub is a static catalog (no server): tarballs + signatures are fetched directly from the URLs below and verified with the same trust-root model the server uses (see docs/plugin-architecture.md).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["catalogVersion", "name", "displayName", "description", "tier", "signalTypes", "versions"],
+  "properties": {
+    "catalogVersion": { "const": 1 },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "description": "Connector type id; matches the plugin manifest `name` and `sources.yaml` type."
+    },
+    "displayName": { "type": "string", "minLength": 1 },
+    "description": { "type": "string", "minLength": 1 },
+    "vendor": { "type": "string" },
+    "homepage": { "type": "string", "format": "uri" },
+    "tier": {
+      "enum": ["official", "certified", "third-party"],
+      "description": "official = maintained in this repo; certified = reviewed; third-party = community, unreviewed."
+    },
+    "builtin": {
+      "type": "boolean",
+      "description": "True for connectors bundled in the server image (prometheus, loki). Listed for discoverability; no install step needed."
+    },
+    "signalTypes": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "enum": ["metrics", "logs", "traces"] }
+    },
+    "screenshots": {
+      "type": "array",
+      "items": { "type": "string", "format": "uri" }
+    },
+    "versions": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Newest first. Each entry is independently verifiable.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["version", "releasedAt"],
+        "properties": {
+          "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+(-[a-z0-9.-]+)?$" },
+          "releasedAt": { "type": "string", "format": "date" },
+          "serverCompat": { "type": "string", "description": "Semver range of mcp-server versions." },
+          "tarballUrl": { "type": "string", "format": "uri" },
+          "signatureUrl": { "type": "string", "format": "uri", "description": "Detached signature of the manifest (manifest.json.sig)." },
+          "manifestUrl": { "type": "string", "format": "uri" },
+          "integrity": {
+            "type": "string",
+            "pattern": "^sha256-[A-Za-z0-9+/]+=*$",
+            "description": "sha256 of the plugin entry file; mirrors the manifest `integrity`."
+          },
+          "changelog": { "type": "string" }
+        }
+      }
+    }
+  }
+}

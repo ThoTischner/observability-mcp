@@ -1,0 +1,19 @@
+{
+  "catalogVersion": 1,
+  "name": "loki",
+  "displayName": "Grafana Loki",
+  "description": "LogQL-based logs backend. Service discovery from log streams and label-scoped log queries.",
+  "vendor": "observability-mcp",
+  "homepage": "https://github.com/ThoTischner/observability-mcp",
+  "tier": "official",
+  "builtin": true,
+  "signalTypes": ["logs"],
+  "versions": [
+    {
+      "version": "1.4.0",
+      "releasedAt": "2026-05-15",
+      "serverCompat": ">=1.4.0",
+      "changelog": "Bundled with the server image — no install step. Listed for discoverability and to anchor the catalog format."
+    }
+  ]
+}
