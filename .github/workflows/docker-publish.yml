@@ -57,8 +57,17 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ steps.image.outputs.lower }}
 
-      - name: Build and push by digest
-        id: build
+      # Build + push, with up to 3 attempts. GHCR returns transient 5xx
+      # on layer-blob writes often enough that a single failed push
+      # would redden an otherwise-good release. The build itself is
+      # cached (type=gha) so retries only re-push, they don't rebuild.
+      # Three explicit attempt steps instead of a third-party retry
+      # wrapper — keeps the supply chain auditable for a signed/SBOM
+      # image. attempts 1+2 are continue-on-error; attempt 3 is the
+      # one that can fail the job.
+      - name: Build and push by digest (attempt 1)
+        id: build1
+        continue-on-error: true
         uses: docker/build-push-action@v7
         with:
           context: ./mcp-server
@@ -76,6 +85,57 @@ jobs:
           outputs: type=image,name=${{ env.REGISTRY }}/${{ steps.image.outputs.lower }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=${{ steps.platform.outputs.pair }}
           cache-to: type=gha,mode=max,scope=${{ steps.platform.outputs.pair }}
+
+      - name: Backoff before attempt 2
+        if: steps.build1.outcome == 'failure'
+        run: sleep 20
+
+      - name: Build and push by digest (attempt 2)
+        id: build2
+        if: steps.build1.outcome == 'failure'
+        continue-on-error: true
+        uses: docker/build-push-action@v7
+        with:
+          context: ./mcp-server
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            GIT_COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ github.event.repository.updated_at }}
+          sbom: true
+          provenance: mode=max
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ steps.image.outputs.lower }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ steps.platform.outputs.pair }}
+          cache-to: type=gha,mode=max,scope=${{ steps.platform.outputs.pair }}
+
+      - name: Backoff before attempt 3
+        if: steps.build1.outcome == 'failure' && steps.build2.outcome == 'failure'
+        run: sleep 45
+
+      - name: Build and push by digest (attempt 3)
+        id: build3
+        if: steps.build1.outcome == 'failure' && steps.build2.outcome == 'failure'
+        uses: docker/build-push-action@v7
+        with:
+          context: ./mcp-server
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            GIT_COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ github.event.repository.updated_at }}
+          sbom: true
+          provenance: mode=max
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ steps.image.outputs.lower }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ steps.platform.outputs.pair }}
+          cache-to: type=gha,mode=max,scope=${{ steps.platform.outputs.pair }}
+
+      - name: Resolve digest
+        id: build
+        run: |
+          d="${{ steps.build1.outputs.digest || steps.build2.outputs.digest || steps.build3.outputs.digest }}"
+          [ -n "$d" ] || { echo "no digest from any build attempt"; exit 1; }
+          echo "digest=$d" >> "$GITHUB_OUTPUT"
+          echo "resolved digest: $d"
 
       - name: Export digest
         run: |
