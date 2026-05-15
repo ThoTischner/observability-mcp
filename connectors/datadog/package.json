@@ -1,0 +1,14 @@
+{
+  "name": "@observability-mcp/connector-datadog",
+  "version": "1.0.0",
+  "description": "Datadog connector for observability-mcp — metrics + logs via the Datadog API.",
+  "type": "module",
+  "main": "./index.js",
+  "license": "MIT",
+  "files": ["index.js", "manifest.json"],
+  "observabilityMcp": {
+    "kind": "connector",
+    "name": "datadog",
+    "manifest": "./manifest.json"
+  }
+}
