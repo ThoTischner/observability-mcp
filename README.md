@@ -11,7 +11,11 @@ normalizes the data, adds intelligent analysis, and provides a web UI for config
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![npm](https://img.shields.io/npm/v/@thotischner/observability-mcp?logo=npm)](https://www.npmjs.com/package/@thotischner/observability-mcp)
+[![npm downloads](https://img.shields.io/npm/dm/@thotischner/observability-mcp?logo=npm&label=downloads)](https://www.npmjs.com/package/@thotischner/observability-mcp)
 [![GHCR](https://img.shields.io/badge/ghcr.io-observability--mcp-2496ED?logo=docker&logoColor=white)](https://github.com/ThoTischner/observability-mcp/pkgs/container/observability-mcp)
+[![Smoke test](https://github.com/ThoTischner/observability-mcp/actions/workflows/integration.yml/badge.svg?branch=main)](https://github.com/ThoTischner/observability-mcp/actions/workflows/integration.yml)
+[![Helm IT](https://github.com/ThoTischner/observability-mcp/actions/workflows/helm-integration.yml/badge.svg?branch=main)](https://github.com/ThoTischner/observability-mcp/actions/workflows/helm-integration.yml)
+[![GitHub stars](https://img.shields.io/github/stars/ThoTischner/observability-mcp?style=flat&logo=github)](https://github.com/ThoTischner/observability-mcp/stargazers)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![MCP SDK](https://img.shields.io/badge/MCP_SDK-1.29-orange)](https://modelcontextprotocol.io)
 [![Helm chart](https://img.shields.io/badge/helm-observability--mcp-0F1689?logo=helm&logoColor=white)](./helm/observability-mcp)
