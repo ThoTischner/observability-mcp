@@ -28,6 +28,33 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- if .Values.plugins.image }}
+      initContainers:
+        # Copies connector plugins out of a dedicated OCI image into a
+        # shared emptyDir. The main container then needs no registry
+        # access — the airgapped "mounted volume" workflow from
+        # docs/plugin-architecture.md.
+        - name: extract-plugins
+          image: {{ .Values.plugins.image | quote }}
+          imagePullPolicy: {{ .Values.plugins.imagePullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              {{- if .Values.plugins.paths }}
+              for p in {{ .Values.plugins.paths | join " " }}; do
+                cp -a "/plugins/$p" /shared/
+              done
+              {{- else }}
+              cp -a /plugins/. /shared/
+              {{- end }}
+          volumeMounts:
+            - name: plugins
+              mountPath: /shared
+      {{- end }}
       containers:
         - name: mcp-server
           image: "{{ .Values.image.repository }}:{{ include "observability-mcp.imageTag" . }}"
@@ -58,6 +85,12 @@ spec:
                   name: {{ include "observability-mcp.authSecretName" . }}
                   key: token
             {{- end }}
+            {{- if .Values.plugins.verify.enabled }}
+            - name: VERIFY_PLUGINS
+              value: "true"
+            - name: PLUGIN_TRUST_ROOT
+              value: /app/trust/trust-root.pem
+            {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -78,6 +111,16 @@ spec:
             - name: data
               mountPath: /app/config
             {{- end }}
+            {{- if .Values.plugins.image }}
+            - name: plugins
+              mountPath: /app/plugins
+              readOnly: true
+            {{- end }}
+            {{- if .Values.plugins.verify.enabled }}
+            - name: trust-root
+              mountPath: /app/trust
+              readOnly: true
+            {{- end }}
       volumes:
         {{- if .Values.sources.config }}
         - name: sources-config
@@ -88,6 +131,15 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: {{ include "observability-mcp.fullname" . }}
+        {{- end }}
+        {{- if .Values.plugins.image }}
+        - name: plugins
+          emptyDir: {}
+        {{- end }}
+        {{- if .Values.plugins.verify.enabled }}
+        - name: trust-root
+          secret:
+            secretName: {{ .Values.plugins.verify.existingSecret | default (printf "%s-trust-root" (include "observability-mcp.fullname" .)) }}
         {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

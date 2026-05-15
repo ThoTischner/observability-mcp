@@ -34,8 +34,15 @@ helm install obs-mcp ./helm/observability-mcp \
 | `persistence.enabled` | `false` | Persist `sources.yaml` updates from the Web UI |
 | `autoscaling.enabled` | `false` | HPA — only with sticky-session ingress |
 | `podSecurityContext.runAsNonRoot` | `true` | Hardened defaults |
+| `plugins.image` | `""` | OCI image with a `/plugins` tree; an init container extracts it into `/app/plugins` (no registry access from the main pod) |
+| `plugins.paths` | `[]` | Subdirs of `/plugins` to extract (empty = all) |
+| `plugins.verify.enabled` | `false` | Fail-closed connector verification (`VERIFY_PLUGINS`) — builtin Prometheus/Loki are never gated |
+| `plugins.verify.trustRootPem` | `""` | PEM public key trust root (rendered into a Secret) |
+| `plugins.verify.existingSecret` | `""` | Instead reference a Secret with key `trust-root.pem` |
 
-See [`values.yaml`](./values.yaml) for the full schema.
+See [`values.yaml`](./values.yaml) for the full schema and
+[`docs/plugin-architecture.md`](../../docs/plugin-architecture.md) for the
+airgapped plugin + verification model.
 
 ## Multi-replica deployments
 

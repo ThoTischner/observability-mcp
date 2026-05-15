@@ -62,6 +62,29 @@ extraEnv: []
   # - name: MCP_LOG_LEVEL
   #   value: info
 
+# Connector plugins. Builtin Prometheus/Loki need no configuration —
+# this block is only for additional / airgapped connectors. See
+# docs/plugin-architecture.md.
+plugins:
+  # OCI image containing ONLY a /plugins tree. An init container copies
+  # the selected paths into an emptyDir mounted at /app/plugins, so the
+  # main container never needs registry access (airgapped-friendly).
+  # Leave empty to disable the init container entirely.
+  image: ""
+  # e.g. registry.internal/observability-mcp-plugins:1.0.0
+  imagePullPolicy: IfNotPresent
+  # Subdirectories of /plugins to extract. Empty = copy everything.
+  paths: []
+  # Fail-closed signature + integrity verification (VERIFY_PLUGINS).
+  # Builtin connectors are part of the trusted image and are never gated.
+  verify:
+    enabled: false
+    # PEM public key used as the trust root. Provide it inline (rendered
+    # into a Secret) OR point existingSecret at a Secret that has the
+    # key `trust-root.pem`.
+    trustRootPem: ""
+    existingSecret: ""
+
 service:
   type: ClusterIP
   port: 3000
