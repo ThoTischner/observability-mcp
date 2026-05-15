@@ -6,7 +6,16 @@ import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
-import { parseArgs, pickFreePort, composeOverride, HELP } from "./lib.js";
+import {
+  parseArgs,
+  pickFreePort,
+  composeOverride,
+  resolveCatalogSource,
+  formatPluginList,
+  formatPluginInfo,
+  HELP,
+  type Catalog,
+} from "./lib.js";
 
 function pkgVersion(): string {
   try {
@@ -40,6 +49,49 @@ function findComposeFile(): string | null {
     dir = parent;
   }
   return null;
+}
+
+// Walk up from cwd for a checkout's generated catalog.
+function findLocalCatalog(): string | null {
+  let dir = process.cwd();
+  for (let i = 0; i < 8; i++) {
+    const f = join(dir, "hub", "catalog", "index.json");
+    if (existsSync(f)) return f;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+
+async function loadCatalog(from: string | undefined): Promise<Catalog> {
+  const src = resolveCatalogSource(from, findLocalCatalog());
+  if (src.kind === "file") {
+    if (!existsSync(src.location)) fail(`catalog not found: ${src.location}`);
+    return JSON.parse(readFileSync(src.location, "utf8")) as Catalog;
+  }
+  const r = await fetch(src.location).catch((e) => fail(`fetch failed: ${String(e)}`));
+  if (!r.ok) fail(`catalog HTTP ${r.status} from ${src.location}`);
+  return (await r.json()) as Catalog;
+}
+
+async function plugin(sub: string | undefined, args: string[], flags: Record<string, string | boolean>): Promise<void> {
+  const from = typeof flags.from === "string" ? flags.from : undefined;
+  const json = flags.json === true;
+  const cat = await loadCatalog(from);
+  if (sub === "list") {
+    console.log(json ? JSON.stringify(cat, null, 2) : formatPluginList(cat));
+    return;
+  }
+  if (sub === "info") {
+    const name = args[0];
+    if (!name) fail("usage: omcp plugin info <name>");
+    const c = cat.connectors.find((x) => x.name === name);
+    if (!c) fail(`no connector '${name}' in catalog (try: omcp plugin list)`);
+    console.log(json ? JSON.stringify(c, null, 2) : formatPluginInfo(c));
+    return;
+  }
+  fail(`unknown 'plugin' subcommand: ${sub ?? "(none)"} (list|info)`);
 }
 
 function portInUse(port: number, host = "127.0.0.1"): Promise<boolean> {
@@ -148,7 +200,7 @@ function run(cmd: string, args: string[], cwd: string): number {
 }
 
 async function main(): Promise<void> {
-  const { command, sub, flags } = parseArgs(process.argv.slice(2));
+  const { command, sub, flags, positionals } = parseArgs(process.argv.slice(2));
   const json = flags.json === true;
   switch (command) {
     case "":
@@ -164,6 +216,8 @@ async function main(): Promise<void> {
       return doctor(json);
     case "demo":
       return demo(sub);
+    case "plugin":
+      return plugin(sub, positionals, flags);
     default:
       fail(`unknown command: ${command}\n\n${HELP}`);
   }

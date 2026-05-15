@@ -1,7 +1,42 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { parseArgs, pickFreePort, composeOverride } from "./lib.js";
+import {
+  parseArgs,
+  pickFreePort,
+  composeOverride,
+  resolveCatalogSource,
+  formatPluginList,
+  formatPluginInfo,
+  DEFAULT_CATALOG_URL,
+  type Catalog,
+} from "./lib.js";
+
+const CAT: Catalog = {
+  catalogVersion: 1,
+  connectors: [
+    {
+      name: "prometheus",
+      displayName: "Prometheus",
+      description: "PromQL metrics.",
+      tier: "official",
+      builtin: true,
+      signalTypes: ["metrics"],
+      latest: "1.4.0",
+      versions: [{ version: "1.4.0", releasedAt: "2026-05-15", serverCompat: ">=1.4.0" }],
+    },
+    {
+      name: "tempo",
+      displayName: "Grafana Tempo",
+      description: "TraceQL.",
+      tier: "third-party",
+      signalTypes: ["traces"],
+      versions: [
+        { version: "1.0.0", releasedAt: "2026-05-15", integrity: "sha256-AAAA=", signatureUrl: "https://x/s.sig" },
+      ],
+    },
+  ],
+};
 
 test("parseArgs: command, sub, positionals", () => {
   const p = parseArgs(["demo", "up", "extra"]);
@@ -48,4 +83,31 @@ test("composeOverride emits !override port mappings", () => {
   assert.match(y, /^services:\n/);
   assert.match(y, /  mcp-server:\n    ports: !override\n      - "3001:3000"/);
   assert.match(y, /  loki:\n    ports: !override\n      - "3101:3100"/);
+});
+
+test("resolveCatalogSource: explicit url, explicit path, local, default", () => {
+  assert.deepEqual(resolveCatalogSource("https://h/x.json", null), { kind: "url", location: "https://h/x.json" });
+  assert.deepEqual(resolveCatalogSource("/tmp/c.json", null), { kind: "file", location: "/tmp/c.json" });
+  assert.deepEqual(resolveCatalogSource(undefined, "/repo/hub/catalog/index.json"), { kind: "file", location: "/repo/hub/catalog/index.json" });
+  assert.deepEqual(resolveCatalogSource(undefined, null), { kind: "url", location: DEFAULT_CATALOG_URL });
+});
+
+test("formatPluginList: header, sorted rows, builtin+tier flags", () => {
+  const out = formatPluginList(CAT);
+  const lines = out.split("\n");
+  assert.match(lines[0], /^NAME\s+LATEST\s+SIGNALS\s+TIER$/);
+  // sorted: prometheus before tempo
+  assert.ok(lines[1].startsWith("prometheus"));
+  assert.match(lines[1], /builtin,official/);
+  assert.ok(lines[2].startsWith("tempo"));
+  assert.match(lines[2], /third-party/);
+});
+
+test("formatPluginInfo: versions + integrity/signature surfaced", () => {
+  const info = formatPluginInfo(CAT.connectors[1]);
+  assert.match(info, /Grafana Tempo {2}\(tempo\)/);
+  assert.match(info, /tier: {6}third-party/);
+  assert.match(info, /1\.0\.0 \(2026-05-15\)/);
+  assert.match(info, /integrity: sha256-AAAA=/);
+  assert.match(info, /signature: https:\/\/x\/s\.sig/);
 });

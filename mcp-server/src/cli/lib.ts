@@ -61,6 +61,88 @@ export function composeOverride(
   return `services:\n${services}\n`;
 }
 
+export const DEFAULT_CATALOG_URL =
+  "https://thotischner.github.io/observability-mcp/hub/index.json";
+
+export interface CatalogVersion {
+  version: string;
+  releasedAt?: string;
+  serverCompat?: string;
+  tarballUrl?: string;
+  signatureUrl?: string;
+  manifestUrl?: string;
+  integrity?: string;
+  changelog?: string;
+}
+export interface CatalogConnector {
+  name: string;
+  displayName: string;
+  description: string;
+  tier: string;
+  builtin?: boolean;
+  signalTypes: string[];
+  latest?: string;
+  versions: CatalogVersion[];
+}
+export interface Catalog {
+  catalogVersion: number;
+  connectors: CatalogConnector[];
+}
+
+/**
+ * Decide where to read the catalog from, in priority order:
+ *   1. explicit `from` (a URL or a filesystem path)
+ *   2. a local checkout's hub/catalog/index.json (when localPath exists)
+ *   3. the public Pages catalog
+ */
+export function resolveCatalogSource(
+  from: string | undefined,
+  localPath: string | null
+): { kind: "url" | "file"; location: string } {
+  if (from) {
+    return /^https?:\/\//.test(from)
+      ? { kind: "url", location: from }
+      : { kind: "file", location: from };
+  }
+  if (localPath) return { kind: "file", location: localPath };
+  return { kind: "url", location: DEFAULT_CATALOG_URL };
+}
+
+export function formatPluginList(cat: Catalog): string {
+  const rows = cat.connectors
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((c) => {
+      const latest = c.latest ?? c.versions[0]?.version ?? "—";
+      const flags = [c.builtin ? "builtin" : "", c.tier].filter(Boolean).join(",");
+      return [c.name, latest, c.signalTypes.join("+"), flags];
+    });
+  const head = ["NAME", "LATEST", "SIGNALS", "TIER"];
+  const widths = head.map((h, i) =>
+    Math.max(h.length, ...rows.map((r) => r[i].length))
+  );
+  const line = (cols: string[]) =>
+    cols.map((c, i) => c.padEnd(widths[i])).join("  ").trimEnd();
+  return [line(head), ...rows.map(line)].join("\n");
+}
+
+export function formatPluginInfo(c: CatalogConnector): string {
+  const out: string[] = [];
+  out.push(`${c.displayName}  (${c.name})`);
+  out.push(`  tier:      ${c.tier}${c.builtin ? " · builtin (ships in the server image)" : ""}`);
+  out.push(`  signals:   ${c.signalTypes.join(", ")}`);
+  out.push(`  ${c.description}`);
+  out.push(`  versions:`);
+  for (const v of c.versions) {
+    out.push(`    - ${v.version}${v.releasedAt ? ` (${v.releasedAt})` : ""}${v.serverCompat ? ` · server ${v.serverCompat}` : ""}`);
+    if (v.integrity) out.push(`      integrity: ${v.integrity}`);
+    if (v.signatureUrl) out.push(`      signature: ${v.signatureUrl}`);
+    if (v.tarballUrl) out.push(`      tarball:   ${v.tarballUrl}`);
+    if (v.changelog) out.push(`      changelog: ${v.changelog}`);
+  }
+  return out.join("\n");
+}
+
 export const HELP = `omcp — observability-mcp control CLI
 
 Usage:
@@ -69,8 +151,11 @@ Usage:
   omcp demo up                 Start the full demo stack (auto-picks free host ports)
   omcp demo down               Stop and remove the demo stack
   omcp demo status             Show demo container status
+  omcp plugin list             List connectors from the hub catalog
+  omcp plugin info <name>      Show one connector's versions + verification info
   omcp help                    Show this help
 
 Flags:
-  --json                       Machine-readable output (doctor, status)
+  --json                       Machine-readable output (doctor, status, plugin)
+  --from <url|path>            Catalog source (default: local checkout or the public hub)
 `;
