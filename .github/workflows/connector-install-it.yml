@@ -20,6 +20,9 @@ on:
       - 'mcp-server/src/cli/**'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   install-it:
     runs-on: ubuntu-latest
