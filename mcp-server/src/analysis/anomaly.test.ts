@@ -1,6 +1,14 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { calculateZScore, detectAnomalyPoints, detectRecentAnomaly } from "./anomaly.js";
+import {
+  calculateZScore,
+  detectAnomalyPoints,
+  detectRecentAnomaly,
+  detectRobustAnomaly,
+  classifyMetric,
+  median,
+  mad,
+} from "./anomaly.js";
 
 describe("calculateZScore", () => {
   it("returns zeros for empty array", () => {
@@ -96,5 +104,99 @@ describe("detectRecentAnomaly", () => {
     const highResult = detectRecentAnomaly([...baseline, ...slight], 5, 3.0);
     // Slight increase might trigger low threshold but not high
     assert.ok(lowResult.isAnomaly || !highResult.isAnomaly);
+  });
+});
+
+describe("median / mad", () => {
+  it("median handles odd and even lengths", () => {
+    assert.equal(median([3, 1, 2]), 2);
+    assert.equal(median([1, 2, 3, 4]), 2.5);
+    assert.equal(median([]), 0);
+  });
+  it("mad is robust to outliers", () => {
+    const stable = [8, 10, 12, 9, 11, 10, 13, 7];
+    const withOutlier = [...stable, 100000];
+    const stdDev = (xs: number[]) => {
+      const m = xs.reduce((a, b) => a + b, 0) / xs.length;
+      return Math.sqrt(xs.reduce((s, v) => s + (v - m) ** 2, 0) / xs.length);
+    };
+    // MAD barely moves; stdDev explodes by orders of magnitude.
+    assert.ok(mad(stable) > 0);
+    assert.ok(mad(withOutlier) < mad(stable) * 2);
+    assert.ok(stdDev(withOutlier) > stdDev(stable) * 100);
+  });
+});
+
+describe("classifyMetric", () => {
+  it("classifies by name", () => {
+    assert.equal(classifyMetric("latency_p99"), "latency");
+    assert.equal(classifyMetric("error_rate"), "error_rate");
+    assert.equal(classifyMetric("cpu"), "saturation");
+    assert.equal(classifyMetric("memory_used_bytes"), "saturation");
+    assert.equal(classifyMetric("request_rate"), "throughput");
+    assert.equal(classifyMetric("widgets_total"), "generic");
+  });
+});
+
+describe("detectRobustAnomaly", () => {
+  it("warmup: no detection below minSamples", () => {
+    const r = detectRobustAnomaly([1, 2, 3, 4, 5]);
+    assert.equal(r.isAnomaly, false);
+    assert.equal(r.method, "none");
+  });
+
+  it("no anomaly for stable noisy data", () => {
+    const v = Array.from({ length: 40 }, (_, i) => 100 + (i % 3) - 1);
+    assert.equal(detectRobustAnomaly(v).isAnomaly, false);
+  });
+
+  // The exact production false-negative: a slow memory-leak ramp toward OOM.
+  // detectRecentAnomaly misses it because the rising baseline poisons its own
+  // mean/stdDev; detectRobustAnomaly must catch it.
+  it("REGRESSION: detects slow memory-leak ramp the legacy detector misses", () => {
+    // The query window opened AFTER the leak began, so there is no flat
+    // baseline — the metric climbs monotonically across the whole window.
+    // Legacy windowed z-score stays sub-threshold (the baseline already
+    // contains the ramp); this is the production "all healthy during OOM"
+    // false-negative. The robust trend detector must catch it.
+    const series = Array.from({ length: 40 }, (_, i) => 120 + i * 7);
+
+    const legacy = detectRecentAnomaly(series, 5, 2.0);
+    assert.equal(legacy.isAnomaly, false, "legacy detector misses the leak spanning the window");
+
+    const robust = detectRobustAnomaly(series, { metricKind: "saturation" });
+    assert.equal(robust.isAnomaly, true, "robust detector must catch the leak");
+    assert.equal(robust.method, "trend");
+    assert.equal(robust.direction, "above");
+  });
+
+  it("detects a hard spike via robust-z", () => {
+    const base = Array.from({ length: 25 }, (_, i) => 50 + (i % 3));
+    const spike = Array(5).fill(500);
+    const r = detectRobustAnomaly([...base, ...spike], { metricKind: "latency" });
+    assert.equal(r.isAnomaly, true);
+    assert.equal(r.method, "robust-z");
+  });
+
+  it("dwell/hysteresis: a single transient spike does not fire", () => {
+    const base = Array.from({ length: 30 }, (_, i) => 50 + (i % 3));
+    const series = [...base, 50, 51, 49, 500]; // one lone spike at the very end
+    const r = detectRobustAnomaly(series, { metricKind: "latency", dwell: 2 });
+    assert.equal(r.isAnomaly, false, "single point should not satisfy dwell");
+  });
+
+  it("one-sided: a drop in error_rate is not an anomaly", () => {
+    const base = Array.from({ length: 25 }, (_, i) => 20 + (i % 3));
+    const drop = Array(5).fill(0);
+    const r = detectRobustAnomaly([...base, ...drop], { metricKind: "error_rate" });
+    assert.equal(r.isAnomaly, false);
+  });
+
+  it("two-sided generic metric flags a drop", () => {
+    const base = Array.from({ length: 25 }, (_, i) => 100 + (i % 3));
+    const drop = Array(5).fill(5);
+    const r = detectRobustAnomaly([...base, ...drop], { metricKind: "generic" });
+    assert.equal(r.isAnomaly, true);
+    assert.equal(r.direction, "below");
   });
 });
