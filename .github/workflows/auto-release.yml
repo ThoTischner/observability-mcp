@@ -87,9 +87,13 @@ jobs:
           new_chart="${MA}.${MI}.$((PA + 1))"
           sed -i -E "s/^appVersion: .*/appVersion: \"${appver}\"/" Chart.yaml
           sed -i -E "0,/^version: .*/s//version: ${new_chart}/" Chart.yaml
+          # ArtifactHub scans the image pinned in artifacthub.io/images —
+          # re-point it at the new tag too, otherwise the security report
+          # keeps scanning the old (now superseded) image forever.
+          sed -i -E "s|(image: ghcr\.io/thotischner/observability-mcp:)[^[:space:]]+|\1${appver}|" Chart.yaml
           echo "new_chart=${new_chart}" >> "$GITHUB_OUTPUT"
           echo "chart ${cur_chart} -> ${new_chart}, appVersion -> ${appver}"
-          grep -E '^(version|appVersion):' Chart.yaml
+          grep -E '^(version|appVersion):|image: ghcr\.io' Chart.yaml
 
       # NOTE: GITHUB_TOKEN can create PRs only when the repo setting
       # "Settings → Actions → General → Allow GitHub Actions to create
