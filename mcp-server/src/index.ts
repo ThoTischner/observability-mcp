@@ -81,6 +81,42 @@ function validateSourceUrl(url: string): string | null {
   }
 }
 
+// Hard cap for a downloaded/uploaded connector tarball (defence against
+// a hostile or accidental huge artifact OOM-ing the server).
+const MAX_CONNECTOR_TGZ_BYTES = 64 * 1024 * 1024;
+
+// Dependency-free fixed-window per-client rate limiter for the runtime
+// connector install/upload routes (expensive: fetch + extract + verify +
+// fs write + loader rescan). Bounds abuse even with ENABLE_UI_INSTALL on.
+const installRateState = new Map<string, { count: number; resetAt: number }>();
+function installRateLimit(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction,
+): void {
+  const WINDOW_MS = 60_000;
+  const MAX = 5;
+  const now = Date.now();
+  if (installRateState.size > 5000) {
+    for (const [k, v] of installRateState) if (v.resetAt < now) installRateState.delete(k);
+  }
+  const key = req.ip || "unknown";
+  let s = installRateState.get(key);
+  if (!s || s.resetAt < now) {
+    s = { count: 0, resetAt: now + WINDOW_MS };
+    installRateState.set(key, s);
+  }
+  s.count++;
+  if (s.count > MAX) {
+    res.setHeader("Retry-After", String(Math.ceil((s.resetAt - now) / 1000)));
+    res.status(429).json({
+      error: "rate limit exceeded — too many connector install attempts, slow down",
+    });
+    return;
+  }
+  next();
+}
+
 async function main() {
   // Stdio transport mode (MCP catalogs / desktop clients / Glama's
   // mcp-proxy spawn a stdio MCP server and read JSON-RPC from stdout).
@@ -436,7 +472,7 @@ async function main() {
   // Only catalog tarballUrls are fetched (no arbitrary URL in the body)
   // to avoid SSRF. The connector persists to PLUGINS_DIR (back it with
   // a PVC on k8s so it survives restarts).
-  app.post("/api/connectors/install", async (req, res) => {
+  app.post("/api/connectors/install", installRateLimit, async (req, res) => {
     if (process.env.ENABLE_UI_INSTALL !== "true") {
       return res.status(403).json({
         error: "UI install is disabled. Set ENABLE_UI_INSTALL=true and PLUGIN_TRUST_ROOT to enable it.",
@@ -468,9 +504,17 @@ async function main() {
       }
       const resp = await fetch(v.tarballUrl);
       if (!resp.ok) return res.status(502).json({ error: `tarball download HTTP ${resp.status}` });
+      const declared = Number(resp.headers.get("content-length") || 0);
+      if (declared > MAX_CONNECTOR_TGZ_BYTES) {
+        return res.status(413).json({ error: `tarball too large (${declared} bytes)` });
+      }
+      const buf = Buffer.from(await resp.arrayBuffer());
+      if (buf.length > MAX_CONNECTOR_TGZ_BYTES) {
+        return res.status(413).json({ error: `tarball too large (${buf.length} bytes)` });
+      }
       work = mkdtempSync(join(tmpdir(), "obsmcp-dl-"));
       const tgz = join(work, "c.tgz");
-      writeFileSync(tgz, Buffer.from(await resp.arrayBuffer()));
+      writeFileSync(tgz, buf);
       const result = installTarball({ tgzPath: tgz, pluginsDir, trustRootPath, expectedName: name });
       await getPluginLoader().load(); // re-scan so /api/connectors reflects it
       res.json({
@@ -494,6 +538,7 @@ async function main() {
   // bytes (application/octet-stream). Persists to PLUGINS_DIR.
   app.post(
     "/api/connectors/upload",
+    installRateLimit,
     express.raw({ type: "application/octet-stream", limit: "50mb" }),
     async (req, res) => {
       if (process.env.ENABLE_UI_INSTALL !== "true") {
