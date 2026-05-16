@@ -1,7 +1,7 @@
 # --- Build stage -----------------------------------------------------------
 # Installs deps + compiles TS. Everything here is throwaway; only the
 # artefacts under /app are copied into the runtime stage.
-FROM node:26-alpine AS builder
+FROM node:26-alpine@sha256:e71ac5e964b9201072425d59d2e876359efa25dc96bb1768cb73295728d6e4ea AS builder
 
 WORKDIR /app
 COPY package.json package-lock.json* ./
@@ -20,7 +20,7 @@ RUN npm prune --omit=dev
 # transitive deps (e.g. ip-address) that surface as CVEs even though the
 # server never invokes npm at runtime. Removing it shrinks the image and
 # silences false-positive scans like the one ArtifactHub reported.
-FROM node:26-alpine
+FROM node:26-alpine@sha256:e71ac5e964b9201072425d59d2e876359efa25dc96bb1768cb73295728d6e4ea
 
 ARG GIT_COMMIT=""
 ARG BUILD_DATE=""
