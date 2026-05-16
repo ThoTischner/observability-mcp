@@ -23,7 +23,7 @@ normalizes the data, adds intelligent analysis, and provides a web UI for config
 [![Provenance](https://img.shields.io/badge/npm-provenance-success?logo=npm)](https://docs.npmjs.com/generating-provenance-statements)
 [![Connector Hub](https://img.shields.io/badge/connector-hub-38bdf8?logo=googlechrome&logoColor=white)](https://thotischner.github.io/observability-mcp/hub/)
 
-![Web UI Dashboard](docs/dashboard.png)
+![observability-mcp — guided tour of the web UI](docs/demo.gif)
 
 </div>
 
@@ -62,6 +62,12 @@ Every observability vendor ships its own MCP server — Prometheus, Grafana, Dat
 - **Pluggable connectors** — One interface, any query language (PromQL, LogQL, Flux, KQL...). See [docs/connectors.md](docs/connectors.md).
 - **Auth & TLS** — Basic, Bearer, custom CA, mTLS. See [docs/auth-and-tls.md](docs/auth-and-tls.md).
 - **Multi-backend** — Multiple instances of the same type, no problem.
+
+## Screenshots
+
+| Dashboard | Service health | Connector hub |
+|---|---|---|
+| [![Dashboard](docs/screenshots/dashboard.png)](docs/screenshots/dashboard.png) | [![Service health](docs/screenshots/health.png)](docs/screenshots/health.png) | [![Connector hub](docs/screenshots/connectors.png)](docs/screenshots/connectors.png) |
 
 ## Architecture
 
