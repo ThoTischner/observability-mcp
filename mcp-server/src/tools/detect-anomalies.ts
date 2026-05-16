@@ -34,7 +34,13 @@ const SENSITIVITY_THRESHOLDS: Record<string, number> = {
   high: 1.5,
 };
 
-const KEY_METRICS = ["cpu", "error_rate", "latency_p99", "request_rate"];
+const KEY_METRICS = ["cpu", "memory", "error_rate", "latency_p99", "request_rate"];
+
+// Patterns that signal a serious incident even at warn level and even when
+// the overall error ratio is low (e.g. a memory leak emits a handful of
+// "OutOfMemoryWarning" lines long before it turns into 5xx errors).
+const CRITICAL_LOG_PATTERN =
+  /\b(out\s?of\s?memory|oom|outofmemory|heap (usage|exhaust)|memory leak|panic|fatal|deadlock|segfault|stack overflow|cannot allocate)\b/i;
 
 export async function detectAnomaliesHandler(
   registry: ConnectorRegistry,
@@ -102,6 +108,25 @@ export async function detectAnomaliesHandler(
       if (!connector.queryLogs) continue;
       try {
         const logs = await connector.queryLogs({ service: serviceName, duration, limit: 500 });
+
+        // Critical-pattern scan — independent of the error-ratio gate, so a
+        // warn-level OOM/leak signal is not silently dropped.
+        const criticalPattern = logs.summary.topPatterns.find((p) =>
+          CRITICAL_LOG_PATTERN.test(p)
+        );
+        if (criticalPattern) {
+          allAnomalies.push({
+            metric: "log_critical_pattern",
+            severity: "high",
+            description: `Critical log pattern detected: "${criticalPattern}"`,
+            currentValue: logs.summary.errorCount + logs.summary.warnCount,
+            baselineValue: 0,
+            deviationPercent: 100,
+            source: connector.name,
+            service: serviceName,
+          });
+        }
+
         if (logs.summary.errorCount > 5) {
           const errorRatio = logs.summary.total > 0
             ? logs.summary.errorCount / logs.summary.total
