@@ -78,13 +78,18 @@ export class LokiConnector implements ObservabilityConnector {
   async disconnect(): Promise<void> {}
 
   async listServices(): Promise<ServiceInfo[]> {
-    // Probe each candidate label and merge values. Loki streams may identify
-    // services via service_name, service, job, app, or container depending on
-    // the shipper configuration. Walking all candidates ensures historical
-    // streams remain reachable when label conventions change over time.
+    // Candidate labels are ordered by preference (service_name, service,
+    // job, app, container). The FIRST label that yields any values wins —
+    // we do not union across labels. Unioning duplicated every service:
+    // one real container is simultaneously `service="api-gateway"` and
+    // `container="myproj-api-gateway-1"`, and a co-located shipper can add
+    // unrelated `container` values (e.g. other compose/k8s containers on
+    // the same Docker host). The ordered fallback still keeps streams
+    // reachable on backends that only carry a low-priority label.
     const seen = new Map<string, ServiceInfo>();
     for (const label of this.serviceLabels) {
       const values = await this.getLabelValues(label);
+      if (values.length === 0) continue;
       for (const raw of values) {
         // Docker's loki.source.docker writes container names with a leading '/'
         // (Docker API Names[0] convention). Strip it for display so the name
@@ -99,6 +104,7 @@ export class LokiConnector implements ObservabilityConnector {
           });
         }
       }
+      break; // first non-empty label is authoritative
     }
     return Array.from(seen.values());
   }
