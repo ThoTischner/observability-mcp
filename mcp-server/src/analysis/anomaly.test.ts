@@ -5,6 +5,8 @@ import {
   detectAnomalyPoints,
   detectRecentAnomaly,
   detectRobustAnomaly,
+  detectSeasonalAnomaly,
+  detectAnomaly,
   classifyMetric,
   median,
   mad,
@@ -198,5 +200,76 @@ describe("detectRobustAnomaly", () => {
     const r = detectRobustAnomaly([...base, ...drop], { metricKind: "generic" });
     assert.equal(r.isAnomaly, true);
     assert.equal(r.direction, "below");
+  });
+});
+
+describe("detectSeasonalAnomaly", () => {
+  const HOUR = 3600_000;
+  const NIGHT = (h: number) => h >= 22 || h <= 5;
+  // `days` of hourly samples with a strong diurnal pattern (night ~10, day
+  // ~100). `lastDayNight` overrides the final day's night value to inject a
+  // regression. Returns points ending at day-`days` hour 3 (a night hour).
+  function diurnal(days: number, lastDayNight?: number) {
+    const pts: { timestamp: number; value: number }[] = [];
+    const start = Date.UTC(2026, 0, 1, 0, 0, 0);
+    for (let d = 0; d < days; d++) {
+      for (let h = 0; h < 24; h++) {
+        let v = NIGHT(h) ? 10 : 100;
+        v += (d % 3) - 1; // small deterministic spread so MAD > 0
+        if (d === days - 1 && NIGHT(h) && lastDayNight !== undefined) v = lastDayNight;
+        pts.push({ timestamp: start + (d * 24 + h) * HOUR, value: v });
+      }
+    }
+    // Trim so the series ends mid-night (…23, 0, 1, 2, 3).
+    return pts.slice(0, days * 24 - 20);
+  }
+
+  it("not applicable with <2 periods of history", () => {
+    const r = detectSeasonalAnomaly(diurnal(1));
+    assert.equal(r.applicable, false);
+    assert.equal(r.isAnomaly, false);
+  });
+
+  it("KEY: a normal nightly trough is NOT an anomaly (robust would false-positive)", () => {
+    const series = diurnal(6); // ends in a normal low-night window
+    const seasonal = detectSeasonalAnomaly(series);
+    assert.equal(seasonal.applicable, true);
+    assert.equal(seasonal.isAnomaly, false, "night low is expected at this phase");
+
+    // The naive robust detector, lacking phase awareness, flags the trough.
+    const robust = detectRobustAnomaly(series.map((p) => p.value), { metricKind: "generic" });
+    assert.equal(robust.isAnomaly, true, "robust mistakes the diurnal trough for a drop");
+  });
+
+  it("flags a real same-phase regression (night value where day-level is wrong)", () => {
+    const series = diurnal(6, 100); // last day's night sits at daytime level
+    const r = detectSeasonalAnomaly(series, { metricKind: "saturation" });
+    assert.equal(r.applicable, true);
+    assert.equal(r.isAnomaly, true);
+    assert.equal(r.direction, "above");
+    assert.ok(r.phaseSamples >= 4);
+  });
+});
+
+describe("detectAnomaly orchestrator", () => {
+  it("uses seasonal when multi-period history is available", () => {
+    const HOUR = 3600_000;
+    const start = Date.UTC(2026, 0, 1);
+    const pts = [];
+    for (let i = 0; i < 24 * 5; i++) {
+      const h = i % 24;
+      pts.push({ timestamp: start + i * HOUR, value: (h >= 22 || h <= 5 ? 10 : 100) + (i % 3) });
+    }
+    const r = detectAnomaly(pts, { metricKind: "generic" });
+    assert.equal(r.method, "seasonal");
+  });
+
+  it("falls back to robust when history is too short", () => {
+    const pts = Array.from({ length: 30 }, (_, i) => ({
+      timestamp: 1_700_000_000_000 + i * 60_000,
+      value: 100 + (i % 3),
+    }));
+    const r = detectAnomaly(pts, { metricKind: "generic" });
+    assert.ok(r.method === "none" || r.method === "robust-z" || r.method === "trend");
   });
 });
