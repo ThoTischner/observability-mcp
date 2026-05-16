@@ -68,6 +68,29 @@ jobs:
           echo "new_version=${new_version}" >> "$GITHUB_OUTPUT"
           echo "bumped to ${new_version} ($BUMP)"
 
+      # Builtin connectors (prometheus, loki) ship inside the server
+      # image, so a server release must also re-point the Helm chart at
+      # the new image and publish a new chart. Keep this in lockstep:
+      # appVersion := the new server version; the chart's own version
+      # gets a patch bump so helm-release.yml publishes it.
+      - name: Bump Helm chart (appVersion + chart version)
+        if: steps.check.outputs.skip != 'true'
+        id: chart
+        working-directory: ./helm/observability-mcp
+        env:
+          NEW_VERSION: ${{ steps.bump.outputs.new_version }}
+        run: |
+          set -euo pipefail
+          appver="${NEW_VERSION#v}"
+          cur_chart=$(grep -E '^version:' Chart.yaml | head -1 | awk '{print $2}')
+          IFS=. read -r MA MI PA <<< "$cur_chart"
+          new_chart="${MA}.${MI}.$((PA + 1))"
+          sed -i -E "s/^appVersion: .*/appVersion: \"${appver}\"/" Chart.yaml
+          sed -i -E "0,/^version: .*/s//version: ${new_chart}/" Chart.yaml
+          echo "new_chart=${new_chart}" >> "$GITHUB_OUTPUT"
+          echo "chart ${cur_chart} -> ${new_chart}, appVersion -> ${appver}"
+          grep -E '^(version|appVersion):' Chart.yaml
+
       # NOTE: GITHUB_TOKEN can create PRs only when the repo setting
       # "Settings → Actions → General → Allow GitHub Actions to create
       # and approve pull requests" is enabled. If not, set a RELEASE_PAT
@@ -84,13 +107,15 @@ jobs:
             Automated weekly release.
 
             - Bumps `mcp-server/package.json` to `${{ steps.bump.outputs.new_version }}`
+            - Bumps Helm chart: `appVersion` → `${{ steps.bump.outputs.new_version }}`, chart `version` → `${{ steps.chart.outputs.new_chart }}` (builtin connectors ship in the server image, so the chart is released in lockstep)
             - Previous tag: `${{ steps.check.outputs.last_tag }}`
-            - Auto-merge is enabled — GitHub will squash-merge as soon as all required checks pass. Merging triggers `tag-on-release.yml`, which pushes the tag and fans out to `release.yml`, `docker-publish.yml`, and `npm-publish.yml`.
+            - Auto-merge is enabled — GitHub will squash-merge as soon as all required checks pass. Merging triggers `tag-on-release.yml`, which pushes the tag and fans out to `release.yml`, `docker-publish.yml`, `npm-publish.yml`, and `helm-release.yml`.
           branch: release/${{ steps.bump.outputs.new_version }}
           delete-branch: true
           add-paths: |
             mcp-server/package.json
             mcp-server/package-lock.json
+            helm/observability-mcp/Chart.yaml
           labels: release,automated
 
       - name: Enable auto-merge on the release PR
