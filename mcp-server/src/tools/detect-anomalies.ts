@@ -1,7 +1,7 @@
 import type { ConnectorRegistry } from "../connectors/registry.js";
 import type { AnomalyReport } from "../types.js";
 import { detectAnomaly, classifyMetric } from "../analysis/anomaly.js";
-import { correlateSignals } from "../analysis/correlator.js";
+import { rankRootCause } from "../analysis/correlator.js";
 
 export const detectAnomaliesDefinition = {
   name: "detect_anomalies" as const,
@@ -146,10 +146,26 @@ export async function detectAnomaliesHandler(
     }
   }
 
+  // Dependency-aware root-cause ranking. The service graph / change markers
+  // are empty here (no trace source wired yet); ranking then degrades to
+  // severity-weighted ordering and still names the most likely culprit
+  // instead of just listing "both signals bad".
+  const rootCause =
+    allAnomalies.length > 0
+      ? rankRootCause(
+          allAnomalies.map((a) => ({
+            service: a.service,
+            metric: a.metric,
+            severity: a.severity,
+          }))
+        )
+      : { ranked: [], summary: "" };
+
   const result = {
     scannedServices: serviceNames.length,
     anomalies: allAnomalies,
     correlations: allCorrelations,
+    rootCause,
     summary:
       allAnomalies.length === 0
         ? "All services healthy — no anomalies detected."
