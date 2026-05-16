@@ -1,6 +1,6 @@
 # Loki connector
 
-Loki streams identify services through different labels depending on the shipper. The connector probes a prioritized list and merges the results, so streams remain reachable as label conventions evolve.
+Loki streams identify services through different labels depending on the shipper. The connector probes a prioritized list and uses the **first label that returns any values** — it does not union across labels, so a noisy low-priority label (e.g. a host-wide `container` label that also sees unrelated containers) can't pollute discovery while a curated higher-priority label is present.
 
 ## Service label fallback
 
@@ -12,7 +12,7 @@ Default order:
 4. `app`           (Kubernetes labelling convention)
 5. `container`     (Docker `loki.source.docker`)
 
-`list_services` walks the entire list and dedupes by name, annotating each service with the label it was discovered through (`labels.discoveredVia`).
+`list_services` returns the values of the **first label in the order above that has any** (the ordered fallback still keeps streams reachable on backends that only carry a low-priority label), annotating each service with the label it was discovered through (`labels.discoveredVia`).
 
 `query_logs(service=X)` resolves `X` to the first label whose values contain it, then builds `{<label>="X"}` as the LogQL selector.
 
