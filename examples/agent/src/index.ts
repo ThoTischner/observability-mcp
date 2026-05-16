@@ -162,7 +162,10 @@ async function main() {
   let { tools } = await client.listTools();
   log(`MCP tools: ${tools.map((t) => t.name).join(", ")}`);
 
-  let ollamaAvailable = await ensureModel();
+  // Warm up / pull the model at boot for its side effect; the loop
+  // re-checks availability each iteration before use.
+  await ensureModel();
+  let ollamaAvailable = false;
 
   while (true) {
     try {
