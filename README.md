@@ -66,6 +66,28 @@ Every observability vendor ships its own MCP server — Prometheus, Grafana, Dat
 - **Auth & TLS** — Basic, Bearer, custom CA, mTLS. See [docs/auth-and-tls.md](docs/auth-and-tls.md).
 - **Multi-backend** — Multiple instances of the same type, no problem.
 
+## Detection quality
+
+The anomaly engine is backtested against a labelled synthetic suite covering
+slow ramps (memory-leak-toward-OOM), spikes, step changes, stable noise,
+transient blips, one-sided recoveries, daily-seasonal patterns, and a
+deliberately ambiguous low-SNR "hard" tier. Scored as a CI gate
+([`backtest.test.ts`](mcp-server/src/analysis/backtest.test.ts)) — these
+numbers are regenerated from that suite, not hand-written:
+
+| Cases | Precision | Recall | F1 |
+|------:|----------:|-------:|---:|
+| 64 | 100.0% | 87.5% | 93.3% |
+
+Precision is 100% (no spurious alerts); the recalled misses are by design at
+the noise floor of the hard tier. The suite is deterministic and a detector
+regression fails CI. Reproduce locally:
+
+```bash
+docker run --rm -w /app -v "$(pwd)/mcp-server:/app" node:20-alpine \
+  sh -c "npm i --silent && npx tsx --test src/analysis/backtest.test.ts"
+```
+
 ## Screenshots
 
 | Dashboard | Service health | Connector hub |
