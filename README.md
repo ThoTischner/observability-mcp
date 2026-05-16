@@ -289,7 +289,7 @@ The agent ([docs/agent.md](docs/agent.md)) detects anomalies within 30 seconds a
 
 ## CLI (`omcp`)
 
-A Confluent-style control CLI ships in the same npm package (`omcp` bin):
+A control CLI ships in the same npm package (`omcp` bin) — manage connectors, the demo stack, and Helm installs:
 
 ```bash
 omcp doctor                       # check docker / compose / helm / node

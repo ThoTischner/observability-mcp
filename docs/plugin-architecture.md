@@ -8,7 +8,7 @@ Last updated: 2026-05-14
 1. **Connectors are optional.** The MCP server starts and serves `tools/list` with zero connectors; users add Prometheus, Loki, Tempo, OpenSearch, Datadog, etc. on demand.
 2. **No build needed to add a connector.** Drop a tarball / npm package into the right place, point a config line at it, restart. No code changes to the server.
 3. **Airgapped works.** No runtime network access required to load a connector. All resolution from local filesystem or the container image.
-4. **Versioned, signed, discoverable.** A future *connector hub* (think Confluent Hub for Kafka Connect) hosts connector packages with signed manifests; the CLI can install from the hub or a private mirror.
+4. **Versioned, signed, discoverable.** A *connector hub* — a curated registry of connector packages with signed manifests — hosts the catalog; the CLI can install from the hub or a private mirror.
 5. **Backwards compatible during rollout.** The existing `PrometheusConnector` and `LokiConnector` keep working through a builtin-shim before they get extracted into separate packages.
 
 ## Non-goals (for v1)
@@ -185,7 +185,7 @@ Both install paths run the **exact same fail-closed verification** as the loader
 
 A tampered/unsigned bundle is rejected (`400`, `PluginVerificationError`) and never written. On Kubernetes, `PLUGINS_DIR` is an `emptyDir` reseeded from the bundle image on every start, so set `plugins.persistence.enabled=true` (PVC) and `plugins.uiInstall.enabled=true` in the Helm chart for runtime-installed connectors to survive pod restarts.
 
-Future: a "third-party / certified / official" rating tier like Confluent Hub.
+Future: a "third-party / certified / official" rating tier for catalog entries.
 
 ## Implementation milestones
 
