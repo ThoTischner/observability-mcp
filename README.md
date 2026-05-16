@@ -289,7 +289,19 @@ The agent ([docs/agent.md](docs/agent.md)) detects anomalies within 30 seconds a
 
 ## CLI (`omcp`)
 
-A control CLI ships in the same npm package (`omcp` bin) — manage connectors, the demo stack, and Helm installs:
+A control CLI ships in the same npm package (`omcp` bin) — manage connectors, the demo stack, and Helm installs.
+
+Install it (or run ad-hoc without installing):
+
+```bash
+npm i -g @thotischner/observability-mcp   # puts `omcp` on your PATH
+omcp --help
+
+# or, no install:
+npx -p @thotischner/observability-mcp omcp doctor
+```
+
+Then:
 
 ```bash
 omcp doctor                       # check docker / compose / helm / node
