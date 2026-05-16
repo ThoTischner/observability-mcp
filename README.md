@@ -117,6 +117,7 @@ examples/     # demo material — agent, example services, Prometheus+Loki confi
 | **Docker (GHCR)** | `docker run -p 3000:3000 ghcr.io/thotischner/observability-mcp:latest` | Production hosts, isolation |
 | **Helm** | `helm repo add observability-mcp https://thotischner.github.io/observability-mcp/`<br>`helm install observability-mcp observability-mcp/observability-mcp` | Kubernetes |
 | **From source** | `git clone … && make demo` | Full POC with example services and chaos |
+| **CLI (`omcp`)** | `npm i -g @thotischner/observability-mcp` | Managing connectors, the demo stack & Helm from the terminal — see [CLI](#cli-omcp) |
 
 GHCR is multi-arch (amd64 + arm64). Available tags: `latest`, `main`, `X.Y.Z`, `X.Y`, `X`, `sha-<commit>`. Note: the leading `v` is stripped from semver tags.
 
