@@ -1,6 +1,6 @@
 import type { ConnectorRegistry } from "../connectors/registry.js";
 import type { AnomalyReport } from "../types.js";
-import { detectRobustAnomaly, classifyMetric } from "../analysis/anomaly.js";
+import { detectAnomaly, classifyMetric } from "../analysis/anomaly.js";
 import { correlateSignals } from "../analysis/correlator.js";
 
 export const detectAnomaliesDefinition = {
@@ -70,8 +70,8 @@ export async function detectAnomaliesHandler(
       for (const metric of KEY_METRICS) {
         try {
           const result = await connector.queryMetrics({ service: serviceName, metric, duration });
-          const values = result.values.map((v) => v.value);
-          const anomaly = detectRobustAnomaly(values, {
+          const points = result.values.map((v) => ({ timestamp: v.timestamp, value: v.value }));
+          const anomaly = detectAnomaly(points, {
             threshold,
             metricKind: classifyMetric(metric),
           });

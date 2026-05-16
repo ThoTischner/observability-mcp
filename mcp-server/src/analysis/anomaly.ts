@@ -218,6 +218,175 @@ export function detectRobustAnomaly(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Seasonality-aware baseline (A2) — compares the recent window against the
+// SAME time-of-day phase in prior periods, not against the immediately
+// preceding values. A nightly traffic trough or a daily batch-job spike is
+// then "expected", not an anomaly; a real regression still stands out because
+// it deviates from its own historical same-phase distribution.
+// ---------------------------------------------------------------------------
+
+export interface SeasonalPoint {
+  /** Unix epoch milliseconds, or an ISO-8601 timestamp string. */
+  timestamp: number | string;
+  value: number;
+}
+
+export interface SeasonalAnomalyOptions {
+  /** Season length in seconds. Default: 86400 (daily / time-of-day). */
+  periodSeconds?: number;
+  /** Phase tolerance in seconds — how close in-phase a historical sample
+   *  must be to count toward the baseline. Default: periodSeconds / 48
+   *  (≈30 min for a daily period). */
+  phaseToleranceSeconds?: number;
+  /** Trailing points treated as "recent". Default: 5. */
+  recentWindow?: number;
+  /** Robust-z threshold against the same-phase distribution. Default: 3.5. */
+  threshold?: number;
+  /** Minimum same-phase historical samples required to trust the baseline. */
+  minPhaseSamples?: number;
+  metricKind?: MetricKind;
+}
+
+export interface SeasonalAnomalyResult {
+  isAnomaly: boolean;
+  /** false when there is not enough multi-period history — caller should
+   *  fall back to {@link detectRobustAnomaly}. */
+  applicable: boolean;
+  score: number;
+  expected: number;
+  recentValue: number;
+  direction: "above" | "below" | "flat";
+  phaseSamples: number;
+  reason: string;
+}
+
+function toEpochSeconds(t: number | string): number {
+  if (typeof t === "number") return t > 1e12 ? t / 1000 : t;
+  return new Date(t).getTime() / 1000;
+}
+
+/**
+ * Seasonal-naive detection: predict the recent value from the robust
+ * (median/MAD) distribution of historical points at the same phase of the
+ * season, and flag a deviation. Falls back (applicable=false) when the series
+ * does not span enough periods to build a same-phase baseline.
+ */
+export function detectSeasonalAnomaly(
+  points: SeasonalPoint[],
+  opts: SeasonalAnomalyOptions = {}
+): SeasonalAnomalyResult {
+  const period = opts.periodSeconds ?? 86400;
+  const tol = opts.phaseToleranceSeconds ?? period / 48;
+  const recentWindow = opts.recentWindow ?? 5;
+  const threshold = opts.threshold ?? 3.5;
+  const minPhaseSamples = opts.minPhaseSamples ?? 4;
+  const kind = opts.metricKind ?? "generic";
+
+  const NA: SeasonalAnomalyResult = {
+    isAnomaly: false,
+    applicable: false,
+    score: 0,
+    expected: 0,
+    recentValue: 0,
+    direction: "flat",
+    phaseSamples: 0,
+    reason: "insufficient multi-period history",
+  };
+
+  if (points.length < recentWindow + 2) return NA;
+
+  const series = points
+    .map((p) => ({ t: toEpochSeconds(p.timestamp), v: p.value }))
+    .filter((p) => Number.isFinite(p.t) && Number.isFinite(p.v))
+    .sort((a, b) => a.t - b.t);
+  if (series.length < recentWindow + 2) return NA;
+
+  const span = series[series.length - 1].t - series[0].t;
+  // Need at least ~2 full periods of history to have any same-phase samples.
+  if (span < period * 2) return NA;
+
+  const recent = series.slice(-recentWindow);
+  const history = series.slice(0, -recentWindow);
+  const recentPhase = ((recent[recent.length - 1].t % period) + period) % period;
+
+  // Same-phase historical samples: phase distance within tolerance (wrapping).
+  const samePhase = history
+    .filter((p) => {
+      const ph = ((p.t % period) + period) % period;
+      const d = Math.abs(ph - recentPhase);
+      return Math.min(d, period - d) <= tol;
+    })
+    .map((p) => p.v);
+
+  if (samePhase.length < minPhaseSamples) return NA;
+
+  const expected = median(samePhase);
+  const spread = mad(samePhase, expected);
+  const recentMed = median(recent.map((p) => p.v));
+  const scale = spread > 0 ? spread : Math.max(Math.abs(expected) * 1e-3, 1e-9);
+  const z = (recentMed - expected) / scale;
+  const direction: SeasonalAnomalyResult["direction"] =
+    z > 0 ? "above" : z < 0 ? "below" : "flat";
+
+  const oneSidedUp = kind === "error_rate" || kind === "latency" || kind === "saturation";
+  const hit = oneSidedUp ? z >= threshold : Math.abs(z) >= threshold;
+
+  return {
+    isAnomaly: hit,
+    applicable: true,
+    score: z,
+    expected,
+    recentValue: recentMed,
+    direction,
+    phaseSamples: samePhase.length,
+    reason: hit
+      ? `recent ${recentMed.toFixed(2)} is ${z.toFixed(1)} robust-σ ${direction} the seasonal baseline ${expected.toFixed(2)} (n=${samePhase.length} same-phase samples)`
+      : `within seasonal baseline (${expected.toFixed(2)}, n=${samePhase.length})`,
+  };
+}
+
+/**
+ * Orchestrator: prefer the seasonality-aware baseline when the series spans
+ * enough periods to build a same-phase distribution; otherwise fall back to
+ * the robust windowed detector. Returns a normalized verdict.
+ */
+export function detectAnomaly(
+  points: SeasonalPoint[],
+  opts: SeasonalAnomalyOptions & RobustAnomalyOptions = {}
+): {
+  isAnomaly: boolean;
+  method: "seasonal" | "robust-z" | "trend" | "none";
+  score: number;
+  recentValue: number;
+  baselineValue: number;
+  direction: "above" | "below" | "flat";
+  reason: string;
+} {
+  const seasonal = detectSeasonalAnomaly(points, opts);
+  if (seasonal.applicable) {
+    return {
+      isAnomaly: seasonal.isAnomaly,
+      method: "seasonal",
+      score: seasonal.score,
+      recentValue: seasonal.recentValue,
+      baselineValue: seasonal.expected,
+      direction: seasonal.direction,
+      reason: seasonal.reason,
+    };
+  }
+  const r = detectRobustAnomaly(points.map((p) => p.value), opts);
+  return {
+    isAnomaly: r.isAnomaly,
+    method: r.method,
+    score: r.score,
+    recentValue: r.recentValue,
+    baselineValue: r.baselineValue,
+    direction: r.direction,
+    reason: r.reason,
+  };
+}
+
 /**
  * Check if the most recent values deviate significantly from the baseline.
  * Compares the last `recentWindow` values against the rest.
