@@ -290,11 +290,18 @@ async function main() {
   app.use(express.json({ limit: "1mb" }));
 
   // Security headers
-  app.use((_req, res, next) => {
+  app.use((req, res, next) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("X-Frame-Options", "DENY");
     res.setHeader("X-XSS-Protection", "1; mode=block");
     res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    // Dynamic API responses must never be served from the browser/proxy
+    // cache: after a mutation (e.g. installing a connector) the UI
+    // re-fetches these GETs immediately, and a heuristically-cached stale
+    // body would make the change "not show up until a page reload".
+    if (req.path.startsWith("/api/")) {
+      res.setHeader("Cache-Control", "no-store");
+    }
     next();
   });
 
