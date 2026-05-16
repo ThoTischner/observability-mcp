@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import express from "express";
+import rateLimit from "express-rate-limit";
 import { randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -85,37 +86,18 @@ function validateSourceUrl(url: string): string | null {
 // a hostile or accidental huge artifact OOM-ing the server).
 const MAX_CONNECTOR_TGZ_BYTES = 64 * 1024 * 1024;
 
-// Dependency-free fixed-window per-client rate limiter for the runtime
-// connector install/upload routes (expensive: fetch + extract + verify +
-// fs write + loader rescan). Bounds abuse even with ENABLE_UI_INSTALL on.
-const installRateState = new Map<string, { count: number; resetAt: number }>();
-function installRateLimit(
-  req: express.Request,
-  res: express.Response,
-  next: express.NextFunction,
-): void {
-  const WINDOW_MS = 60_000;
-  const MAX = 5;
-  const now = Date.now();
-  if (installRateState.size > 5000) {
-    for (const [k, v] of installRateState) if (v.resetAt < now) installRateState.delete(k);
-  }
-  const key = req.ip || "unknown";
-  let s = installRateState.get(key);
-  if (!s || s.resetAt < now) {
-    s = { count: 0, resetAt: now + WINDOW_MS };
-    installRateState.set(key, s);
-  }
-  s.count++;
-  if (s.count > MAX) {
-    res.setHeader("Retry-After", String(Math.ceil((s.resetAt - now) / 1000)));
-    res.status(429).json({
-      error: "rate limit exceeded — too many connector install attempts, slow down",
-    });
-    return;
-  }
-  next();
-}
+// Per-client rate limiter for the expensive runtime routes (connector
+// install/upload: fetch + extract + verify + fs write + loader rescan;
+// add/test source: outbound backend connect). Uses express-rate-limit
+// so the control is explicit and well-tested. Bounds abuse even with
+// ENABLE_UI_INSTALL on.
+const installRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "rate limit exceeded — too many attempts, slow down" },
+});
 
 async function main() {
   // Stdio transport mode (MCP catalogs / desktop clients / Glama's
@@ -580,7 +562,7 @@ async function main() {
   );
 
   // Add a new source
-  app.post("/api/sources", async (req, res) => {
+  app.post("/api/sources", installRateLimit, async (req, res) => {
     const { name, type, url, enabled, auth, tls } = req.body;
     if (!name || !type || !url) {
       res.status(400).json({ error: "name, type, and url are required" });
@@ -640,7 +622,7 @@ async function main() {
   });
 
   // Test a source connection (without saving)
-  app.post("/api/sources/test", async (req, res) => {
+  app.post("/api/sources/test", installRateLimit, async (req, res) => {
     const { name, type, url, enabled, auth, tls } = req.body;
     if (!type || !url) {
       res.status(400).json({ error: "type and url are required" });
