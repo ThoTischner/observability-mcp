@@ -16,7 +16,7 @@
 // catalog URLs are deterministic (release tag scheme) and committed.
 
 import { createHash, createPrivateKey, sign as edSign } from "node:crypto";
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
