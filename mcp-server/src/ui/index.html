@@ -821,7 +821,7 @@ async function installConnector(name, btn){
   try {
     const r=await fetch('/api/connectors/install',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});
     const d=await r.json().catch(()=>({}));
-    if(r.ok){ toast(`Installed ${name}${d.version?(' v'+d.version):''}`); loadConnectors(); }
+    if(r.ok){ toast(`Installed ${name}${d.version?(' v'+d.version):''}`); loadConnectors(); loadTypes(); }
     else if(r.status===403){ toast('UI install disabled — use the CLI tab, or set ENABLE_UI_INSTALL=true + PLUGIN_TRUST_ROOT.'); if(btn){btn.disabled=false;btn.textContent='Install';} }
     else { toast('Install failed: '+(d.error||r.status)); if(btn){btn.disabled=false;btn.textContent='Install';} }
   } catch(e){ toast('Install error: '+e.message); if(btn){btn.disabled=false;btn.textContent='Install';} }
@@ -834,7 +834,7 @@ async function uploadConnector(btn){
   try {
     const r=await fetch('/api/connectors/upload',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:f});
     const d=await r.json().catch(()=>({}));
-    if(r.ok){ toast(`Installed ${d.name||'connector'}${d.version?(' v'+d.version):''}`); inp.value=''; loadConnectors(); }
+    if(r.ok){ toast(`Installed ${d.name||'connector'}${d.version?(' v'+d.version):''}`); inp.value=''; loadConnectors(); loadTypes(); }
     else if(r.status===403){ toast('UI install disabled — set ENABLE_UI_INSTALL=true + PLUGIN_TRUST_ROOT.'); }
     else { toast('Upload failed: '+(d.error||r.status)); }
   } catch(e){ toast('Upload error: '+e.message); }
@@ -1219,6 +1219,9 @@ async function loadInfo(){
   }catch{/* server too old or /api/info disabled */}
 }
 
+// Show the endpoint the user is actually reaching the server through
+// (localhost, a port-forward, or an ingress) — not a hardcoded host.
+document.getElementById('mcp-url').textContent = window.location.origin + '/mcp';
 (async()=>{await loadTypes();await refresh();await loadInfo();setInterval(refresh,15000);})();
 </script>
 
