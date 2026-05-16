@@ -26,8 +26,8 @@ jobs:
             path: examples/agent
     name: npm-audit (${{ matrix.name }})
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: '20'
       - name: Ensure lockfile exists (${{ matrix.path }})
@@ -43,8 +43,8 @@ jobs:
   unit-tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: '20'
       - name: Install
@@ -84,16 +84,16 @@ jobs:
       security-events: write
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - name: Build image (no push)
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7
         with:
           context: ./mcp-server
           push: false
           load: true
           tags: observability-mcp:scan
       - name: Run Trivy on image
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@314ff8b43182423b84c50b1670b0e10f858f2d98 # master
         with:
           image-ref: observability-mcp:scan
           format: sarif
@@ -101,13 +101,13 @@ jobs:
           severity: CRITICAL,HIGH
           exit-code: '0'
       - name: Upload Trivy SARIF
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba # v4
         if: always()
         with:
           sarif_file: trivy-image.sarif
           category: trivy-image
       - name: Trivy filesystem scan
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@314ff8b43182423b84c50b1670b0e10f858f2d98 # master
         with:
           scan-type: fs
           scan-ref: .
@@ -116,7 +116,7 @@ jobs:
           severity: CRITICAL,HIGH
           exit-code: '0'
       - name: Upload Trivy FS SARIF
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba # v4
         if: always()
         with:
           sarif_file: trivy-fs.sarif
