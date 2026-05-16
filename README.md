@@ -5,9 +5,10 @@
 **The unified observability gateway for AI agents.**
 
 One MCP server that connects to any observability backend through pluggable connectors,
-normalizes the data, adds intelligent analysis, and provides a web UI for configuration.
+normalizes the data, adds robust anomaly analysis, and provides a web UI for configuration.
 
-*What Grafana did for dashboards, we do for AI agents.*
+*One MCP endpoint, every backend — so an agent triaging an incident asks one normalized
+question instead of juggling N vendor servers and their query languages.*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![npm](https://img.shields.io/npm/v/@thotischner/observability-mcp?logo=npm)](https://www.npmjs.com/package/@thotischner/observability-mcp)
@@ -48,14 +49,16 @@ See `make help` for all canonical workflows.
 
 ## Why?
 
-Every observability vendor ships its own MCP server — Prometheus, Grafana, Datadog, Elastic, each siloed. AI agents that need to reason across systems must juggle N separate servers. There is no unified abstraction layer.
+Every observability vendor ships its own MCP server — Prometheus, Grafana, Datadog, Elastic, each siloed. An AI agent triaging an incident across systems must juggle N separate servers and learn each query language (PromQL, LogQL, …). There is no unified abstraction layer.
 
-**observability-mcp** is that layer.
+**observability-mcp** is that layer: one MCP endpoint that normalizes every backend and answers in plain service/metric/log terms, plus an analysis engine that flags anomalies the agent would otherwise have to reconstruct from raw queries itself.
+
+**Who it's for:** SRE / platform teams running Prometheus + Loki who use an AI agent (Claude, local LLMs, …) for incident triage. The gateway's leverage is largest when the agent is *not* a frontier model — a smaller or local model that can't reliably hand-write PromQL/LogQL benefits most from normalized tools and pre-computed analysis. A strong frontier model can query raw backends competently on its own; there the value is consistency and the analysis engine, not query convenience. We state this honestly rather than claiming a universal speedup.
 
 ## Features
 
 - **Unified gateway** — Single MCP endpoint for all your observability backends.
-- **Cross-signal analysis** — Correlates metrics and logs automatically (z-score anomalies, weighted health scoring).
+- **Cross-signal analysis** — Correlates metrics and logs automatically. Robust anomaly detection (median/MAD baseline, trend detection for slow ramps, warmup + dwell to suppress flapping) and weighted health scoring.
 - **Web UI** — Sources, services, health monitoring, configuration. Real-time, dark theme.
 - **prom-client defaults** — Works out of the box with the standard Node.js Prometheus instrumentation. Dynamic label resolution probes `job` / `service` / `app` / `service_name` so service filtering Just Works.
 - **Loki label fallback** — Discovers services through `service_name` / `service` / `job` / `app` / `container`, including Docker-shipped streams with leading slashes.
@@ -77,7 +80,7 @@ graph TB
 
     subgraph MCP ["observability-mcp :3000"]
         Tools["6 MCP Tools"]
-        Analysis["Analysis Engine<br/><small>Z-score, Health Scoring, Correlation</small>"]
+        Analysis["Analysis Engine<br/><small>Robust stats, Health Scoring, Correlation</small>"]
         UI["Web UI"]
     end
 
@@ -215,7 +218,7 @@ Without `--profile demo`, only `mcp-server` starts — useful when you already r
 | `query_metrics` | metrics | Query metrics with pre-computed summary stats |
 | `query_logs` | logs | Query logs with error/warning counts and top patterns |
 | `get_service_health` | unified | Health score combining metrics + logs (0–100) |
-| `detect_anomalies` | unified | Cross-signal anomaly detection with z-score analysis |
+| `detect_anomalies` | unified | Cross-signal anomaly detection with robust (median/MAD + trend) analysis |
 
 ## Using with Claude Code
 
