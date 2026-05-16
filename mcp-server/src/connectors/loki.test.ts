@@ -128,4 +128,35 @@ describe("LokiConnector", () => {
       assert.equal(proto.escapeLogQLRegex("error`test`"), "error\\`test\\`");
     });
   });
+
+  describe("listServices", () => {
+    function withLabelValues(map: Record<string, string[]>) {
+      const c = new LokiConnector() as any;
+      c.serviceLabels = ["service_name", "service", "job", "app", "container"];
+      c.getLabelValues = async (label: string) => map[label] ?? [];
+      return c;
+    }
+
+    it("first non-empty label wins — does NOT union container aliases", async () => {
+      const c = withLabelValues({
+        service: ["api-gateway", "payment-service"],
+        // co-located shipper noise that must NOT leak in:
+        container: ["myproj-api-gateway-1", "k8s_POD_api-gateway_demo_x"],
+      });
+      const names = (await c.listServices()).map((s: any) => s.name).sort();
+      assert.deepEqual(names, ["api-gateway", "payment-service"]);
+    });
+
+    it("falls back to a lower-priority label only when higher ones are empty", async () => {
+      const c = withLabelValues({ container: ["/svc-a", "/svc-b"] });
+      const svcs = await c.listServices();
+      assert.deepEqual(svcs.map((s: any) => s.name).sort(), ["svc-a", "svc-b"]);
+      assert.equal(svcs[0].labels.discoveredVia, "container");
+    });
+
+    it("returns empty when no candidate label has values", async () => {
+      const c = withLabelValues({});
+      assert.deepEqual(await c.listServices(), []);
+    });
+  });
 });
