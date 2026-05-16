@@ -1,6 +1,6 @@
 import type { ConnectorRegistry } from "../connectors/registry.js";
 import type { AnomalyReport } from "../types.js";
-import { detectRecentAnomaly } from "../analysis/anomaly.js";
+import { detectRobustAnomaly, classifyMetric } from "../analysis/anomaly.js";
 import { correlateSignals } from "../analysis/correlator.js";
 
 export const detectAnomaliesDefinition = {
@@ -71,18 +71,21 @@ export async function detectAnomaliesHandler(
         try {
           const result = await connector.queryMetrics({ service: serviceName, metric, duration });
           const values = result.values.map((v) => v.value);
-          const anomaly = detectRecentAnomaly(values, 5, threshold);
+          const anomaly = detectRobustAnomaly(values, {
+            threshold,
+            metricKind: classifyMetric(metric),
+          });
 
           if (anomaly.isAnomaly) {
-            const deviationPercent = anomaly.baselineAvg === 0
+            const deviationPercent = anomaly.baselineValue === 0
               ? 100
-              : Math.round(((anomaly.recentAvg - anomaly.baselineAvg) / anomaly.baselineAvg) * 100);
+              : Math.round(((anomaly.recentValue - anomaly.baselineValue) / anomaly.baselineValue) * 100);
             allAnomalies.push({
               metric,
-              severity: Math.abs(anomaly.zScore) >= 3 ? "high" : Math.abs(anomaly.zScore) >= 2 ? "medium" : "low",
-              description: `${metric} is ${anomaly.zScore.toFixed(1)}σ ${anomaly.zScore > 0 ? "above" : "below"} baseline (${anomaly.baselineAvg.toFixed(2)} → ${anomaly.recentAvg.toFixed(2)})`,
-              currentValue: anomaly.recentAvg,
-              baselineValue: anomaly.baselineAvg,
+              severity: Math.abs(anomaly.score) >= 6 ? "high" : Math.abs(anomaly.score) >= 4 ? "medium" : "low",
+              description: `${metric}: ${anomaly.reason}`,
+              currentValue: anomaly.recentValue,
+              baselineValue: anomaly.baselineValue,
               deviationPercent,
               source: connector.name,
               service: serviceName,

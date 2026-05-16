@@ -49,6 +49,175 @@ export function detectAnomalyPoints(
   return anomalies;
 }
 
+// ---------------------------------------------------------------------------
+// Robust detection (median/MAD) — resistant to the trend & outliers that skew
+// mean/stdDev. Adds warmup, dwell/hysteresis, a slow-ramp trend detector, and
+// per-metric-type behaviour.
+// ---------------------------------------------------------------------------
+
+export function median(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = sorted.length >> 1;
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
+/** Median Absolute Deviation, scaled to be a consistent estimator of stdDev. */
+export function mad(values: number[], center?: number): number {
+  if (values.length === 0) return 0;
+  const med = center ?? median(values);
+  const deviations = values.map((v) => Math.abs(v - med));
+  return 1.4826 * median(deviations);
+}
+
+export type MetricKind = "latency" | "error_rate" | "saturation" | "throughput" | "generic";
+
+export function classifyMetric(metric: string): MetricKind {
+  const m = metric.toLowerCase();
+  if (/(latency|duration|response_time|p\d{2,3})/.test(m)) return "latency";
+  if (/(error|fail|5xx|4xx)/.test(m)) return "error_rate";
+  if (/(cpu|mem|memory|heap|disk|saturat|util|queue|pool|fd|gc)/.test(m)) return "saturation";
+  if (/(request_rate|rps|qps|throughput|traffic)/.test(m)) return "throughput";
+  return "generic";
+}
+
+export interface RobustAnomalyOptions {
+  /** Minimum samples before any detection (cold-start guard). */
+  minSamples?: number;
+  /** Number of trailing points evaluated as "recent". */
+  recentWindow?: number;
+  /** Robust-z threshold. */
+  threshold?: number;
+  /** Consecutive breaching recent points required to fire (dwell/hysteresis). */
+  dwell?: number;
+  metricKind?: MetricKind;
+}
+
+export interface RobustAnomalyResult {
+  isAnomaly: boolean;
+  /** Robust z = (median(recent) - median(baseline)) / MAD(baseline). */
+  score: number;
+  method: "robust-z" | "trend" | "none";
+  direction: "above" | "below" | "flat";
+  recentValue: number;
+  baselineValue: number;
+  reason: string;
+}
+
+const NONE: RobustAnomalyResult = {
+  isAnomaly: false,
+  score: 0,
+  method: "none",
+  direction: "flat",
+  recentValue: 0,
+  baselineValue: 0,
+  reason: "insufficient data (warmup)",
+};
+
+/**
+ * Robust anomaly detection.
+ *
+ * Unlike {@link detectRecentAnomaly}, the baseline is the *early stable* portion
+ * of the series (it excludes the recent window AND the trailing ramp), so a slow
+ * monotonic increase — e.g. a memory leak heading toward OOM — no longer poisons
+ * its own baseline. Saturation/latency metrics additionally run a trend detector
+ * that catches gradual ramps even when no single point is a spike.
+ */
+export function detectRobustAnomaly(
+  values: number[],
+  opts: RobustAnomalyOptions = {}
+): RobustAnomalyResult {
+  const minSamples = opts.minSamples ?? 15;
+  const recentWindow = opts.recentWindow ?? 5;
+  const threshold = opts.threshold ?? 3.0;
+  const dwell = opts.dwell ?? 2;
+  const kind = opts.metricKind ?? "generic";
+
+  // Warmup guard.
+  if (values.length < Math.max(minSamples, recentWindow * 3)) return { ...NONE };
+
+  const recent = values.slice(-recentWindow);
+  // Baseline = leading stable portion only; exclude the recent window and a
+  // trailing margin so a ramp that ends in `recent` cannot inflate it.
+  const baselineEnd = Math.max(
+    Math.floor(values.length * 0.5),
+    values.length - recentWindow * 3
+  );
+  const baseline = values.slice(0, baselineEnd);
+  if (baseline.length < 3) return { ...NONE };
+
+  const baseMed = median(baseline);
+  const baseMad = mad(baseline, baseMed);
+  const recentMed = median(recent);
+
+  // One-sided metrics: a drop in error_rate / latency / saturation is good news.
+  const oneSidedUp = kind === "error_rate" || kind === "latency" || kind === "saturation";
+
+  // Robust z. Guard against MAD == 0 (perfectly flat baseline) with a tiny
+  // relative epsilon so a real shift off a flat baseline still registers.
+  const scale = baseMad > 0 ? baseMad : Math.max(Math.abs(baseMed) * 1e-3, 1e-9);
+  const z = (recentMed - baseMed) / scale;
+  const direction: RobustAnomalyResult["direction"] =
+    z > 0 ? "above" : z < 0 ? "below" : "flat";
+
+  // Dwell: require the last `dwell` points to each individually breach.
+  const tail = values.slice(-dwell);
+  const breaches = tail.filter((v) => {
+    const pz = (v - baseMed) / scale;
+    return oneSidedUp ? pz >= threshold : Math.abs(pz) >= threshold;
+  });
+  const dwellMet = breaches.length >= dwell;
+
+  const zHit = (oneSidedUp ? z >= threshold : Math.abs(z) >= threshold) && dwellMet;
+
+  // Trend detector for slow ramps (saturation/latency). Catches a sustained
+  // monotonic climb even when the windowed robust-z is still sub-threshold.
+  let trendHit = false;
+  let trendReason = "";
+  if (!zHit && (kind === "saturation" || kind === "latency") && values.length >= minSamples) {
+    let ups = 0;
+    for (let i = 1; i < values.length; i++) if (values[i] > values[i - 1]) ups++;
+    const monotonicFrac = ups / (values.length - 1);
+    const netRise = (recentMed - baseMed) / scale;
+    if (monotonicFrac >= 0.7 && netRise >= 2.0) {
+      trendHit = true;
+      trendReason = `sustained upward trend: ${Math.round(monotonicFrac * 100)}% of steps rising, +${netRise.toFixed(1)} robust-σ net`;
+    }
+  }
+
+  if (zHit) {
+    return {
+      isAnomaly: true,
+      score: z,
+      method: "robust-z",
+      direction,
+      recentValue: recentMed,
+      baselineValue: baseMed,
+      reason: `recent median ${recentMed.toFixed(2)} is ${z.toFixed(1)} robust-σ ${direction} baseline ${baseMed.toFixed(2)} (dwell ${breaches.length}/${dwell})`,
+    };
+  }
+  if (trendHit) {
+    return {
+      isAnomaly: true,
+      score: (recentMed - baseMed) / scale,
+      method: "trend",
+      direction: "above",
+      recentValue: recentMed,
+      baselineValue: baseMed,
+      reason: trendReason,
+    };
+  }
+  return {
+    isAnomaly: false,
+    score: z,
+    method: "none",
+    direction,
+    recentValue: recentMed,
+    baselineValue: baseMed,
+    reason: "within robust baseline",
+  };
+}
+
 /**
  * Check if the most recent values deviate significantly from the baseline.
  * Compares the last `recentWindow` values against the rest.
