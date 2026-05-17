@@ -1,6 +1,6 @@
 import type { HealthStatus, HealthThresholds } from "../types.js";
 
-interface HealthInputs {
+export interface HealthInputs {
   cpu: number;
   memory: number;
   errorRate: number;
@@ -8,7 +8,7 @@ interface HealthInputs {
   logErrorRate: number;
 }
 
-interface HealthResult {
+export interface HealthResult {
   score: number;
   status: HealthStatus;
   details: Record<string, { score: number; value: number; threshold: string }>;

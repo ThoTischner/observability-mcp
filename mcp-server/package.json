@@ -25,6 +25,13 @@
     "observability-mcp": "./dist/index.js",
     "omcp": "./dist/cli/index.js"
   },
+  "exports": {
+    ".": "./dist/index.js",
+    "./analysis": {
+      "types": "./dist/analysis/index.d.ts",
+      "default": "./dist/analysis/index.js"
+    }
+  },
   "files": [
     "dist",
     "config"
