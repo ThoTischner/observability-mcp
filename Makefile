@@ -34,6 +34,11 @@ lint: ## helm lint + tsc --noEmit
 	docker run --rm -w /app -v "$(PWD)/mcp-server:/app" node:20-alpine \
 	  sh -c "npm install --silent --no-audit --no-fund && npx tsc --noEmit"
 
+# Proves the server boots and serves health with NO internet and NO sources
+# configured — the "verifiable offline mode" guarantee, end to end.
+test-offline: build ## Boot the image on an egress-blocked network and assert healthy
+	./scripts/offline-boot-check.sh
+
 # A faster local approximation of the CI smoke test. CI is authoritative
 # (`.github/workflows/integration.yml`); this is for quick iteration.
 smoke: demo ## Run the local smoke probe against the demo stack
