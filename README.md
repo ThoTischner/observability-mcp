@@ -10,7 +10,7 @@ normalizes the data, adds robust anomaly analysis, and provides a web UI for con
 *One MCP endpoint, every backend — so an agent triaging an incident asks one normalized
 question instead of juggling N vendor servers and their query languages.*
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![npm](https://img.shields.io/npm/v/@thotischner/observability-mcp?logo=npm)](https://www.npmjs.com/package/@thotischner/observability-mcp)
 [![npm downloads](https://img.shields.io/npm/dm/@thotischner/observability-mcp?logo=npm&label=downloads)](https://www.npmjs.com/package/@thotischner/observability-mcp)
 [![GHCR](https://img.shields.io/badge/ghcr.io-observability--mcp-2496ED?logo=docker&logoColor=white)](https://github.com/ThoTischner/observability-mcp/pkgs/container/observability-mcp)
@@ -388,7 +388,11 @@ Ideas: new connectors (InfluxDB, Elasticsearch, Datadog), additional analysis al
 
 ## License
 
-MIT
+[Apache License 2.0](LICENSE) — see also [NOTICE](NOTICE).
+
+Releases up to and including the last MIT-licensed version remain available
+under MIT; subsequent releases are Apache-2.0. Contributions require a
+[Contributor License Agreement](CLA.md).
 
 ---
 
