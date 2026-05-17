@@ -1,4 +1,5 @@
 import type { ConnectorRegistry } from "../connectors/registry.js";
+import { defaultContext, type RequestContext } from "../context.js";
 import type { AnomalyReport } from "../types.js";
 import { detectAnomaly, classifyMetric } from "../analysis/anomaly.js";
 import { rankRootCause } from "../analysis/correlator.js";
@@ -44,7 +45,8 @@ const CRITICAL_LOG_PATTERN =
 
 export async function detectAnomaliesHandler(
   registry: ConnectorRegistry,
-  args: { service?: string; duration?: string; sensitivity?: string }
+  args: { service?: string; duration?: string; sensitivity?: string },
+  _ctx: RequestContext = defaultContext()
 ) {
   const duration = args.duration || "10m";
   const threshold = SENSITIVITY_THRESHOLDS[args.sensitivity || "medium"] || 2.0;

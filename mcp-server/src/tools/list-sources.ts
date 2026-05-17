@@ -1,4 +1,5 @@
 import type { ConnectorRegistry } from "../connectors/registry.js";
+import { defaultContext, type RequestContext } from "../context.js";
 
 export const listSourcesDefinition = {
   name: "list_sources" as const,
@@ -10,7 +11,10 @@ export const listSourcesDefinition = {
   },
 };
 
-export async function listSourcesHandler(registry: ConnectorRegistry) {
+export async function listSourcesHandler(
+  registry: ConnectorRegistry,
+  _ctx: RequestContext = defaultContext()
+) {
   const healthResults = await registry.healthCheckAll();
   const connectors = registry.getAll();
 
