@@ -53,7 +53,7 @@ metadata:
     with cross-signal anomaly detection. One MCP endpoint, any backend.
   homepage: https://github.com/ThoTischner/observability-mcp
   documentation: https://github.com/ThoTischner/observability-mcp#readme
-  license: MIT
+  license: Apache-2.0
   categories:
     - observability
     - monitoring

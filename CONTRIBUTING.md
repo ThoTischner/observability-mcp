@@ -2,6 +2,15 @@
 
 Thanks for thinking about it. Quick orientation so your first PR lands without churn.
 
+## Contributor License Agreement
+
+Before your first contribution can be merged you must agree to the
+[Contributor License Agreement](./CLA.md). A bot will ask you to comment a
+one-line sign-off on your PR; it is recorded once and remembered for future
+PRs. The CLA includes an explicit relicensing grant so the project can
+sustain itself via commercial / source-available editions — a plain
+`Signed-off-by` (DCO) does not grant that and is not a substitute.
+
 ## Before you start
 
 - Browse the open issues and PRs. If you're tackling something non-trivial, open an issue first so we can align on the approach.

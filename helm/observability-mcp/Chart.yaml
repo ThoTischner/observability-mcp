@@ -4,7 +4,7 @@ description: Unified observability gateway for AI agents — one MCP server for 
 type: application
 
 # Chart version (this chart). Bumped on chart changes.
-version: 0.10.1
+version: 0.11.0
 
 # App version (the mcp-server image tag the chart defaults to).
 # Update with each release of the mcp-server image.
@@ -33,7 +33,7 @@ maintainers:
 annotations:
   # ArtifactHub: https://artifacthub.io/docs/topics/annotations/helm/
   artifacthub.io/category: monitoring-logging
-  artifacthub.io/license: MIT
+  artifacthub.io/license: Apache-2.0
   artifacthub.io/links: |
     - name: Source
       url: https://github.com/ThoTischner/observability-mcp
