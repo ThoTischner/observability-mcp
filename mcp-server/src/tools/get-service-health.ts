@@ -1,4 +1,5 @@
 import type { ConnectorRegistry } from "../connectors/registry.js";
+import { defaultContext, type RequestContext } from "../context.js";
 import type { ServiceHealth, AnomalyReport, HealthThresholds } from "../types.js";
 import { calculateHealthScore } from "../analysis/health.js";
 import { detectRecentAnomaly } from "../analysis/anomaly.js";
@@ -28,7 +29,8 @@ export const getServiceHealthDefinition = {
 
 export async function getServiceHealthHandler(
   registry: ConnectorRegistry,
-  args: { service: string }
+  args: { service: string },
+  _ctx: RequestContext = defaultContext()
 ) {
   const metricsConnectors = registry.getBySignal("metrics");
   const logConnectors = registry.getBySignal("logs");

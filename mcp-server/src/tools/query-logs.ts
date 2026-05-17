@@ -1,4 +1,5 @@
 import type { ConnectorRegistry } from "../connectors/registry.js";
+import { defaultContext, type RequestContext } from "../context.js";
 import type { LogResult } from "../types.js";
 import { validateDuration, validateServiceName, errorResponse } from "./validation.js";
 
@@ -36,7 +37,8 @@ export const queryLogsDefinition = {
 
 export async function queryLogsHandler(
   registry: ConnectorRegistry,
-  args: { service: string; query?: string; duration?: string; level?: string; limit?: number }
+  args: { service: string; query?: string; duration?: string; level?: string; limit?: number },
+  _ctx: RequestContext = defaultContext()
 ) {
   const svcErr = validateServiceName(args.service);
   if (svcErr) return errorResponse(svcErr);

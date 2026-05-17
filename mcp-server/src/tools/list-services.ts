@@ -1,5 +1,6 @@
 import type { ConnectorRegistry } from "../connectors/registry.js";
 import type { ServiceInfo } from "../types.js";
+import { defaultContext, type RequestContext } from "../context.js";
 
 export const listServicesDefinition = {
   name: "list_services" as const,
@@ -18,7 +19,8 @@ export const listServicesDefinition = {
 
 export async function listServicesHandler(
   registry: ConnectorRegistry,
-  args: { filter?: string }
+  args: { filter?: string },
+  _ctx: RequestContext = defaultContext()
 ) {
   const connectors = registry.getAll();
   const allServices: ServiceInfo[] = [];

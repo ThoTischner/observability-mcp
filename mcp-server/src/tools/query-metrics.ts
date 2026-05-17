@@ -1,4 +1,5 @@
 import type { ConnectorRegistry } from "../connectors/registry.js";
+import { defaultContext, type RequestContext } from "../context.js";
 import type { MetricResult } from "../types.js";
 import { validateDuration, validateMetricName, validateServiceName, errorResponse } from "./validation.js";
 
@@ -38,8 +39,20 @@ export const queryMetricsDefinition = {
 
 export async function queryMetricsHandler(
   registry: ConnectorRegistry,
-  args: { service: string; metric: string; duration?: string; source?: string; groupBy?: string }
+  args: { service: string; metric: string; duration?: string; source?: string; groupBy?: string },
+  _ctx: RequestContext = defaultContext()
 ) {
+  // Coarse single-tenant source scoping: if the principal is restricted to a
+  // source allow-list, deny an explicit out-of-scope source.
+  if (
+    _ctx.allowedSources &&
+    args.source &&
+    !_ctx.allowedSources.includes(args.source)
+  ) {
+    return errorResponse(
+      `forbidden: source "${args.source}" is not in your allowed sources`
+    );
+  }
   const svcErr = validateServiceName(args.service);
   if (svcErr) return errorResponse(svcErr);
   const duration = args.duration || "5m";

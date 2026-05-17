@@ -8,6 +8,13 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { loadConfig, saveConfig, DEFAULT_HEALTH_THRESHOLDS, DEFAULT_SETTINGS } from "./config/loader.js";
 import { ConnectorRegistry, getSupportedTypes } from "./connectors/registry.js";
+import { defaultContext, principalContext, type RequestContext } from "./context.js";
+import {
+  loadCredentials,
+  credentialsConfigured,
+  extractToken,
+  resolveToken,
+} from "./auth/credentials.js";
 import { getPluginLoader } from "./connectors/loader.js";
 import {
   resolveHubCatalogUrl,
@@ -122,7 +129,7 @@ async function main() {
   // so we cannot share a single McpServer across HTTP sessions. Each new
   // session needs its own server. The factory captures the live registry
   // by reference so tool handlers always see the current configuration.
-  function createMcpServer(): McpServer {
+  function createMcpServer(ctx: RequestContext): McpServer {
     const mcpServer = new McpServer({
       name: "observability-mcp",
       version: SERVER_VERSION,
@@ -139,7 +146,7 @@ async function main() {
       "Related: use `list_services` to see what is monitored within these sources.",
     ].join(" "),
     {},
-    async () => withToolMetrics("list_sources", () => listSourcesHandler(registry))
+    async () => withToolMetrics("list_sources", () => listSourcesHandler(registry, ctx))
   );
 
   mcpServer.tool(
@@ -158,7 +165,7 @@ async function main() {
           "Optional case-insensitive substring to narrow the result to matching service names (e.g. 'payment'). Omit to list every discovered service.",
         ),
     },
-    async (args) => withToolMetrics("list_services", () => listServicesHandler(registry, args))
+    async (args) => withToolMetrics("list_services", () => listServicesHandler(registry, args, ctx))
   );
 
   const metricsList = getAvailableMetricNames(registry);
@@ -204,7 +211,7 @@ async function main() {
           "Optional. Metric label to break the result down by, e.g. 'instance', 'pod', 'node'. When set, the response contains one series per distinct label value under `groups`. Default: a single aggregated series.",
         ),
     },
-    async (args) => withToolMetrics("query_metrics", () => queryMetricsHandler(registry, args))
+    async (args) => withToolMetrics("query_metrics", () => queryMetricsHandler(registry, args, ctx))
   );
 
   mcpServer.tool(
@@ -248,7 +255,7 @@ async function main() {
           "Optional. Maximum number of log entries to return (most recent first). Default: 100.",
         ),
     },
-    async (args) => withToolMetrics("query_logs", () => queryLogsHandler(registry, args))
+    async (args) => withToolMetrics("query_logs", () => queryLogsHandler(registry, args, ctx))
   );
 
   mcpServer.tool(
@@ -266,7 +273,7 @@ async function main() {
           "Required. Exact, case-sensitive service name exactly as returned by `list_services` (e.g. 'payment-service').",
         ),
     },
-    async (args) => withToolMetrics("get_service_health", () => getServiceHealthHandler(registry, args))
+    async (args) => withToolMetrics("get_service_health", () => getServiceHealthHandler(registry, args, ctx))
   );
 
   mcpServer.tool(
@@ -297,7 +304,7 @@ async function main() {
           "Optional. Detection threshold: 'low' flags only strong deviations (>3σ), 'medium' is balanced (>2σ), 'high' is most sensitive and noisier (>1.5σ). Default: 'medium'.",
         ),
     },
-    async (args) => withToolMetrics("detect_anomalies", () => detectAnomaliesHandler(registry, args))
+    async (args) => withToolMetrics("detect_anomalies", () => detectAnomaliesHandler(registry, args, ctx))
   );
 
     return mcpServer;
@@ -664,7 +671,7 @@ async function main() {
   // List discovered services
   app.get("/api/services", async (_req, res) => {
     try {
-      const result = await listServicesHandler(registry, {});
+      const result = await listServicesHandler(registry, {}, defaultContext());
       res.json(parseToolResult(result));
     } catch { res.status(500).json({ error: "Failed to list services" }); }
   });
@@ -672,7 +679,7 @@ async function main() {
   // Health endpoint for UI dashboard
   app.get("/api/health/:service", async (req, res) => {
     try {
-      const result = await getServiceHealthHandler(registry, { service: req.params.service });
+      const result = await getServiceHealthHandler(registry, { service: req.params.service }, defaultContext());
       res.json(parseToolResult(result));
     } catch {
       res.status(500).json({ error: "Failed to get service health" });
@@ -682,13 +689,13 @@ async function main() {
   // Health for all services
   app.get("/api/health", async (_req, res) => {
     try {
-      const servicesResult = await listServicesHandler(registry, {});
+      const servicesResult = await listServicesHandler(registry, {}, defaultContext());
       const parsed = parseToolResult(servicesResult) as { services?: Array<{ name: string }> };
       const services = parsed?.services || [];
       const health: Record<string, unknown> = {};
       for (const svc of services) {
         try {
-          const result = await getServiceHealthHandler(registry, { service: svc.name });
+          const result = await getServiceHealthHandler(registry, { service: svc.name }, defaultContext());
           health[svc.name] = parseToolResult(result);
         } catch { health[svc.name] = { error: "failed to fetch health" }; }
       }
@@ -779,7 +786,7 @@ async function main() {
 
   // Stdio transport: one server over stdin/stdout, no HTTP listener.
   if (STDIO) {
-    const server = createMcpServer();
+    const server = createMcpServer(defaultContext());
     await server.connect(new StdioServerTransport());
     console.error(
       `observability-mcp running on stdio transport · connectors: ${registry
@@ -808,7 +815,31 @@ async function main() {
     mcpActiveSessions.set(transports.size);
   }, 5 * 60 * 1000);
 
+  // Single-tenant auth gate. No credentials configured → anonymous (current
+  // behaviour, fully backward compatible). Configured → require a valid
+  // Bearer/X-API-Key on every /mcp request; resolve the principal + its
+  // coarse source allow-list into the RequestContext.
+  function gateCtx(
+    req: import("express").Request,
+    res: import("express").Response
+  ): RequestContext | null {
+    if (!credentialsConfigured()) return defaultContext();
+    const cred = resolveToken(
+      extractToken(req.headers as Record<string, unknown>),
+      loadCredentials()
+    );
+    if (!cred) {
+      res
+        .status(401)
+        .json({ error: "unauthorized: valid Bearer token or X-API-Key required" });
+      return null;
+    }
+    return principalContext(cred.name, cred.allowedSources);
+  }
+
   app.post("/mcp", async (req, res) => {
+    const ctx = gateCtx(req, res);
+    if (!ctx) return;
     const sessionId = req.headers["mcp-session-id"] as string | undefined;
     let transport: StreamableHTTPServerTransport;
 
@@ -827,7 +858,7 @@ async function main() {
         mcpActiveSessions.set(transports.size);
       };
 
-      const sessionMcpServer = createMcpServer();
+      const sessionMcpServer = createMcpServer(ctx);
       await sessionMcpServer.connect(transport);
     }
 
@@ -843,6 +874,7 @@ async function main() {
   });
 
   app.get("/mcp", async (req, res) => {
+    if (!gateCtx(req, res)) return;
     const sessionId = req.headers["mcp-session-id"] as string;
     const transport = transports.get(sessionId);
     if (!transport) {
@@ -853,6 +885,7 @@ async function main() {
   });
 
   app.delete("/mcp", async (req, res) => {
+    if (!gateCtx(req, res)) return;
     const sessionId = req.headers["mcp-session-id"] as string;
     const transport = transports.get(sessionId);
     if (transport) {
