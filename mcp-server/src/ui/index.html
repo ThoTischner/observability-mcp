@@ -481,23 +481,102 @@
     .footer-pill-meta { color: var(--text-muted); font-weight: 400; }
 
     @media (max-width: 768px) { .stats { grid-template-columns: repeat(2, 1fr); } .threshold-group { grid-template-columns: 1fr; } .form-row, .form-row-3 { grid-template-columns: 1fr; } }
+
+    /* ===== Enterprise console shell: side rail + masthead ===== */
+    :root { --rail-w: 236px; }
+    body { padding-left: var(--rail-w); }
+    .siderail {
+      position: fixed; left: 0; top: 0; bottom: 0; width: var(--rail-w);
+      background: linear-gradient(180deg, var(--surface-2), var(--surface));
+      border-right: 1px solid var(--border-strong);
+      display: flex; flex-direction: column; z-index: 30;
+    }
+    .rail-brand {
+      display: flex; align-items: center; gap: var(--sp-3);
+      padding: var(--sp-5) var(--sp-5) var(--sp-4);
+      border-bottom: 1px solid var(--border);
+    }
+    .rail-mark {
+      width: 26px; height: 26px; border-radius: var(--radius-sm); flex-shrink: 0;
+      background: linear-gradient(135deg, var(--accent), var(--info));
+      box-shadow: 0 0 0 1px var(--border-strong) inset;
+    }
+    .rail-title { font-size: var(--fs-md); font-weight: 700; letter-spacing: -0.01em; line-height: 1.2; }
+    .rail-title span { font-weight: 500; color: var(--text-muted); font-size: var(--fs-xs); letter-spacing: 0.06em; text-transform: uppercase; }
+    .rail-nav { display: flex; flex-direction: column; padding: var(--sp-3) 0; overflow-y: auto; }
+    .rail-group {
+      font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+      color: var(--text-dim); padding: var(--sp-4) var(--sp-5) var(--sp-2);
+    }
+    .rail-nav .nav-btn {
+      display: block; width: 100%; text-align: left;
+      border-radius: 0; padding: 9px var(--sp-5);
+      border-left: 2px solid transparent;
+    }
+    .rail-nav .nav-btn.active {
+      background: var(--accent-soft); color: var(--text);
+      box-shadow: none; border-left-color: var(--accent);
+    }
+    .rail-foot { margin-top: auto; padding: var(--sp-4) var(--sp-5); border-top: 1px solid var(--border); font-size: var(--fs-xs); color: var(--text-dim); }
+    .masthead {
+      position: sticky; top: 0; z-index: 20;
+      display: flex; align-items: center; gap: var(--sp-3);
+      padding: var(--sp-3) var(--sp-6);
+      background: linear-gradient(180deg, var(--surface), rgba(17,20,27,0.92));
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: saturate(160%) blur(8px);
+    }
+    .gate-pill {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 4px 12px; border-radius: var(--radius-pill);
+      font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.02em;
+      border: 1px solid var(--border-strong); cursor: default;
+    }
+    .gate-pill::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 6px currentColor; }
+    .gate-off        { color: var(--text-muted); background: var(--surface-2); }
+    .gate-active     { color: var(--success); background: var(--success-soft); border-color: rgba(74,222,128,0.30); }
+    .gate-failclosed { color: var(--danger);  background: var(--danger-soft);  border-color: rgba(239,91,110,0.35); }
+    .gate-unknown    { color: var(--warning); background: var(--warning-soft); border-color: rgba(245,179,65,0.30); }
+
+    /* Enterprise page primitives */
+    .ent-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); }
+    .kv { display: grid; grid-template-columns: max-content 1fr; gap: 6px var(--sp-5); font-size: var(--fs-md); }
+    .kv dt { color: var(--text-muted); }
+    .kv dd { font-variant-numeric: tabular-nums; word-break: break-word; }
+    .dtable { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+    .dtable th, .dtable td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border); }
+    .dtable th { color: var(--text-dim); text-transform: uppercase; font-size: 10px; letter-spacing: 0.08em; font-weight: 700; }
+    .dtable tr:last-child td { border-bottom: none; }
+    .dtable td.mono, .kv dd.mono { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: var(--fs-sm); }
+    .pill-yes { color: var(--success); } .pill-no { color: var(--danger); }
+    .chip { display: inline-block; padding: 1px 8px; border-radius: var(--radius-pill); font-size: var(--fs-xs); background: var(--surface-3); color: var(--text-muted); border: 1px solid var(--border); margin: 1px 3px 1px 0; }
+    @media (max-width: 980px) { .ent-grid { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
-  <div class="header">
-    <h1>Observability MCP</h1>
-    <span class="badge badge-ok" id="status-badge">Loading...</span>
-    <div class="nav">
+  <aside class="siderail">
+    <div class="rail-brand">
+      <span class="rail-mark"></span>
+      <div class="rail-title">Observability<br><span>MCP Console</span></div>
+    </div>
+    <nav class="rail-nav">
       <button class="nav-btn active" data-page="dashboard" onclick="showPage('dashboard')">Dashboard</button>
       <button class="nav-btn" data-page="sources" onclick="showPage('sources')">Sources</button>
       <button class="nav-btn" data-page="services" onclick="showPage('services')">Services</button>
       <button class="nav-btn" data-page="connectors" onclick="showPage('connectors')">Connectors</button>
       <button class="nav-btn" data-page="health" onclick="showPage('health')">Health</button>
+      <div class="rail-group">Governance</div>
+      <button class="nav-btn" data-page="enterprise" onclick="showPage('enterprise')">Enterprise</button>
       <button class="nav-btn" data-page="settings" onclick="showPage('settings')">Settings</button>
-    </div>
+    </nav>
+    <div class="rail-foot" id="rail-foot">loading…</div>
+  </aside>
+  <header class="masthead">
+    <span class="badge badge-ok" id="status-badge">Loading...</span>
     <div style="flex:1"></div>
+    <span class="gate-pill gate-unknown" id="gate-pill" title="Enterprise access-control gate">Gate: …</span>
     <button class="btn btn-ghost btn-sm" onclick="refresh()">Refresh</button>
-  </div>
+  </header>
 
   <div class="container">
     <!-- ===== Dashboard ===== -->
@@ -699,6 +778,31 @@
         </div>
       </div>
     </div>
+    <!-- ===== Enterprise (read-only governance console) ===== -->
+    <div class="page" id="page-enterprise">
+      <div class="dashboard-meta">
+        <h1>Enterprise</h1>
+        <span class="live-indicator" id="ent-live">Read-only</span>
+      </div>
+      <div class="card">
+        <div class="card-header"><h2>Access-control gate</h2><span id="ent-mode"></span></div>
+        <div id="ent-status"><div class="empty">Loading…</div></div>
+      </div>
+      <div class="ent-grid">
+        <div class="card">
+          <div class="card-header"><h2>Access control (RBAC)</h2></div>
+          <div id="ent-rbac"><div class="empty">Loading…</div></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h2>Catalog &amp; products</h2></div>
+          <div id="ent-catalog"><div class="empty">Loading…</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h2>Audit log</h2><span id="ent-chain"></span></div>
+        <div id="ent-audit"><div class="empty">Loading…</div></div>
+      </div>
+    </div>
   </div>
 
   <!-- Source Modal -->
@@ -781,6 +885,86 @@ function showPage(name) {
   if(name==='settings') loadSettingsData();
   if(name==='health') loadHealthData();
   if(name==='connectors') loadConnectors();
+  if(name==='enterprise') loadEnterprise();
+}
+
+// --- Enterprise (read-only governance console) ---
+const GATE_CLASS={off:'gate-off',active:'gate-active','fail-closed':'gate-failclosed'};
+async function loadGatePill(){
+  const el=document.getElementById('gate-pill'); if(!el) return;
+  try{
+    const s=await(await fetch('/api/enterprise/status')).json();
+    el.className='gate-pill '+(GATE_CLASS[s.mode]||'gate-unknown');
+    el.textContent='Gate: '+(s.mode||'unknown');
+    el.title=s.reason?('Enterprise gate — '+s.reason):'Enterprise access-control gate';
+  }catch{ el.className='gate-pill gate-unknown'; el.textContent='Gate: n/a'; }
+}
+function entKV(o){return '<dl class="kv">'+Object.entries(o).map(([k,v])=>`<dt>${escHtml(k)}</dt><dd class="mono">${escHtml(v)}</dd>`).join('')+'</dl>';}
+async function loadEnterprise(){
+  // Status + entitlement claims
+  try{
+    const s=await(await fetch('/api/enterprise/status')).json();
+    document.getElementById('ent-mode').innerHTML=`<span class="gate-pill ${GATE_CLASS[s.mode]||'gate-unknown'}">${escHtml(s.mode)}</span>`;
+    const rows={ 'Mode':s.mode, 'Active':s.active?'yes':'no' };
+    if(s.reason) rows['Reason']=s.reason;
+    rows['RBAC configured']=s.rbacConfigured?'yes':'no';
+    rows['Catalog configured']=s.catalogConfigured?'yes':'no';
+    rows['Audit configured']=s.auditConfigured?'yes':'no';
+    let html=entKV(rows);
+    if(s.entitlement){
+      const e=s.entitlement, fmt=t=>t?new Date(t*1000).toISOString().replace('T',' ').slice(0,19)+'Z':'—';
+      html+='<div style="margin-top:14px;color:var(--text-dim);font-size:11px;letter-spacing:.08em;text-transform:uppercase">Entitlement claims (signed, non-secret)</div>'+
+        entKV({Subject:e.sub??'—',Tier:e.tier??'—',Features:(e.features||[]).join(', ')||'—',Issued:fmt(e.iat),Expires:fmt(e.exp)});
+    }
+    document.getElementById('ent-status').innerHTML=html;
+  }catch(e){ document.getElementById('ent-status').innerHTML='<div class="empty">Status unavailable.</div>'; }
+  // RBAC policy (read-only)
+  try{
+    const p=await(await fetch('/api/enterprise/policy')).json();
+    const box=document.getElementById('ent-rbac');
+    if(!p.configured){ box.innerHTML='<div class="empty">No RBAC policy configured.</div>'; }
+    else if(p.error){ box.innerHTML=`<div class="empty">Policy unreadable: ${escHtml(p.error)}</div>`; }
+    else {
+      const roles=p.data.roles||{}, binds=p.data.bindings||{};
+      const rt=Object.entries(roles).map(([n,r])=>`<tr><td class="mono">${escHtml(n)}</td><td>${(r.tools||[]).map(x=>`<span class="chip">${escHtml(x)}</span>`).join('')||'—'}</td><td>${r.readOnly?'<span class="pill-yes">read-only</span>':'rw'}</td></tr>`).join('');
+      const bt=Object.entries(binds).map(([k,v])=>`<tr><td class="mono">${escHtml(k)}</td><td>${(v||[]).map(x=>`<span class="chip">${escHtml(x)}</span>`).join('')}</td></tr>`).join('');
+      box.innerHTML=`<table class="dtable"><thead><tr><th>Role</th><th>Tools</th><th>Mode</th></tr></thead><tbody>${rt||'<tr><td colspan=3>—</td></tr>'}</tbody></table>
+        <div style="margin:12px 0 6px;color:var(--text-dim);font-size:10px;letter-spacing:.08em;text-transform:uppercase">Bindings</div>
+        <table class="dtable"><thead><tr><th>Principal</th><th>Roles</th></tr></thead><tbody>${bt||'<tr><td colspan=2>—</td></tr>'}</tbody></table>`;
+    }
+  }catch{ document.getElementById('ent-rbac').innerHTML='<div class="empty">Policy unavailable.</div>'; }
+  // Catalog (read-only)
+  try{
+    const c=await(await fetch('/api/enterprise/catalog')).json();
+    const box=document.getElementById('ent-catalog');
+    if(!c.configured){ box.innerHTML='<div class="empty">No product catalog configured.</div>'; }
+    else if(c.error){ box.innerHTML=`<div class="empty">Catalog unreadable: ${escHtml(c.error)}</div>`; }
+    else {
+      const prod=c.data.products||{}, grants=c.data.grants||{};
+      const pt=Object.entries(prod).map(([n,p])=>`<tr><td class="mono">${escHtml(n)}</td><td>${(p.sources||[]).map(x=>`<span class="chip">${escHtml(x)}</span>`).join('')||'—'}</td><td>${(p.services||['*']).map(x=>`<span class="chip">${escHtml(x)}</span>`).join('')}</td></tr>`).join('');
+      const gt=Object.entries(grants).map(([k,v])=>`<tr><td class="mono">${escHtml(k)}</td><td>${(v||[]).map(x=>`<span class="chip">${escHtml(x)}</span>`).join('')}</td></tr>`).join('');
+      box.innerHTML=`<table class="dtable"><thead><tr><th>Product</th><th>Sources</th><th>Services</th></tr></thead><tbody>${pt||'<tr><td colspan=3>—</td></tr>'}</tbody></table>
+        <div style="margin:12px 0 6px;color:var(--text-dim);font-size:10px;letter-spacing:.08em;text-transform:uppercase">Grants</div>
+        <table class="dtable"><thead><tr><th>Principal</th><th>Products</th></tr></thead><tbody>${gt||'<tr><td colspan=2>—</td></tr>'}</tbody></table>`;
+    }
+  }catch{ document.getElementById('ent-catalog').innerHTML='<div class="empty">Catalog unavailable.</div>'; }
+  // Audit tail + chain integrity
+  try{
+    const a=await(await fetch('/api/enterprise/audit?limit=25')).json();
+    const box=document.getElementById('ent-audit'), chip=document.getElementById('ent-chain');
+    if(!a.configured){ box.innerHTML='<div class="empty">No audit log configured.</div>'; chip.innerHTML=''; }
+    else if(a.error){ box.innerHTML=`<div class="empty">Audit unreadable: ${escHtml(a.error)}</div>`; }
+    else {
+      const ok=a.chain&&a.chain.ok===true;
+      chip.innerHTML=`<span class="gate-pill ${ok?'gate-active':'gate-failclosed'}">chain ${ok?'intact':'broken'}</span>`;
+      const rows=(a.entries||[]).slice().reverse().map(e=>{
+        const ev=e.event||{};
+        return `<tr><td class="mono">${e.seq}</td><td class="mono">${escHtml(ev.principalId)}</td><td>${escHtml((ev.request||{}).tool)}</td><td>${ev.allow?'<span class="pill-yes">allow</span>':'<span class="pill-no">deny</span>'}</td><td style="color:var(--text-muted)">${escHtml(ev.reason||'')}</td></tr>`;
+      }).join('');
+      box.innerHTML=`<div style="color:var(--text-muted);font-size:12px;margin-bottom:8px">${a.total} total decisions · showing latest ${(a.entries||[]).length}</div>
+        <table class="dtable"><thead><tr><th>#</th><th>Principal</th><th>Tool</th><th>Decision</th><th>Reason</th></tr></thead><tbody>${rows||'<tr><td colspan=5>no decisions yet</td></tr>'}</tbody></table>`;
+    }
+  }catch{ document.getElementById('ent-audit').innerHTML='<div class="empty">Audit unavailable.</div>'; }
 }
 
 function escHtml(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
@@ -1239,7 +1423,7 @@ async function loadInfo(){
 // Show the endpoint the user is actually reaching the server through
 // (localhost, a port-forward, or an ingress) — not a hardcoded host.
 document.getElementById('mcp-url').textContent = window.location.origin + '/mcp';
-(async()=>{await loadTypes();await refresh();await loadInfo();setInterval(refresh,15000);})();
+(async()=>{await loadTypes();await refresh();await loadInfo();await loadGatePill();setInterval(refresh,15000);setInterval(loadGatePill,15000);})();
 </script>
 
 <footer id="info-footer" class="info-footer"><span class="spinner"></span>&nbsp;loading server info…</footer>
