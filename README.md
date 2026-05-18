@@ -45,6 +45,16 @@ Want the full chaos-engineering demo (Prometheus + Loki + 3 example services + t
 make demo   # equivalent to: docker compose --profile demo up --build --wait
 ```
 
+Or run the **sovereign quickstart** — one command, fully on-prem, zero
+external calls: it starts the stack, injects a real incident, and shows
+side by side what an agent gets *without* vs *with* the analysis layer (a
+wall of raw numbers vs a scored verdict that pinpoints the culprit). The
+optional agent reasons over it with a **local** model (Ollama):
+
+```bash
+make demo-sovereign
+```
+
 See `make help` for all canonical workflows.
 
 ## Why?
