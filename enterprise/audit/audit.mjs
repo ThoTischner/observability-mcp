@@ -17,10 +17,30 @@ const GENESIS = "0".repeat(64);
 
 // Deterministic JSON: object keys sorted recursively, so the hash of a
 // logically-equal record is stable regardless of insertion order.
+//
+// CRITICAL: this MUST mirror JSON.stringify's treatment of values that
+// have no JSON representation, because entries are hashed here but
+// persisted via JSON.stringify and re-verified after a JSON round-trip.
+// JSON drops object keys whose value is undefined / a function / a
+// symbol, and renders those as null inside arrays. If canonical() kept
+// them, an untampered log would fail re-verification the moment a record
+// carried an absent field (e.g. a tool call with no `source`). So:
+//   - object key with no-JSON value  → omitted (like JSON.stringify)
+//   - array element with no-JSON val → "null" (like JSON.stringify)
+//   - bare no-JSON value             → "null" (robust; never persisted)
+function isJsonless(v) {
+  return v === undefined || typeof v === "function" || typeof v === "symbol";
+}
+
 export function canonical(value) {
+  if (isJsonless(value)) return "null";
   if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return "[" + value.map(canonical).join(",") + "]";
-  const keys = Object.keys(value).sort();
+  if (Array.isArray(value)) {
+    return "[" + value.map((v) => (isJsonless(v) ? "null" : canonical(v))).join(",") + "]";
+  }
+  const keys = Object.keys(value)
+    .filter((k) => !isJsonless(value[k]))
+    .sort();
   return "{" + keys.map((k) => JSON.stringify(k) + ":" + canonical(value[k])).join(",") + "}";
 }
 

@@ -130,3 +130,27 @@ test("verifyChain rejects non-arrays and empty is trivially ok", () => {
   assert.equal(verifyChain(null).ok, false);
   assert.equal(verifyChain([]).ok, true);
 });
+
+// Regression: an event with absent (undefined) fields — exactly what the
+// enterprise gate emits for a tool call with no `source` — must still
+// verify AFTER a JSON persist→reload round-trip. canonical() must drop
+// undefined keys the same way JSON.stringify does, or the tamper-evidence
+// is silently broken in real use. (Found via a live gate test.)
+test("canonical mirrors JSON for undefined keys (no-JSON values)", () => {
+  assert.equal(canonical({ a: undefined, b: 1 }), canonical(JSON.parse(JSON.stringify({ a: undefined, b: 1 }))));
+  assert.equal(canonical({ a: undefined, b: 1 }), '{"b":1}');
+  assert.equal(canonical([1, undefined, 2]), "[1,null,2]"); // JSON.stringify → [1,null,2]
+  assert.equal(canonical(undefined), "null");
+  assert.equal(canonical({ f: () => 1, s: Symbol("x"), keep: "y" }), '{"keep":"y"}');
+});
+
+test("a persisted+reloaded chain with undefined fields re-verifies", async () => {
+  const file = [];
+  const log = createAuditLog({ now: fixedClock(), sink: (e) => file.push(JSON.stringify(e)) });
+  // The exact shape enterprise-gate emits when a tool omits source/service:
+  await log.record({ kind: "access-decision", request: { tool: "query_metrics", source: undefined, service: "pay" }, allow: true });
+  await log.record({ kind: "access-decision", request: { tool: "list_services", source: undefined, service: undefined }, allow: false });
+  assert.equal(log.verify().ok, true); // in-memory
+  const reloaded = file.map((l) => JSON.parse(l)); // what a verifier on disk sees
+  assert.deepEqual(verifyChain(reloaded), { ok: true });
+});
