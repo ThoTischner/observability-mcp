@@ -16,6 +16,8 @@ import {
   enterprisePolicyView,
   enterpriseCatalogView,
   enterpriseAuditTail,
+  authorizeAdmin,
+  updateRbacPolicy,
 } from "./enterprise-gate.js";
 import {
   loadCredentials,
@@ -487,6 +489,20 @@ async function main() {
     } catch (e) {
       res.status(500).json({ error: String(e) });
     }
+  });
+  // Phase 2: edit the RBAC policy. NOT on the open local plane — requires
+  // an API-key principal the CURRENT policy grants `enterprise:admin`.
+  app.put("/api/enterprise/policy", async (req, res) => {
+    const cred = resolveToken(
+      extractToken(req.headers as Record<string, unknown>),
+      loadCredentials()
+    );
+    const principal = cred ? cred.name : null;
+    const authz = await authorizeAdmin(principal);
+    if (!authz.ok) return res.status(authz.status).json({ error: authz.error });
+    const result = await updateRbacPolicy(principal as string, req.body);
+    if (!result.ok) return res.status(result.status).json({ error: result.error });
+    res.json({ ok: true });
   });
 
   // Server-side proxy of the connector hub catalog (so the browser
