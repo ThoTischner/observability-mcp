@@ -15,6 +15,12 @@ up: ## Start only mcp-server (point at external Prometheus/Loki)
 demo: ## Full demo stack: mcp-server + Prometheus + Loki + example services + agent
 	docker compose --profile demo up --build --wait
 
+# One command, fully on-prem, zero external calls: starts the stack, injects
+# a real incident, and shows raw-vs-analyzed side by side. KEEP_UP=1 to keep
+# the stack running afterwards.
+demo-sovereign: ## Sovereign quickstart: on-prem incident demo, raw vs analyzed
+	./scripts/demo-sovereign.sh
+
 down: ## Stop everything and remove volumes
 	docker compose --profile demo down -v
 
