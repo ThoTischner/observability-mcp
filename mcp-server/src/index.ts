@@ -9,7 +9,14 @@ import { z } from "zod";
 import { loadConfig, saveConfig, DEFAULT_HEALTH_THRESHOLDS, DEFAULT_SETTINGS } from "./config/loader.js";
 import { ConnectorRegistry, getSupportedTypes } from "./connectors/registry.js";
 import { defaultContext, principalContext, type RequestContext } from "./context.js";
-import { enforceEntitledAccess, enterpriseGateStatus } from "./enterprise-gate.js";
+import {
+  enforceEntitledAccess,
+  enterpriseGateStatus,
+  enterpriseGateInfo,
+  enterprisePolicyView,
+  enterpriseCatalogView,
+  enterpriseAuditTail,
+} from "./enterprise-gate.js";
 import {
   loadCredentials,
   credentialsConfigured,
@@ -454,6 +461,32 @@ async function main() {
   // plugins), with manifest metadata — drives the UI "Connectors" page.
   app.get("/api/connectors", (_req, res) => {
     res.json({ connectors: describeInstalled(getPluginLoader().list()) });
+  });
+
+  // --- Enterprise console (read-only introspection) -------------------
+  // Drives the management UI's Enterprise page. Read-only in this phase;
+  // never exposes the entitlement token or any key. Same trusted-local
+  // management plane as the other /api/* endpoints (see auth-and-tls).
+  app.get("/api/enterprise/status", async (_req, res) => {
+    try {
+      res.json(await enterpriseGateInfo());
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  });
+  app.get("/api/enterprise/policy", (_req, res) => {
+    res.json(enterprisePolicyView());
+  });
+  app.get("/api/enterprise/catalog", (_req, res) => {
+    res.json(enterpriseCatalogView());
+  });
+  app.get("/api/enterprise/audit", async (req, res) => {
+    const limit = Math.min(Number(req.query.limit) || 50, 500);
+    try {
+      res.json(await enterpriseAuditTail(limit));
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
   });
 
   // Server-side proxy of the connector hub catalog (so the browser

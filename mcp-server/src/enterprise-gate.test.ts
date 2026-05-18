@@ -7,6 +7,10 @@ import { defaultContext } from "./context.js";
 import {
   enforceEntitledAccess,
   enterpriseGateStatus,
+  enterpriseGateInfo,
+  enterprisePolicyView,
+  enterpriseCatalogView,
+  enterpriseAuditTail,
   _resetEnterpriseGate,
 } from "./enterprise-gate.js";
 
@@ -104,5 +108,55 @@ describe("enterprise-gate — FAIL-CLOSED (opted in, cannot activate)", () => {
       () => enforceEntitledAccess(defaultContext(), { tool: "list_services" }),
       /access denied/
     );
+  });
+});
+
+describe("enterprise-gate — read-only console introspection", () => {
+  afterEach(clearEnv);
+
+  it("gateInfo: off → entitlement null, no token ever exposed", async () => {
+    clearEnv();
+    process.env.OMCP_ENTITLEMENT_TOKEN = "SECRET.SHOULD-NEVER-LEAK";
+    process.env.OMCP_ENTITLEMENT_PUBKEY = "x";
+    _resetEnterpriseGate();
+    const info = await enterpriseGateInfo();
+    assert.equal(info.active, false);
+    assert.equal(info.entitlement, null);
+    assert.equal("rbacConfigured" in info, true);
+    const dump = JSON.stringify(info);
+    assert.equal(dump.includes("SECRET"), false, "token must never appear in gate info");
+  });
+
+  it("gateInfo: configured-flags reflect env", async () => {
+    clearEnv();
+    process.env.OMCP_RBAC_POLICY = "/tmp/x.json";
+    process.env.OMCP_AUDIT_FILE = "/tmp/a.jsonl";
+    _resetEnterpriseGate();
+    const info = await enterpriseGateInfo();
+    assert.equal(info.rbacConfigured, true);
+    assert.equal(info.catalogConfigured, false);
+    assert.equal(info.auditConfigured, true);
+  });
+
+  it("policy/catalog view: not configured vs file error", () => {
+    clearEnv();
+    assert.deepEqual(enterprisePolicyView(), { configured: false });
+    assert.deepEqual(enterpriseCatalogView(), { configured: false });
+    const dir = mkdtempSync(join(tmpdir(), "gate-ro-"));
+    const f = join(dir, "p.json");
+    writeFileSync(f, '{"roles":{"a":{"tools":["*"]}},"bindings":{}}');
+    process.env.OMCP_RBAC_POLICY = f;
+    const v = enterprisePolicyView();
+    assert.equal(v.configured, true);
+    assert.deepEqual(Object.keys((v as any).data.roles), ["a"]);
+    process.env.OMCP_RBAC_POLICY = "/no/such/file.json";
+    const e = enterprisePolicyView();
+    assert.equal(e.configured, true);
+    assert.ok((e as any).error);
+  });
+
+  it("audit tail: not configured when no audit file", async () => {
+    clearEnv();
+    assert.deepEqual(await enterpriseAuditTail(10), { configured: false });
   });
 });

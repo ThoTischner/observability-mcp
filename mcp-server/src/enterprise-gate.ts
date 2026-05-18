@@ -232,3 +232,93 @@ export async function enforceEntitledAccess(
     throw new Error(`access denied: ${decision.reason}`);
   }
 }
+
+// ----------------------------------------------------------------------
+// Read-only introspection for the management console. None of these ever
+// expose the entitlement TOKEN or any private key — only the gate mode,
+// the non-secret signed claims, and the operator-supplied policy/catalog/
+// audit which are configuration, not credentials.
+// ----------------------------------------------------------------------
+
+/** Claim keys safe to surface (never the raw token / signature). */
+const SAFE_CLAIM_KEYS = ["sub", "tier", "features", "iat", "exp"] as const;
+
+export interface EnterpriseGateInfo {
+  mode: GateState["mode"];
+  active: boolean;
+  reason?: string;
+  rbacConfigured: boolean;
+  catalogConfigured: boolean;
+  auditConfigured: boolean;
+  entitlement: Record<string, unknown> | null;
+}
+
+export async function enterpriseGateInfo(): Promise<EnterpriseGateInfo> {
+  if (!gatePromise) gatePromise = buildGate();
+  const g = await gatePromise;
+  const base = {
+    mode: g.mode,
+    active: g.mode === "active",
+    reason: g.mode === "fail-closed" ? g.reason : undefined,
+    rbacConfigured: !!process.env.OMCP_RBAC_POLICY,
+    catalogConfigured: !!process.env.OMCP_CATALOG,
+    auditConfigured: !!process.env.OMCP_AUDIT_FILE,
+  };
+  if (g.mode !== "active") return { ...base, entitlement: null };
+  const c = (g.claims || {}) as Record<string, unknown>;
+  const entitlement: Record<string, unknown> = {};
+  for (const k of SAFE_CLAIM_KEYS) if (k in c) entitlement[k] = c[k];
+  return { ...base, entitlement };
+}
+
+function readConfigJson(envVar: "OMCP_RBAC_POLICY" | "OMCP_CATALOG") {
+  const p = process.env[envVar];
+  if (!p) return { configured: false as const };
+  try {
+    return { configured: true as const, data: JSON.parse(readFileSync(resolve(p), "utf8")) };
+  } catch (e) {
+    return { configured: true as const, error: String(e) };
+  }
+}
+
+/** The loaded RBAC policy (read-only view). */
+export function enterprisePolicyView() {
+  return readConfigJson("OMCP_RBAC_POLICY");
+}
+
+/** The loaded product catalog (read-only view). */
+export function enterpriseCatalogView() {
+  return readConfigJson("OMCP_CATALOG");
+}
+
+/** Recent audit decisions + a tamper-evidence check over the whole log. */
+export async function enterpriseAuditTail(limit = 50) {
+  const p = process.env.OMCP_AUDIT_FILE;
+  if (!p) return { configured: false as const };
+  let raw: string;
+  try {
+    raw = readFileSync(resolve(p), "utf8");
+  } catch (e) {
+    return { configured: true as const, error: String(e) };
+  }
+  const all = raw
+    .split("\n")
+    .filter(Boolean)
+    .map((l) => {
+      try {
+        return JSON.parse(l);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean) as unknown[];
+  let chain: unknown = { ok: null };
+  try {
+    const auditMod: any = await import(join(ENTERPRISE_DIR, "audit", "index.mjs"));
+    chain = auditMod.verifyChain(all); // over the FULL log, not just the tail
+  } catch {
+    /* audit module absent → integrity unknown */
+  }
+  const n = Math.max(1, Math.min(limit || 50, 500));
+  return { configured: true as const, total: all.length, chain, entries: all.slice(-n) };
+}
