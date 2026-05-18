@@ -1,0 +1,21 @@
+{
+  "roles": {
+    "admin": { "tools": ["*"], "sources": ["*"], "services": ["*"] },
+    "sre": {
+      "tools": ["list_sources", "list_services", "query_metrics", "query_logs", "get_service_health", "detect_anomalies"],
+      "sources": ["*"],
+      "services": ["*"]
+    },
+    "payments-readonly": {
+      "tools": ["query_metrics", "get_service_health"],
+      "sources": ["prom-eu"],
+      "services": ["payment-service"],
+      "readOnly": true
+    }
+  },
+  "bindings": {
+    "key:platform-bot": ["sre"],
+    "key:payments-oncall": ["payments-readonly"]
+  },
+  "defaultRoles": []
+}

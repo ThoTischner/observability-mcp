@@ -27,13 +27,25 @@ operator.
 
 ## Integration contract
 
-`rbac/` is dependency-free ESM and duck-typed against the core
+These modules are dependency-free ESM, duck-typed against the core
 `RequestContext` shape (`{ principalId, auth, allowedSources?, ... }`) so the
-Apache core never imports FSL code. An operator wires it at the context seam:
-resolve the principal's roles, then call `enforce(...)` before a tool runs.
+Apache core never imports FSL code. The core wires them at the context seam
+(`mcp-server/src/enterprise-gate.ts`) behind a signed entitlement token —
+**off by default**. Operators do not call these directly; see the
+[**enterprise gate operator guide**](../docs/enterprise-gate.md) for setup
+(keypair, token minting, env vars, the three gate modes).
+
+## Tooling & examples
+
+- [`entitlement/mint.mjs`](./entitlement/mint.mjs) — issuer CLI to mint a
+  signed token: `node enterprise/entitlement/mint.mjs --key priv.pem
+  --sub org --features access-control,audit --ttl 365d`
+- [`examples/rbac-policy.json`](./examples/rbac-policy.json) and
+  [`examples/catalog.json`](./examples/catalog.json) — working configs,
+  exercised by `examples/examples.test.mjs` so they cannot drift from the docs.
 
 ## Tests
 
 ```
-node --test enterprise/rbac/*.test.mjs
+node --test enterprise/*/*.test.mjs
 ```
