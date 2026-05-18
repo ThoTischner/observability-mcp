@@ -9,6 +9,7 @@ import { z } from "zod";
 import { loadConfig, saveConfig, DEFAULT_HEALTH_THRESHOLDS, DEFAULT_SETTINGS } from "./config/loader.js";
 import { ConnectorRegistry, getSupportedTypes } from "./connectors/registry.js";
 import { defaultContext, principalContext, type RequestContext } from "./context.js";
+import { enforceEntitledAccess, enterpriseGateStatus } from "./enterprise-gate.js";
 import {
   loadCredentials,
   credentialsConfigured,
@@ -146,7 +147,10 @@ async function main() {
       "Related: use `list_services` to see what is monitored within these sources.",
     ].join(" "),
     {},
-    async () => withToolMetrics("list_sources", () => listSourcesHandler(registry, ctx))
+    async () => {
+      await enforceEntitledAccess(ctx, { tool: "list_sources" });
+      return withToolMetrics("list_sources", () => listSourcesHandler(registry, ctx));
+    }
   );
 
   mcpServer.tool(
@@ -165,7 +169,10 @@ async function main() {
           "Optional case-insensitive substring to narrow the result to matching service names (e.g. 'payment'). Omit to list every discovered service.",
         ),
     },
-    async (args) => withToolMetrics("list_services", () => listServicesHandler(registry, args, ctx))
+    async (args) => {
+      await enforceEntitledAccess(ctx, { tool: "list_services" });
+      return withToolMetrics("list_services", () => listServicesHandler(registry, args, ctx));
+    }
   );
 
   const metricsList = getAvailableMetricNames(registry);
@@ -211,7 +218,10 @@ async function main() {
           "Optional. Metric label to break the result down by, e.g. 'instance', 'pod', 'node'. When set, the response contains one series per distinct label value under `groups`. Default: a single aggregated series.",
         ),
     },
-    async (args) => withToolMetrics("query_metrics", () => queryMetricsHandler(registry, args, ctx))
+    async (args) => {
+      await enforceEntitledAccess(ctx, { tool: "query_metrics", source: (args as any)?.source, service: (args as any)?.service });
+      return withToolMetrics("query_metrics", () => queryMetricsHandler(registry, args, ctx));
+    }
   );
 
   mcpServer.tool(
@@ -255,7 +265,10 @@ async function main() {
           "Optional. Maximum number of log entries to return (most recent first). Default: 100.",
         ),
     },
-    async (args) => withToolMetrics("query_logs", () => queryLogsHandler(registry, args, ctx))
+    async (args) => {
+      await enforceEntitledAccess(ctx, { tool: "query_logs", source: (args as any)?.source, service: (args as any)?.service });
+      return withToolMetrics("query_logs", () => queryLogsHandler(registry, args, ctx));
+    }
   );
 
   mcpServer.tool(
@@ -273,7 +286,10 @@ async function main() {
           "Required. Exact, case-sensitive service name exactly as returned by `list_services` (e.g. 'payment-service').",
         ),
     },
-    async (args) => withToolMetrics("get_service_health", () => getServiceHealthHandler(registry, args, ctx))
+    async (args) => {
+      await enforceEntitledAccess(ctx, { tool: "get_service_health", service: (args as any)?.service });
+      return withToolMetrics("get_service_health", () => getServiceHealthHandler(registry, args, ctx));
+    }
   );
 
   mcpServer.tool(
@@ -304,7 +320,10 @@ async function main() {
           "Optional. Detection threshold: 'low' flags only strong deviations (>3σ), 'medium' is balanced (>2σ), 'high' is most sensitive and noisier (>1.5σ). Default: 'medium'.",
         ),
     },
-    async (args) => withToolMetrics("detect_anomalies", () => detectAnomaliesHandler(registry, args, ctx))
+    async (args) => {
+      await enforceEntitledAccess(ctx, { tool: "detect_anomalies", source: (args as any)?.source, service: (args as any)?.service });
+      return withToolMetrics("detect_anomalies", () => detectAnomaliesHandler(registry, args, ctx));
+    }
   );
 
     return mcpServer;
@@ -411,6 +430,7 @@ async function main() {
     res.json({
       name: "observability-mcp",
       version: SERVER_VERSION,
+      enterpriseGate: await enterpriseGateStatus(),
       mcpProtocolVersion: "2025-03-26",
       build: {
         commit: process.env.GIT_COMMIT || null,
