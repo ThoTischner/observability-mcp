@@ -1,0 +1,20 @@
+{
+  "catalogVersion": 1,
+  "name": "tempo",
+  "displayName": "Grafana Tempo",
+  "description": "Grafana Tempo connector — OTLP-native tracing backend. Surfaces trace-derived service latency via the Tempo TraceQL search API, feeding the same anomaly/health path as a Prometheus latency metric.",
+  "vendor": "observability-mcp",
+  "homepage": "https://github.com/ThoTischner/observability-mcp",
+  "tier": "official",
+  "signalTypes": ["metrics"],
+  "versions": [
+    {
+      "version": "1.0.0",
+      "releasedAt": "2026-05-18",
+      "serverCompat": ">=1.4.0",
+      "tarballUrl": "https://github.com/ThoTischner/observability-mcp/releases/download/connector-tempo-1.0.0/tempo-1.0.0.tgz",
+      "integrity": "sha256-Wpg5LcyUCuGxzM8OPGdVn/4/LmpP4iWrvbsCEp8kMdQ=",
+      "changelog": "Initial release: trace-derived service latency via Tempo TraceQL search, service discovery from resource.service.name tag, optional Bearer auth."
+    }
+  ]
+}
