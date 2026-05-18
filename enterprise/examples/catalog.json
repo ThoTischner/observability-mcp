@@ -1,0 +1,18 @@
+{
+  "products": {
+    "eu-observability": {
+      "description": "All EU metrics + logs backends",
+      "sources": ["prom-eu", "loki-eu"]
+    },
+    "payments": {
+      "description": "Payment-service signals only",
+      "sources": ["prom-eu", "loki-eu"],
+      "services": ["payment-service"]
+    }
+  },
+  "grants": {
+    "key:platform-bot": ["eu-observability"],
+    "key:payments-oncall": ["payments"]
+  },
+  "defaultProducts": []
+}

@@ -363,6 +363,7 @@ flags pass through after a literal `--`.
 - [Troubleshooting](docs/troubleshooting.md) — common pitfalls and fixes
 - [Security](docs/security.md) — automation pipeline, vulnerability reporting, built-in protections
 - [Airgapped deployment](docs/airgapped-deployment.md) — mirroring images, private plugins, GitOps-friendly config
+- [Enterprise access-control gate](docs/enterprise-gate.md) — optional RBAC / catalog / audit behind a signed entitlement token (off by default)
 - [Connector Hub](https://thotischner.github.io/observability-mcp/hub/) — browse versioned, signed connectors (catalog: [`hub/`](hub/README.md))
 - [Use cases](USECASES.md) — five scenarios with the prompts that drive them
 
