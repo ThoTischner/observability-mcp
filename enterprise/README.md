@@ -22,6 +22,7 @@ operator.
 |--------|--------------|
 | [`rbac/`](./rbac) | Role-based access control: a pure policy evaluator + an enforcement guard that maps a request's principal/roles to an allow/deny decision over tools, sources, and services. Default-deny. |
 | [`catalog/`](./catalog) | Governed product catalog: publish named **products** (curated bundles of sources/services/tools) and **grants** of products to principals; pure evaluator + enforcement guard. Default-deny. Composes with `rbac/` (both must allow). |
+| [`audit/`](./audit) | Append-only, tamper-evident audit log: hash-chained access-control decisions and tool invocations; `verifyChain` detects any modification, reorder, insertion or mid-log truncation. Sink-injected (file/SIEM), dependency-free (`node:crypto`). |
 
 ## Integration contract
 
