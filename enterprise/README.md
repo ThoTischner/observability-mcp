@@ -21,6 +21,7 @@ operator.
 | Module | What it does |
 |--------|--------------|
 | [`rbac/`](./rbac) | Role-based access control: a pure policy evaluator + an enforcement guard that maps a request's principal/roles to an allow/deny decision over tools, sources, and services. Default-deny. |
+| [`catalog/`](./catalog) | Governed product catalog: publish named **products** (curated bundles of sources/services/tools) and **grants** of products to principals; pure evaluator + enforcement guard. Default-deny. Composes with `rbac/` (both must allow). |
 
 ## Integration contract
 

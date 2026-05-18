@@ -1,0 +1,12 @@
+{
+  "name": "@observability-mcp/enterprise-catalog",
+  "version": "1.0.0",
+  "description": "Governed product catalog for observability-mcp (enterprise tier).",
+  "private": true,
+  "type": "module",
+  "main": "./index.mjs",
+  "license": "FSL-1.1-Apache-2.0",
+  "scripts": {
+    "test": "node --test *.test.mjs"
+  }
+}
