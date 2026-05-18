@@ -806,8 +806,20 @@
           </div>
         </div>
         <div class="card">
-          <div class="card-header"><h2>Catalog &amp; products</h2></div>
+          <div class="card-header"><h2>Catalog &amp; products</h2>
+            <button class="btn btn-sm" id="ent-cat-editbtn" onclick="entToggleCatEdit(true)">Edit catalog</button>
+          </div>
           <div id="ent-catalog"><div class="empty">Loading…</div></div>
+          <div id="ent-cat-editor" class="hidden" style="margin-top:12px">
+            <div class="form-hint" style="margin-bottom:6px">Editing the catalog requires an admin API key (a principal the current policy grants <code>enterprise:admin</code>).</div>
+            <input type="password" id="ent-cat-token" placeholder="Admin API key (Bearer)" style="width:100%;margin-bottom:8px">
+            <textarea id="ent-cat-json" rows="14" spellcheck="false" style="width:100%;font-family:'JetBrains Mono',monospace;font-size:12px"></textarea>
+            <div id="ent-cat-msg" style="margin:8px 0;font-size:12px"></div>
+            <div style="display:flex;gap:8px;justify-content:flex-end">
+              <button class="btn btn-ghost btn-sm" onclick="entToggleCatEdit(false)">Cancel</button>
+              <button class="btn btn-primary btn-sm" onclick="entSaveCat()">Save catalog</button>
+            </div>
+          </div>
         </div>
       </div>
       <div class="card">
@@ -1000,6 +1012,31 @@ async function entSaveRbac(){
     const r=await fetch('/api/enterprise/policy',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify(body)});
     const d=await r.json().catch(()=>({}));
     if(r.ok){ msg.style.color='var(--success)'; msg.textContent='Policy updated.'; toast('RBAC policy saved'); entToggleRbacEdit(false); loadEnterprise(); }
+    else { msg.style.color='var(--danger)'; msg.textContent='Rejected ('+r.status+'): '+(d.error||'unknown'); }
+  }catch(e){ msg.style.color='var(--danger)'; msg.textContent='Request failed: '+e.message; }
+}
+function entToggleCatEdit(on){
+  const ed=document.getElementById('ent-cat-editor'), btn=document.getElementById('ent-cat-editbtn');
+  document.getElementById('ent-cat-msg').textContent='';
+  if(on){
+    fetch('/api/enterprise/catalog').then(r=>r.json()).then(p=>{
+      document.getElementById('ent-cat-json').value = p&&p.configured&&p.data ? JSON.stringify(p.data,null,2) : '{\n  "products": {},\n  "grants": {}\n}';
+    });
+    ed.classList.remove('hidden'); btn.classList.add('hidden');
+  } else { ed.classList.add('hidden'); btn.classList.remove('hidden'); }
+}
+async function entSaveCat(){
+  const msg=document.getElementById('ent-cat-msg');
+  const tok=document.getElementById('ent-cat-token').value.trim();
+  let body;
+  try { body=JSON.parse(document.getElementById('ent-cat-json').value); }
+  catch(e){ msg.style.color='var(--danger)'; msg.textContent='Invalid JSON: '+e.message; return; }
+  if(!tok){ msg.style.color='var(--danger)'; msg.textContent='Admin API key required.'; return; }
+  msg.style.color='var(--text-muted)'; msg.textContent='Saving…';
+  try{
+    const r=await fetch('/api/enterprise/catalog',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify(body)});
+    const d=await r.json().catch(()=>({}));
+    if(r.ok){ msg.style.color='var(--success)'; msg.textContent='Catalog updated.'; toast('Catalog saved'); entToggleCatEdit(false); loadEnterprise(); }
     else { msg.style.color='var(--danger)'; msg.textContent='Rejected ('+r.status+'): '+(d.error||'unknown'); }
   }catch(e){ msg.style.color='var(--danger)'; msg.textContent='Request failed: '+e.message; }
 }
