@@ -481,3 +481,74 @@ export async function updateRbacPolicy(
   _resetEnterpriseGate(); // next enforcement rebuilds with the new policy
   return { ok: true, status: 200 };
 }
+
+// ----------------------------------------------------------------------
+// Phase 3: admin-gated CATALOG write. Same admin model as the RBAC write
+// (authorizeAdmin is RBAC-based and independent of the catalog, so a
+// catalog edit carries no self-lockout risk). Validate, atomic write,
+// audit, invalidate the gate memo.
+// ----------------------------------------------------------------------
+
+/** Structural validation for a product catalog PUT body. */
+export function validateCatalogShape(c: any): string | null {
+  if (!c || typeof c !== "object" || Array.isArray(c)) return "catalog must be a JSON object";
+  if (typeof c.products !== "object" || c.products === null || Array.isArray(c.products)) return "catalog.products must be an object";
+  if (typeof c.grants !== "object" || c.grants === null || Array.isArray(c.grants)) return "catalog.grants must be an object";
+  if (c.defaultProducts !== undefined && !Array.isArray(c.defaultProducts)) return "catalog.defaultProducts must be an array";
+  for (const [name, prod] of Object.entries(c.products as Record<string, any>)) {
+    if (!prod || typeof prod !== "object") return `product '${name}' must be an object`;
+    if (!Array.isArray(prod.sources)) return `product '${name}.sources' must be an array`;
+    for (const k of ["services", "tools"]) {
+      if (prod[k] !== undefined && !Array.isArray(prod[k])) return `product '${name}.${k}' must be an array`;
+    }
+  }
+  for (const [pr, prods] of Object.entries(c.grants as Record<string, any>)) {
+    if (!Array.isArray(prods)) return `grant '${pr}' must be an array of product names`;
+  }
+  return null;
+}
+
+/**
+ * Replace the product catalog. Caller must have passed authorizeAdmin.
+ * Validates, writes atomically, audits, invalidates the gate memo.
+ */
+export async function updateCatalog(
+  principalId: string,
+  next: unknown
+): Promise<AdminResult> {
+  if (!process.env.OMCP_CATALOG) return { ok: false, status: 409, error: "no catalog configured" };
+  const shapeErr = validateCatalogShape(next);
+  if (shapeErr) return { ok: false, status: 400, error: shapeErr };
+  const path = resolve(process.env.OMCP_CATALOG);
+  let before = "";
+  try {
+    before = readFileSync(path, "utf8");
+  } catch {
+    /* first write */
+  }
+  const serialized = JSON.stringify(next, null, 2) + "\n";
+  try {
+    const tmp = path + ".tmp-" + process.pid;
+    writeFileSync(tmp, serialized);
+    renameSync(tmp, path);
+  } catch (e) {
+    return { ok: false, status: 500, error: `write failed: ${String(e)}` };
+  }
+  try {
+    if (!gatePromise) gatePromise = buildGate();
+    const g = await gatePromise;
+    if (g.mode === "active" && g.audit) {
+      await g.audit.record({
+        kind: "policy-change",
+        target: "catalog",
+        principalId,
+        bytesBefore: before.length,
+        bytesAfter: serialized.length,
+      });
+    }
+  } catch {
+    /* audit failure must not fail the write */
+  }
+  _resetEnterpriseGate();
+  return { ok: true, status: 200 };
+}

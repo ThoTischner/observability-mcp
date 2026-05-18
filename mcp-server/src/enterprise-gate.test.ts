@@ -12,6 +12,7 @@ import {
   enterpriseCatalogView,
   enterpriseAuditTail,
   validatePolicyShape,
+  validateCatalogShape,
   authorizeAdmin,
   _resetEnterpriseGate,
 } from "./enterprise-gate.js";
@@ -208,5 +209,40 @@ describe("enterprise-gate — P2 admin RBAC write", () => {
     assert.equal(r.ok, false);
     // gate is fail-closed here → still 409 (not active); never silently allows
     assert.equal(r.ok, false);
+  });
+});
+
+describe("enterprise-gate — P3 catalog write validation", () => {
+  it("validateCatalogShape accepts a well-formed catalog", () => {
+    assert.equal(
+      validateCatalogShape({
+        products: { p: { sources: ["*"], services: ["a"] } },
+        grants: { who: ["p"] },
+        defaultProducts: [],
+      }),
+      null
+    );
+  });
+
+  it("validateCatalogShape rejects malformed shapes", () => {
+    assert.match(validateCatalogShape(null) || "", /must be a JSON object/);
+    assert.match(validateCatalogShape({ grants: {} }) || "", /products must be an object/);
+    assert.match(validateCatalogShape({ products: {} }) || "", /grants must be an object/);
+    assert.match(
+      validateCatalogShape({ products: { p: {} }, grants: {} }) || "",
+      /product 'p.sources' must be an array/
+    );
+    assert.match(
+      validateCatalogShape({ products: { p: { sources: [], services: "x" } }, grants: {} }) || "",
+      /product 'p.services' must be an array/
+    );
+    assert.match(
+      validateCatalogShape({ products: {}, grants: { g: "x" } }) || "",
+      /grant 'g' must be an array/
+    );
+    assert.match(
+      validateCatalogShape({ products: {}, grants: {}, defaultProducts: 1 }) || "",
+      /defaultProducts must be an array/
+    );
   });
 });

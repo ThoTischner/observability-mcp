@@ -18,6 +18,7 @@ import {
   enterpriseAuditTail,
   authorizeAdmin,
   updateRbacPolicy,
+  updateCatalog,
 } from "./enterprise-gate.js";
 import {
   loadCredentials,
@@ -501,6 +502,19 @@ async function main() {
     const authz = await authorizeAdmin(principal);
     if (!authz.ok) return res.status(authz.status).json({ error: authz.error });
     const result = await updateRbacPolicy(principal as string, req.body);
+    if (!result.ok) return res.status(result.status).json({ error: result.error });
+    res.json({ ok: true });
+  });
+  // Phase 3: edit the product catalog. Same admin model as the RBAC write.
+  app.put("/api/enterprise/catalog", async (req, res) => {
+    const cred = resolveToken(
+      extractToken(req.headers as Record<string, unknown>),
+      loadCredentials()
+    );
+    const principal = cred ? cred.name : null;
+    const authz = await authorizeAdmin(principal);
+    if (!authz.ok) return res.status(authz.status).json({ error: authz.error });
+    const result = await updateCatalog(principal as string, req.body);
     if (!result.ok) return res.status(result.status).json({ error: result.error });
     res.json({ ok: true });
   });
