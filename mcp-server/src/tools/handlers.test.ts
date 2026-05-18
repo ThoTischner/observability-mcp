@@ -5,6 +5,7 @@ import { DEFAULT_SETTINGS, DEFAULT_HEALTH_THRESHOLDS } from "../config/loader.js
 import { listSourcesHandler } from "./list-sources.js";
 import { listServicesHandler } from "./list-services.js";
 import { detectAnomaliesHandler } from "./detect-anomalies.js";
+import { getServiceHealthHandler } from "./get-service-health.js";
 import type { Config, ServiceInfo, MetricResult, LogResult, ConnectorHealth, MetricDefinition, SignalType } from "../types.js";
 import type { ObservabilityConnector } from "../connectors/interface.js";
 
@@ -224,5 +225,37 @@ describe("detectAnomaliesHandler — A5 memory/OOM coverage", () => {
     const result = await detectAnomaliesHandler(reg, {});
     const data = JSON.parse(result.content[0].text);
     assert.equal(data.anomalies.length, 0);
+  });
+});
+
+describe("getServiceHealthHandler — one-sided latency (regression)", () => {
+  const series = (vals: number[]): MetricResult => ({
+    source: "prom1", service: "payment-service", metric: "x", unit: "",
+    values: vals.map((v, i) => ({ timestamp: new Date(Date.now() - (vals.length - i) * 9000).toISOString(), value: v })),
+    summary: { current: vals[vals.length - 1], average: vals[0], min: Math.min(...vals), max: Math.max(...vals), trend: "falling" as const },
+  });
+
+  it("a DECREASING latency_p99 is NOT flagged as an anomaly", async () => {
+    const reg = new ConnectorRegistry();
+    const mock = {
+      connect: async () => {}, disconnect: async () => {},
+      healthCheck: async () => ({ status: "up" as const, latencyMs: 1 }),
+      getDefaultMetrics: () => [], getMetrics: () => [],
+      listServices: async () => [{ name: "payment-service", source: "prom1", signalType: "metrics" as const }],
+      name: "prom1", type: "prometheus", signalType: "metrics" as const,
+      queryMetrics: async ({ metric }: any) => {
+        if (metric === "latency_p99")
+          return series(Array.from({ length: 30 }, (_, i) => 1.0 - i * 0.025)); // 1.0 → 0.275, strictly down
+        if (metric === "cpu") return series(Array.from({ length: 30 }, () => 20 + (Math.random() < 0 ? 1 : 0)));
+        return series(Array.from({ length: 30 }, () => 0.01)); // error_rate flat
+      },
+    } as unknown as ObservabilityConnector;
+    (reg as any).connectors.set("prom1", mock);
+    (reg as any).sourceConfigs.set("prom1", { name: "prom1", type: "prometheus", url: "http://m", enabled: true });
+
+    const result = await getServiceHealthHandler(reg, { service: "payment-service" });
+    const data = JSON.parse(result.content[0].text);
+    const latAnom = (data.anomalies || []).find((a: any) => a.metric === "latency_p99");
+    assert.equal(latAnom, undefined, `latency dropping must not be an anomaly, got: ${JSON.stringify(latAnom)}`);
   });
 });
