@@ -2,7 +2,7 @@ import type { ConnectorRegistry } from "../connectors/registry.js";
 import { defaultContext, type RequestContext } from "../context.js";
 import type { ServiceHealth, AnomalyReport, HealthThresholds } from "../types.js";
 import { calculateHealthScore } from "../analysis/health.js";
-import { detectRecentAnomaly } from "../analysis/anomaly.js";
+import { detectRobustAnomaly, classifyMetric } from "../analysis/anomaly.js";
 import { sanitizeForLog } from "../util/sanitize.js";
 
 let _thresholds: HealthThresholds | null = null;
@@ -121,17 +121,20 @@ function checkAnomaly(
   source: string,
   anomalies: AnomalyReport[]
 ) {
-  const result = detectRecentAnomaly(values);
+  // Robust, metric-type-aware detector (same path as detect_anomalies):
+  // latency/error_rate/saturation are one-sided, so a *decrease* (e.g.
+  // latency dropping) is correctly NOT flagged as an anomaly.
+  const result = detectRobustAnomaly(values, { metricKind: classifyMetric(metric) });
   if (result.isAnomaly) {
-    const deviationPercent = result.baselineAvg === 0
+    const deviationPercent = result.baselineValue === 0
       ? 100
-      : Math.round(((result.recentAvg - result.baselineAvg) / result.baselineAvg) * 100);
+      : Math.round(((result.recentValue - result.baselineValue) / result.baselineValue) * 100);
     anomalies.push({
       metric,
-      severity: Math.abs(result.zScore) >= 3 ? "high" : Math.abs(result.zScore) >= 2 ? "medium" : "low",
-      description: `${metric} is ${result.zScore.toFixed(1)}σ ${result.zScore > 0 ? "above" : "below"} baseline (${result.baselineAvg.toFixed(2)} → ${result.recentAvg.toFixed(2)})`,
-      currentValue: result.recentAvg,
-      baselineValue: result.baselineAvg,
+      severity: Math.abs(result.score) >= 6 ? "high" : Math.abs(result.score) >= 4 ? "medium" : "low",
+      description: `${metric}: ${result.reason}`,
+      currentValue: result.recentValue,
+      baselineValue: result.baselineValue,
       deviationPercent,
       source,
       service,
