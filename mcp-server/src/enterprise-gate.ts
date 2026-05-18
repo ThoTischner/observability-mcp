@@ -29,7 +29,7 @@
 // "access-control", access is denied (fail-closed — a configured control
 // must never be silently disabled).
 
-import { readFileSync, appendFileSync } from "node:fs";
+import { readFileSync, appendFileSync, writeFileSync, renameSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import type { RequestContext } from "./context.js";
@@ -81,6 +81,34 @@ function inactive(reason: string): GateState {
 
 let gatePromise: Promise<GateState> | null = null;
 
+// Audit log: a process singleton, created once and reused across every
+// gate rebuild so the hash chain is continuous for the life of the
+// process (a gate reset must never start a new chain segment mid-file).
+let auditLogPromise: Promise<{ record: (e: unknown) => Promise<unknown> } | null> | null = null;
+
+async function getAuditLog(): Promise<{ record: (e: unknown) => Promise<unknown> } | null> {
+  if (!auditLogPromise) {
+    auditLogPromise = (async () => {
+      try {
+        const auditMod: any = await import(join(ENTERPRISE_DIR, "audit", "index.mjs"));
+        const auditFile = process.env.OMCP_AUDIT_FILE;
+        const sink = auditFile
+          ? (entry: unknown) => appendFileSync(resolve(auditFile), JSON.stringify(entry) + "\n")
+          : undefined;
+        return auditMod.createAuditLog({ sink });
+      } catch {
+        return null; // audit is best-effort; absence must not break enforcement
+      }
+    })();
+  }
+  return auditLogPromise;
+}
+
+/** Tests only: also drops the audit singleton for full isolation. */
+export function _resetEnterpriseAudit(): void {
+  auditLogPromise = null;
+}
+
 function readPubKey(spec: string): string {
   if (spec.startsWith("@")) return readFileSync(spec.slice(1), "utf8");
   return spec.replace(/\\n/g, "\n");
@@ -123,18 +151,14 @@ async function buildGate(): Promise<GateState> {
     accessControl: has("access-control"),
   };
 
-  // Audit (best-effort; only if entitled and the module loads).
+  // Audit (best-effort; only if entitled and the module loads). The log
+  // is a PROCESS singleton, deliberately decoupled from the gate memo:
+  // resetting the gate (e.g. after an admin policy edit) must NOT sever
+  // the hash chain — an audited policy change that breaks tamper-evidence
+  // would defeat the point of auditing it.
   if (has("audit")) {
-    try {
-      const auditMod: any = await import(join(ENTERPRISE_DIR, "audit", "index.mjs"));
-      const auditFile = process.env.OMCP_AUDIT_FILE;
-      const sink = auditFile
-        ? (entry: unknown) => appendFileSync(resolve(auditFile), JSON.stringify(entry) + "\n")
-        : undefined;
-      state.audit = auditMod.createAuditLog({ sink });
-    } catch {
-      /* audit is best-effort; absence must not break enforcement */
-    }
+    const log = await getAuditLog();
+    if (log) state.audit = log;
   }
 
   // RBAC / Catalog enforcers + their operator-supplied config.
@@ -321,4 +345,139 @@ export async function enterpriseAuditTail(limit = 50) {
   }
   const n = Math.max(1, Math.min(limit || 50, 500));
   return { configured: true as const, total: all.length, chain, entries: all.slice(-n) };
+}
+
+// ----------------------------------------------------------------------
+// Phase 2: admin-gated RBAC policy write.
+//
+// Editing the RBAC policy IS editing the security configuration, so the
+// write path is NOT on the open local plane: it requires an API-key
+// principal that the CURRENT policy grants the reserved admin capability
+// `enterprise:admin`. First admin is bootstrapped via the policy file.
+// Every change is recorded to the audit log, and a policy that would
+// strip the writer's own admin capability is rejected (anti-lockout).
+// ----------------------------------------------------------------------
+
+export const ADMIN_CAP = "enterprise:admin";
+
+/** Structural validation — never trust a PUT body. */
+export function validatePolicyShape(p: any): string | null {
+  if (!p || typeof p !== "object" || Array.isArray(p)) return "policy must be a JSON object";
+  if (typeof p.roles !== "object" || p.roles === null || Array.isArray(p.roles)) return "policy.roles must be an object";
+  if (typeof p.bindings !== "object" || p.bindings === null || Array.isArray(p.bindings)) return "policy.bindings must be an object";
+  if (p.defaultRoles !== undefined && !Array.isArray(p.defaultRoles)) return "policy.defaultRoles must be an array";
+  for (const [name, role] of Object.entries(p.roles as Record<string, any>)) {
+    if (!role || typeof role !== "object") return `role '${name}' must be an object`;
+    for (const k of ["tools", "sources", "services"]) {
+      if (role[k] !== undefined && !Array.isArray(role[k])) return `role '${name}.${k}' must be an array`;
+    }
+  }
+  for (const [pr, roles] of Object.entries(p.bindings as Record<string, any>)) {
+    if (!Array.isArray(roles)) return `binding '${pr}' must be an array of role names`;
+  }
+  return null;
+}
+
+async function rbacEnforcer(): Promise<((policy: unknown, ctx: unknown, req: unknown) => unknown) | null> {
+  try {
+    const m: any = await import(join(ENTERPRISE_DIR, "rbac", "index.mjs"));
+    return m.enforce;
+  } catch {
+    return null;
+  }
+}
+
+/** Does `policy` grant `principalId` the reserved admin capability? */
+async function policyGrantsAdmin(policy: unknown, principalId: string): Promise<boolean> {
+  const enforce = await rbacEnforcer();
+  if (!enforce) return false;
+  try {
+    enforce(policy, { principalId, auth: "apikey" }, { tool: ADMIN_CAP });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export interface AdminResult {
+  ok: boolean;
+  status: number;
+  error?: string;
+}
+
+/**
+ * Authorize an admin action for `principalId` against the CURRENT
+ * on-disk policy (read fresh, never the memoised copy).
+ */
+export async function authorizeAdmin(principalId: string | null): Promise<AdminResult> {
+  if (!gatePromise) gatePromise = buildGate();
+  const g = await gatePromise;
+  if (g.mode !== "active") return { ok: false, status: 409, error: `gate not active (mode: ${g.mode})` };
+  if (!process.env.OMCP_RBAC_POLICY) return { ok: false, status: 409, error: "no RBAC policy configured" };
+  if (!principalId) return { ok: false, status: 401, error: "authentication required" };
+  let current: unknown;
+  try {
+    current = JSON.parse(readFileSync(resolve(process.env.OMCP_RBAC_POLICY), "utf8"));
+  } catch (e) {
+    return { ok: false, status: 500, error: `current policy unreadable: ${String(e)}` };
+  }
+  if (!(await policyGrantsAdmin(current, principalId))) {
+    return { ok: false, status: 403, error: `principal '${principalId}' lacks the '${ADMIN_CAP}' capability` };
+  }
+  return { ok: true, status: 200 };
+}
+
+/**
+ * Replace the RBAC policy. Caller must have passed authorizeAdmin first.
+ * Validates, blocks self-lockout, writes atomically, audits, and
+ * invalidates the gate memo so enforcement picks up the new policy.
+ */
+export async function updateRbacPolicy(
+  principalId: string,
+  next: unknown
+): Promise<AdminResult> {
+  const shapeErr = validatePolicyShape(next);
+  if (shapeErr) return { ok: false, status: 400, error: shapeErr };
+  if (!(await policyGrantsAdmin(next, principalId))) {
+    return {
+      ok: false,
+      status: 400,
+      error: `refused: the new policy would remove '${principalId}' own '${ADMIN_CAP}' capability (anti-lockout)`,
+    };
+  }
+  const path = resolve(process.env.OMCP_RBAC_POLICY as string);
+  let before = "";
+  try {
+    before = readFileSync(path, "utf8");
+  } catch {
+    /* first write — no prior */
+  }
+  const serialized = JSON.stringify(next, null, 2) + "\n";
+  try {
+    const tmp = path + ".tmp-" + process.pid;
+    writeFileSync(tmp, serialized);
+    renameSync(tmp, path); // atomic replace
+  } catch (e) {
+    return { ok: false, status: 500, error: `write failed: ${String(e)}` };
+  }
+
+  // Audit the change (best-effort; never blocks the write outcome).
+  try {
+    if (!gatePromise) gatePromise = buildGate();
+    const g = await gatePromise;
+    if (g.mode === "active" && g.audit) {
+      await g.audit.record({
+        kind: "policy-change",
+        target: "rbac",
+        principalId,
+        bytesBefore: before.length,
+        bytesAfter: serialized.length,
+      });
+    }
+  } catch {
+    /* audit failure must not fail the write */
+  }
+
+  _resetEnterpriseGate(); // next enforcement rebuilds with the new policy
+  return { ok: true, status: 200 };
 }

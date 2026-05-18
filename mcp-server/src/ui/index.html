@@ -790,8 +790,20 @@
       </div>
       <div class="ent-grid">
         <div class="card">
-          <div class="card-header"><h2>Access control (RBAC)</h2></div>
+          <div class="card-header"><h2>Access control (RBAC)</h2>
+            <button class="btn btn-sm" id="ent-rbac-editbtn" onclick="entToggleRbacEdit(true)">Edit policy</button>
+          </div>
           <div id="ent-rbac"><div class="empty">Loading…</div></div>
+          <div id="ent-rbac-editor" class="hidden" style="margin-top:12px">
+            <div class="form-hint" style="margin-bottom:6px">Editing the policy requires an admin API key (a principal the current policy grants <code>enterprise:admin</code>).</div>
+            <input type="password" id="ent-admin-token" placeholder="Admin API key (Bearer)" style="width:100%;margin-bottom:8px">
+            <textarea id="ent-rbac-json" rows="14" spellcheck="false" style="width:100%;font-family:'JetBrains Mono',monospace;font-size:12px"></textarea>
+            <div id="ent-rbac-msg" style="margin:8px 0;font-size:12px"></div>
+            <div style="display:flex;gap:8px;justify-content:flex-end">
+              <button class="btn btn-ghost btn-sm" onclick="entToggleRbacEdit(false)">Cancel</button>
+              <button class="btn btn-primary btn-sm" onclick="entSaveRbac()">Save policy</button>
+            </div>
+          </div>
         </div>
         <div class="card">
           <div class="card-header"><h2>Catalog &amp; products</h2></div>
@@ -965,6 +977,31 @@ async function loadEnterprise(){
         <table class="dtable"><thead><tr><th>#</th><th>Principal</th><th>Tool</th><th>Decision</th><th>Reason</th></tr></thead><tbody>${rows||'<tr><td colspan=5>no decisions yet</td></tr>'}</tbody></table>`;
     }
   }catch{ document.getElementById('ent-audit').innerHTML='<div class="empty">Audit unavailable.</div>'; }
+}
+function entToggleRbacEdit(on){
+  const ed=document.getElementById('ent-rbac-editor'), btn=document.getElementById('ent-rbac-editbtn');
+  document.getElementById('ent-rbac-msg').textContent='';
+  if(on){
+    fetch('/api/enterprise/policy').then(r=>r.json()).then(p=>{
+      document.getElementById('ent-rbac-json').value = p&&p.configured&&p.data ? JSON.stringify(p.data,null,2) : '{\n  "roles": {},\n  "bindings": {}\n}';
+    });
+    ed.classList.remove('hidden'); btn.classList.add('hidden');
+  } else { ed.classList.add('hidden'); btn.classList.remove('hidden'); }
+}
+async function entSaveRbac(){
+  const msg=document.getElementById('ent-rbac-msg');
+  const tok=document.getElementById('ent-admin-token').value.trim();
+  let body;
+  try { body=JSON.parse(document.getElementById('ent-rbac-json').value); }
+  catch(e){ msg.style.color='var(--danger)'; msg.textContent='Invalid JSON: '+e.message; return; }
+  if(!tok){ msg.style.color='var(--danger)'; msg.textContent='Admin API key required.'; return; }
+  msg.style.color='var(--text-muted)'; msg.textContent='Saving…';
+  try{
+    const r=await fetch('/api/enterprise/policy',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify(body)});
+    const d=await r.json().catch(()=>({}));
+    if(r.ok){ msg.style.color='var(--success)'; msg.textContent='Policy updated.'; toast('RBAC policy saved'); entToggleRbacEdit(false); loadEnterprise(); }
+    else { msg.style.color='var(--danger)'; msg.textContent='Rejected ('+r.status+'): '+(d.error||'unknown'); }
+  }catch(e){ msg.style.color='var(--danger)'; msg.textContent='Request failed: '+e.message; }
 }
 
 function escHtml(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}

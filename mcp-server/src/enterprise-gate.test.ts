@@ -11,6 +11,8 @@ import {
   enterprisePolicyView,
   enterpriseCatalogView,
   enterpriseAuditTail,
+  validatePolicyShape,
+  authorizeAdmin,
   _resetEnterpriseGate,
 } from "./enterprise-gate.js";
 
@@ -158,5 +160,53 @@ describe("enterprise-gate — read-only console introspection", () => {
   it("audit tail: not configured when no audit file", async () => {
     clearEnv();
     assert.deepEqual(await enterpriseAuditTail(10), { configured: false });
+  });
+});
+
+describe("enterprise-gate — P2 admin RBAC write", () => {
+  afterEach(clearEnv);
+
+  it("validatePolicyShape accepts a well-formed policy", () => {
+    assert.equal(
+      validatePolicyShape({ roles: { a: { tools: ["*"] } }, bindings: { p: ["a"] }, defaultRoles: [] }),
+      null
+    );
+  });
+
+  it("validatePolicyShape rejects malformed shapes", () => {
+    assert.match(validatePolicyShape(null) || "", /must be a JSON object/);
+    assert.match(validatePolicyShape([]) || "", /must be a JSON object/);
+    assert.match(validatePolicyShape({ bindings: {} }) || "", /roles must be an object/);
+    assert.match(validatePolicyShape({ roles: {} }) || "", /bindings must be an object/);
+    assert.match(
+      validatePolicyShape({ roles: {}, bindings: {}, defaultRoles: "x" }) || "",
+      /defaultRoles must be an array/
+    );
+    assert.match(
+      validatePolicyShape({ roles: { r: { tools: "x" } }, bindings: {} }) || "",
+      /role 'r.tools' must be an array/
+    );
+    assert.match(
+      validatePolicyShape({ roles: {}, bindings: { p: "x" } }) || "",
+      /binding 'p' must be an array/
+    );
+  });
+
+  it("authorizeAdmin denies when the gate is not active", async () => {
+    clearEnv(); // no entitlement → mode off
+    const r = await authorizeAdmin("someone");
+    assert.equal(r.ok, false);
+    assert.equal(r.status, 409);
+    assert.match(r.error ?? "", /gate not active/);
+  });
+
+  it("authorizeAdmin requires a principal once a control is configured", async () => {
+    clearEnv();
+    process.env.OMCP_RBAC_POLICY = "/tmp/none.json"; // fail-closed (no token)
+    _resetEnterpriseGate();
+    const r = await authorizeAdmin(null);
+    assert.equal(r.ok, false);
+    // gate is fail-closed here → still 409 (not active); never silently allows
+    assert.equal(r.ok, false);
   });
 });
