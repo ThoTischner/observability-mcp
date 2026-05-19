@@ -133,6 +133,15 @@
       --shadow-sm: 0 1px 2px rgba(17,24,39,0.06);
       --shadow:    0 4px 12px rgba(17,24,39,0.08), 0 0 0 1px var(--border);
       --shadow-lg: 0 12px 32px rgba(17,24,39,0.14), 0 0 0 1px var(--border-strong);
+
+      /* Chrome follows the theme too — the WHOLE UI switches, not just
+         the workspace. Light chrome = near-white, dark text. */
+      --chrome-bg:         #ffffff;
+      --chrome-bg-2:       #f5f6f8;
+      --chrome-border:     rgba(17,24,39,0.12);
+      --chrome-text:       #161a22;
+      --chrome-text-muted: #565d6b;
+      --chrome-active:     rgba(79,140,255,0.14);
     }
 
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
@@ -227,6 +236,16 @@
     }
     .stat-card .context.good { color: var(--success, #3fb950); }
     .stat-card .context.warn { color: var(--warn, #d29922); }
+    /* Stat card with a ring gauge (capacity-style, ref: cluster dashboards) */
+    .stat-card.has-gauge { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); }
+    .stat-card .stat-body { min-width: 0; }
+    .gauge { width: 56px; height: 56px; flex-shrink: 0; }
+    .gauge .g-track { stroke: var(--surface-3); }
+    .gauge .g-fill { stroke: var(--accent); transition: stroke-dashoffset 600ms var(--ease), stroke 200ms var(--ease); }
+    .gauge.tone-ok   .g-fill { stroke: var(--success); }
+    .gauge.tone-warn .g-fill { stroke: var(--warning); }
+    .gauge.tone-bad  .g-fill { stroke: var(--danger); }
+    .gauge text { fill: var(--text); font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
 
     .live-indicator {
       display: inline-flex; align-items: center; gap: var(--sp-2);
@@ -252,6 +271,16 @@
       font-size: var(--fs-lg); font-weight: 600; color: var(--text);
       letter-spacing: -0.01em; margin: 0;
     }
+    .page-head {
+      display: flex; align-items: flex-end; justify-content: space-between;
+      gap: var(--sp-4); margin-bottom: var(--sp-5);
+      padding-bottom: var(--sp-4); border-bottom: 1px solid var(--border);
+    }
+    .page-head .ph-left { min-width: 0; }
+    .page-head .breadcrumb { font-size: var(--fs-xs); color: var(--text-dim); letter-spacing: 0.02em; margin-bottom: 6px; }
+    .page-head .breadcrumb b { color: var(--text-muted); font-weight: 600; }
+    .page-head h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; color: var(--text); margin: 0; line-height: 1.2; }
+    .page-head .ph-actions { display: flex; gap: var(--sp-2); align-items: center; flex-shrink: 0; }
     .card {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -261,53 +290,54 @@
     }
     .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--sp-4); }
     .card-header h2 { font-size: var(--fs-lg); font-weight: 600; letter-spacing: -0.01em; color: var(--text); }
+    /* Dense, quiet list rows — hairline-separated, table-like (ref:
+       enterprise resource/list views). No per-row card chrome. */
     .source-row {
       display: flex; align-items: center; gap: var(--sp-3);
-      padding: var(--sp-3) var(--sp-4);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      margin-bottom: var(--sp-2);
-      background: var(--surface);
-      transition: background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
+      padding: 10px var(--sp-3);
+      border-bottom: 1px solid var(--border);
+      background: transparent;
+      transition: background var(--t-fast) var(--ease);
     }
-    .source-row:hover { background: var(--surface-2); border-color: var(--border-strong); }
-    .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; position: relative; }
-    .dot-up { background: var(--success); box-shadow: 0 0 0 3px var(--success-soft); }
-    .dot-up::after { content: ''; position: absolute; inset: -4px; border-radius: 50%; background: var(--success); opacity: 0.4; animation: pulse 2s var(--ease) infinite; }
-    @keyframes pulse { 0%, 100% { opacity: 0.4; transform: scale(1); } 50% { opacity: 0; transform: scale(1.8); } }
-    .dot-down { background: var(--danger); box-shadow: 0 0 0 3px var(--danger-soft); }
-    .dot-disabled { background: var(--text-dim); box-shadow: 0 0 0 3px rgba(107,114,128,0.15); }
+    .source-row:last-child { border-bottom: none; }
+    .source-row:hover { background: var(--surface-2); }
+    .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; position: relative; }
+    .dot-up { background: var(--success); box-shadow: 0 0 0 2px var(--success-soft); }
+    .dot-up::after { content: ''; position: absolute; inset: -3px; border-radius: 50%; background: var(--success); opacity: 0.35; animation: pulse 2.4s var(--ease) infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 0.35; transform: scale(1); } 50% { opacity: 0; transform: scale(1.7); } }
+    .dot-down { background: var(--danger); box-shadow: 0 0 0 2px var(--danger-soft); }
+    .dot-disabled { background: var(--text-dim); box-shadow: 0 0 0 2px rgba(107,114,128,0.15); }
     .source-info { flex: 1; min-width: 0; }
-    .source-info .name { font-weight: 600; font-size: var(--fs-lg); letter-spacing: -0.01em; }
+    .source-info .name { font-weight: 600; font-size: var(--fs-md); letter-spacing: -0.005em; }
     .source-info .url {
-      color: var(--text-muted); font-size: var(--fs-sm);
+      color: var(--text-dim); font-size: var(--fs-xs);
       font-family: 'JetBrains Mono', ui-monospace, monospace; font-variant-ligatures: none;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     .source-actions { display: flex; gap: var(--sp-1); flex-shrink: 0; }
+    /* Quiet, square enterprise chips (was pill) */
     .tag {
       display: inline-flex; align-items: center; gap: 4px;
-      padding: 2px 8px;
-      border-radius: var(--radius-pill);
-      font-size: var(--fs-xs); font-weight: 500;
-      letter-spacing: 0.02em;
+      padding: 1px 7px;
+      border-radius: var(--radius-sm);
+      font-size: 10px; font-weight: 600;
+      letter-spacing: 0.04em; text-transform: uppercase;
       margin-left: 6px;
     }
-    .tag-metrics { color: var(--accent); background: var(--accent-soft); border: 1px solid rgba(79,140,255,0.25); }
-    .tag-logs    { color: var(--info);   background: var(--info-soft);   border: 1px solid rgba(167,139,250,0.25); }
-    .tag-type    { color: var(--text-muted); background: var(--surface-2); border: 1px solid var(--border-strong); text-transform: capitalize; }
-    .tag-latency { color: var(--text-muted); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+    .tag-metrics { color: var(--accent); background: var(--accent-soft); border: 1px solid transparent; }
+    .tag-logs    { color: var(--info);   background: var(--info-soft);   border: 1px solid transparent; }
+    .tag-type    { color: var(--text-muted); background: var(--surface-3); border: 1px solid var(--border); text-transform: uppercase; }
+    .tag-latency { color: var(--text-dim); font-size: 10px; font-variant-numeric: tabular-nums; text-transform: none; letter-spacing: 0; }
     .service-row {
       display: flex; align-items: center; justify-content: space-between;
-      padding: var(--sp-3) var(--sp-4);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      margin-bottom: var(--sp-2);
-      background: var(--surface);
+      padding: 10px var(--sp-3);
+      border-bottom: 1px solid var(--border);
+      background: transparent;
       transition: background var(--t-fast) var(--ease);
     }
+    .service-row:last-child { border-bottom: none; }
     .service-row:hover { background: var(--surface-2); }
-    .service-row .name { font-weight: 600; font-size: var(--fs-lg); }
+    .service-row .name { font-weight: 600; font-size: var(--fs-md); }
     .btn {
       padding: 7px 14px;
       border-radius: var(--radius-sm);
@@ -418,9 +448,32 @@
       display: flex; align-items: center; justify-content: space-between;
     }
     .endpoint-bar::before { content: 'POST'; display: inline-block; padding: 2px 6px; margin-right: 10px; background: var(--accent-soft); color: var(--accent); border-radius: 3px; font-size: var(--fs-xs); font-weight: 700; font-family: 'Inter var', sans-serif; }
-    .empty { color: var(--text-dim); text-align: center; padding: var(--sp-8) var(--sp-4); font-size: var(--fs-md); }
+    .empty {
+      color: var(--text-dim); text-align: center;
+      padding: var(--sp-10) var(--sp-4); font-size: var(--fs-md);
+      line-height: 1.6;
+    }
+    .empty::before {
+      content: '⌀'; display: block;
+      font-size: 26px; line-height: 1; margin-bottom: var(--sp-3);
+      color: var(--text-dim); opacity: 0.45;
+    }
     .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border-strong); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
+    /* Accessibility: clear keyboard focus on chrome + interactive rows;
+       honour reduced-motion (no decorative pulses/spins/slide-ins). */
+    .rail-nav .nav-btn:focus-visible, .rail-grp-hd:focus-visible,
+    .theme-toggle:focus-visible {
+      outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 2px;
+    }
+    .tab-btn:focus-visible { outline: 2px solid var(--accent-ring); outline-offset: -2px; }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.001ms !important; animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important; scroll-behavior: auto !important;
+      }
+      .dot-up::after, .live-indicator::before { animation: none !important; }
+    }
     /* Tabs inside settings */
     .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: var(--sp-5); }
     .tab-btn { background: none; border: none; border-bottom: 2px solid transparent; color: var(--text-muted); padding: 10px 18px; cursor: pointer; font-size: var(--fs-md); font-weight: 500; transition: color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease); }
@@ -559,21 +612,63 @@
     }
     .rail-title { font-size: var(--fs-md); font-weight: 700; letter-spacing: -0.01em; line-height: 1.2; color: var(--chrome-text); }
     .rail-title span { font-weight: 500; color: var(--chrome-text-muted); font-size: var(--fs-xs); letter-spacing: 0.06em; text-transform: uppercase; }
-    .rail-nav { display: flex; flex-direction: column; padding: var(--sp-3) 0; overflow-y: auto; }
-    .rail-group {
+    .rail-nav { display: flex; flex-direction: column; padding: var(--sp-2) 0; overflow-y: auto; }
+    .rail-grp { display: flex; flex-direction: column; }
+    .rail-grp-hd {
+      display: flex; align-items: center; gap: 6px; width: 100%;
+      background: none; border: none; cursor: pointer;
       font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
-      color: var(--chrome-text-muted); opacity: 0.7; padding: var(--sp-4) var(--sp-5) var(--sp-2);
+      color: var(--chrome-text-muted); opacity: 0.65;
+      padding: var(--sp-4) var(--sp-5) var(--sp-2);
+      transition: opacity var(--t-fast) var(--ease);
     }
+    .rail-grp-hd:hover { opacity: 1; }
+    .rail-grp-hd .chev {
+      margin-left: auto; font-size: 9px; transition: transform var(--t-fast) var(--ease);
+      opacity: 0.8;
+    }
+    .rail-grp.collapsed .rail-grp-hd .chev { transform: rotate(-90deg); }
+    .rail-grp-body { display: flex; flex-direction: column; overflow: hidden; }
+    .rail-grp.collapsed .rail-grp-body { display: none; }
     .rail-nav .nav-btn {
-      display: block; width: 100%; text-align: left;
-      border-radius: 0; padding: 9px var(--sp-5);
+      display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+      border-radius: 0; padding: 8px var(--sp-5);
       border-left: 2px solid transparent;
       color: var(--chrome-text-muted);
     }
+    .rail-nav .nav-btn .nav-ico {
+      width: 16px; text-align: center; font-size: 14px; opacity: 0.75; flex-shrink: 0;
+    }
     .rail-nav .nav-btn:hover { background: var(--chrome-bg-2); color: var(--chrome-text); }
+    .rail-nav .nav-btn:hover .nav-ico { opacity: 1; }
     .rail-nav .nav-btn.active {
       background: var(--chrome-active); color: var(--chrome-text);
       box-shadow: none; border-left-color: var(--accent);
+    }
+    .rail-nav .nav-btn.active .nav-ico { opacity: 1; color: var(--accent); }
+    /* Sub-points in the nav replace the in-page tab bar for these pages */
+    #page-connectors .tabs, #page-settings .tabs { display: none; }
+    .rail-nav .nav-parent { cursor: pointer; }
+    .rail-nav .nav-parent.active { background: none; border-left-color: transparent; }
+    .rail-item { display: flex; flex-direction: column; }
+    .rail-item .sub-chev {
+      margin-left: auto; font-size: 9px; opacity: 0.7;
+      transition: transform var(--t-fast) var(--ease);
+    }
+    .rail-item:not(.open) .nav-btn .sub-chev { transform: rotate(-90deg); }
+    .rail-sub { display: none; flex-direction: column; }
+    .rail-item.open .rail-sub { display: flex; }
+    .rail-nav .nav-sub {
+      display: block; width: 100%; text-align: left; cursor: pointer;
+      background: none; border: none; border-left: 2px solid transparent;
+      padding: 6px var(--sp-5) 6px 42px; font-size: var(--fs-sm);
+      color: var(--chrome-text-muted); opacity: 0.85;
+      transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
+    }
+    .rail-nav .nav-sub:hover { background: var(--chrome-bg-2); color: var(--chrome-text); opacity: 1; }
+    .rail-nav .nav-sub.active {
+      color: var(--chrome-text); opacity: 1;
+      border-left-color: var(--accent); background: var(--chrome-active);
     }
     .rail-foot { margin-top: auto; padding: var(--sp-4) var(--sp-5); border-top: 1px solid var(--chrome-border); font-size: var(--fs-xs); color: var(--chrome-text-muted); }
     .masthead {
@@ -593,6 +688,137 @@
       transition: color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
     }
     .theme-toggle:hover { color: var(--chrome-text); border-color: var(--chrome-text-muted); }
+    /* Header notification feed (ref: enterprise events / bell) */
+    .notif-wrap { position: relative; }
+    .notif-btn {
+      position: relative; background: none; border: 1px solid var(--chrome-border);
+      color: var(--chrome-text-muted); width: 30px; height: 30px; border-radius: var(--radius-sm);
+      cursor: pointer; font-size: 15px; display: inline-flex; align-items: center; justify-content: center;
+      transition: color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
+    }
+    .notif-btn:hover { color: var(--chrome-text); border-color: var(--chrome-text-muted); }
+    .notif-count {
+      position: absolute; top: -6px; right: -6px; min-width: 16px; height: 16px;
+      padding: 0 4px; border-radius: var(--radius-pill); background: var(--danger);
+      color: #fff; font-size: 10px; font-weight: 700; line-height: 16px; text-align: center;
+    }
+    .notif-panel {
+      position: absolute; right: 0; top: calc(100% + 8px); width: 360px; max-height: 60vh;
+      overflow-y: auto; background: var(--surface); color: var(--text);
+      border: 1px solid var(--border-strong); border-radius: var(--radius);
+      box-shadow: var(--shadow-lg); z-index: 50;
+    }
+    .notif-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--border);
+      font-weight: 600; font-size: var(--fs-md); position: sticky; top: 0; background: var(--surface);
+    }
+    .notif-clear { background: none; border: none; color: var(--accent); font-size: var(--fs-xs); cursor: pointer; }
+    .notif-clear:hover { text-decoration: underline; }
+    .notif-item { display: flex; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--border); }
+    .notif-item:last-child { border-bottom: none; }
+    .notif-sev { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
+    .notif-sev.bad { background: var(--danger); } .notif-sev.warn { background: var(--warning); } .notif-sev.info { background: var(--accent); }
+    .notif-body { flex: 1; min-width: 0; }
+    .notif-text { font-size: var(--fs-sm); line-height: 1.45; }
+    .notif-time { font-size: var(--fs-xs); color: var(--text-dim); margin-top: 2px; }
+    .notif-ack {
+      background: none; border: 1px solid var(--border-strong); color: var(--text-muted);
+      width: 22px; height: 22px; border-radius: var(--radius-sm); cursor: pointer; flex-shrink: 0;
+      font-size: 12px; line-height: 1;
+    }
+    .notif-ack:hover { color: var(--success); border-color: var(--success); }
+    .notif-empty { padding: var(--sp-8) var(--sp-4); text-align: center; color: var(--text-dim); font-size: var(--fs-sm); }
+    /* Inline "?" info popover */
+    .info {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 16px; height: 16px; border-radius: 50%; margin-left: 7px;
+      border: 1px solid var(--border-strong); background: none; color: var(--text-dim);
+      font-size: 10px; font-weight: 700; cursor: pointer; vertical-align: middle;
+      transition: color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
+    }
+    .info:hover { color: var(--accent); border-color: var(--accent); }
+    .popover {
+      position: fixed; z-index: 60; width: 300px; max-width: 86vw;
+      background: var(--surface); color: var(--text);
+      border: 1px solid var(--border-strong); border-radius: var(--radius);
+      box-shadow: var(--shadow-lg); padding: var(--sp-4); font-size: var(--fs-sm); line-height: 1.55;
+    }
+    .popover[hidden] { display: none; }
+    .popover h4 { font-size: var(--fs-md); margin-bottom: var(--sp-2); }
+    /* Clickable list/card affordance + detail slide-over (ref: 3-pane inspector) */
+    .dp-card, .dtable tr[data-dp], .dtable tr[data-aud], #services-list .service-row[data-svc], .src-card[data-src] { cursor: pointer; }
+    #services-list .service-row[data-svc]:hover { background: var(--surface-2); }
+    .dtable tr[data-dp]:hover, .dtable tr[data-aud]:hover { background: var(--surface-2); }
+    .src-card[data-src]:hover { border-color: var(--accent); }
+    .dp-card[data-dp]:hover { border-color: var(--accent); }
+    .drawer-ov {
+      position: fixed; inset: 0; background: rgba(8,10,15,0.45);
+      opacity: 0; pointer-events: none; transition: opacity var(--t-fast) var(--ease); z-index: 70;
+    }
+    .drawer-ov.open { opacity: 1; pointer-events: auto; }
+    .drawer {
+      position: fixed; top: 0; right: 0; bottom: 0; width: 440px; max-width: 92vw;
+      background: var(--surface); color: var(--text); border-left: 1px solid var(--border-strong);
+      box-shadow: var(--shadow-lg); transform: translateX(100%);
+      transition: transform 220ms var(--ease); z-index: 71;
+      display: flex; flex-direction: column;
+    }
+    .drawer.drawer-wide { width: 780px; max-width: 96vw; }
+    .drawer.open { transform: none; }
+    .drawer-hd {
+      display: flex; align-items: center; gap: var(--sp-3);
+      padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--border);
+    }
+    .drawer-hd h3 { font-size: var(--fs-xl); font-weight: 600; flex: 1; min-width: 0; }
+    .drawer-hd .dw-x {
+      background: none; border: none; color: var(--text-muted); font-size: 20px;
+      cursor: pointer; line-height: 1; padding: 2px 6px; border-radius: var(--radius-sm);
+    }
+    .drawer-hd .dw-x:hover { color: var(--text); background: var(--surface-2); }
+    .drawer-bd { padding: var(--sp-5); overflow-y: auto; }
+    .dw-sec { margin-bottom: var(--sp-5); }
+    .dw-sec .dw-lbl { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-dim); margin-bottom: var(--sp-2); }
+    /* Copyable CLI / API example */
+    .codeblock { margin-top: var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+    .codeblock-hd {
+      display: flex; align-items: center; gap: var(--sp-2);
+      padding: 7px var(--sp-3); background: var(--surface-2);
+      font-size: var(--fs-xs); color: var(--text-muted); cursor: pointer;
+      border-bottom: 1px solid var(--border);
+    }
+    .codeblock.collapsed .codeblock-hd { border-bottom: none; }
+    .codeblock-hd .cb-chev { transition: transform var(--t-fast) var(--ease); font-size: 9px; }
+    .codeblock.collapsed .codeblock-hd .cb-chev { transform: rotate(-90deg); }
+    .codeblock-hd .cb-title { flex: 1; font-weight: 600; }
+    .codeblock.collapsed pre { display: none; }
+    .codeblock-cp { background: none; border: none; color: var(--accent); cursor: pointer; font-size: var(--fs-xs); }
+    .codeblock-cp:hover { text-decoration: underline; }
+    .codeblock pre {
+      margin: 0; padding: var(--sp-3); overflow-x: auto;
+      font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; line-height: 1.6;
+      color: var(--text); background: var(--surface);
+    }
+    .codeblock pre .tok-cmd { color: var(--accent); }
+    .codeblock pre .tok-cmt { color: var(--text-dim); }
+    /* Animated "how it works" flow diagram */
+    .flow { display: flex; align-items: center; gap: 0; flex-wrap: wrap; padding: var(--sp-4) 0; }
+    .flow-node {
+      display: flex; flex-direction: column; align-items: center; gap: 6px;
+      padding: var(--sp-3) var(--sp-4); border: 1px solid var(--border-strong);
+      border-radius: var(--radius); background: var(--surface-2); min-width: 96px; text-align: center;
+    }
+    .flow-node .fn-ic { font-size: 20px; color: var(--accent); }
+    .flow-node .fn-t { font-size: var(--fs-xs); font-weight: 600; }
+    .flow-node .fn-s { font-size: 10px; color: var(--text-dim); }
+    .flow-arrow { flex: 1; min-width: 28px; height: 2px; background: var(--border-strong); position: relative; }
+    .flow-arrow::after {
+      content: ''; position: absolute; top: -3px; width: 8px; height: 8px; border-radius: 50%;
+      background: var(--accent); left: 0; animation: flowdot 2.4s var(--ease) infinite;
+    }
+    @keyframes flowdot { 0% { left: 0; opacity: 0; } 12% { opacity: 1; } 88% { opacity: 1; } 100% { left: 100%; opacity: 0; } }
+    .flow-arrow:nth-of-type(4)::after { animation-delay: 0.6s; }
+    .flow-arrow:nth-of-type(6)::after { animation-delay: 1.2s; }
     .gate-pill {
       display: inline-flex; align-items: center; gap: 7px;
       padding: 4px 12px; border-radius: var(--radius-pill);
@@ -607,6 +833,76 @@
 
     /* Enterprise page primitives */
     .ent-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); }
+    /* Dashboard feed + ranked bars (ref: events / top-consumers) */
+    .feed-row { display: flex; align-items: center; gap: var(--sp-3); padding: 9px var(--sp-2); border-bottom: 1px solid var(--border); }
+    .feed-row:last-child { border-bottom: none; }
+    .feed-row .fr-main { flex: 1; min-width: 0; }
+    .feed-row .fr-title { font-size: var(--fs-md); font-weight: 600; }
+    .feed-row .fr-sub { font-size: var(--fs-xs); color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .stchip { display: inline-flex; align-items: center; padding: 1px 7px; border-radius: var(--radius-sm); font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; flex-shrink: 0; }
+    .stchip.ok   { color: var(--success); background: var(--success-soft); }
+    .stchip.warn { color: var(--warning); background: var(--warning-soft); }
+    .stchip.bad  { color: var(--danger);  background: var(--danger-soft); }
+    .rank { display: flex; flex-direction: column; gap: 9px; padding: var(--sp-1) 0; }
+    .rank-row { display: grid; grid-template-columns: 120px 1fr 42px; align-items: center; gap: var(--sp-3); font-size: var(--fs-sm); }
+    .rank-row .rk-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+    .rank-row .rk-track { height: 6px; border-radius: 3px; background: var(--surface-3); overflow: hidden; }
+    .rank-row .rk-fill { height: 100%; border-radius: 3px; transition: width 600ms var(--ease); }
+    .rank-row .rk-fill.ok { background: var(--success); }
+    .rank-row .rk-fill.warn { background: var(--warning); }
+    .rank-row .rk-fill.bad { background: var(--danger); }
+    .rank-row .rk-val { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-muted); }
+    /* Data Products — toggleable cards / table (ref: enterprise catalogs) */
+    .dp-bar { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-4); }
+    .dp-bar .dp-count { font-size: var(--fs-sm); color: var(--text-muted); }
+    .dp-bar .dp-search { flex: 1; max-width: 320px; }
+    .dp-bar .dp-search input { width: 100%; }
+    .dp-spacer { flex: 1; }
+    .view-toggle { display: inline-flex; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); overflow: hidden; }
+    .view-toggle button {
+      background: var(--surface); border: none; color: var(--text-muted);
+      padding: 6px 11px; cursor: pointer; font-size: 13px; line-height: 1;
+      transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+    }
+    .view-toggle button + button { border-left: 1px solid var(--border-strong); }
+    .view-toggle button.active { background: var(--accent-soft); color: var(--accent); }
+    .view-toggle button:hover { color: var(--text); }
+    /* Form-first editor (Form / JSON / YAML — OpenShift-style) */
+    .ed-bar { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-3); flex-wrap: wrap; }
+    .ed-token { flex: 1; min-width: 200px; }
+    .ed-code { width: 100%; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; }
+    .fe-block { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--sp-3); margin-bottom: var(--sp-3); }
+    .fe-block > .fe-hd { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--sp-2); }
+    .fe-block > .fe-hd .fe-t { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-dim); }
+    .fe-row { display: flex; gap: var(--sp-2); align-items: flex-start; margin-bottom: var(--sp-2); flex-wrap: wrap; }
+    .fe-row .fe-grow { flex: 1; min-width: 140px; }
+    .fe-row label.fe-il { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--text-muted); white-space: nowrap; }
+    .fe-card { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--sp-3); margin-bottom: var(--sp-2); background: var(--surface-2); }
+    .fe-card .fe-cardhd { display: flex; gap: var(--sp-2); align-items: center; margin-bottom: var(--sp-2); }
+    .fe-fieldlbl { font-size: 11px; color: var(--text-dim); margin: 6px 0 2px; }
+    .fe-x { background: none; border: 1px solid var(--border-strong); color: var(--text-muted); width: 24px; height: 26px; border-radius: var(--radius-sm); cursor: pointer; flex-shrink: 0; }
+    .fe-x:hover { color: var(--danger); border-color: var(--danger); }
+    .fe-add { background: none; border: 1px dashed var(--border-strong); color: var(--accent); padding: 6px 12px; border-radius: var(--radius-sm); cursor: pointer; font-size: var(--fs-sm); }
+    .fe-add:hover { border-color: var(--accent); }
+    #ent-rbac-editor input[type=text], #ent-rbac-editor input[type=password], #ent-rbac-editor textarea,
+    #ent-cat-editor input[type=text], #ent-cat-editor input[type=password], #ent-cat-editor textarea {
+      background: var(--surface); border: 1px solid var(--border-strong); color: var(--text);
+      border-radius: var(--radius-sm); padding: 7px 10px; font-size: var(--fs-sm); width: 100%;
+    }
+    .dp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--sp-3); }
+    .dp-card {
+      border: 1px solid var(--border); border-radius: var(--radius);
+      background: var(--surface); padding: var(--sp-4);
+      display: flex; flex-direction: column; gap: var(--sp-2);
+      transition: border-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
+    }
+    .dp-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-sm); }
+    .dp-card h3 { font-size: var(--fs-lg); font-weight: 600; letter-spacing: -0.01em; }
+    .dp-card .dp-desc { font-size: var(--fs-sm); color: var(--text-muted); min-height: 32px; }
+    .dp-attr { font-size: var(--fs-xs); color: var(--text-dim); margin-top: var(--sp-1); }
+    .dp-attr .lbl { text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; margin-right: 6px; }
+    .dp-card .dp-foot { display: flex; align-items: center; justify-content: space-between; margin-top: auto; padding-top: var(--sp-3); border-top: 1px solid var(--border); }
+    .dp-grants { font-size: var(--fs-xs); color: var(--text-muted); }
     .kv { display: grid; grid-template-columns: max-content 1fr; gap: 6px var(--sp-5); font-size: var(--fs-md); }
     .kv dt { color: var(--text-muted); }
     .kv dd { font-variant-numeric: tabular-nums; word-break: break-word; }
@@ -627,21 +923,64 @@
       <div class="rail-title">Observability<br><span>MCP Console</span></div>
     </div>
     <nav class="rail-nav">
-      <button class="nav-btn active" data-page="dashboard" onclick="showPage('dashboard')">Dashboard</button>
-      <button class="nav-btn" data-page="sources" onclick="showPage('sources')">Sources</button>
-      <button class="nav-btn" data-page="services" onclick="showPage('services')">Services</button>
-      <button class="nav-btn" data-page="connectors" onclick="showPage('connectors')">Connectors</button>
-      <button class="nav-btn" data-page="health" onclick="showPage('health')">Health</button>
-      <div class="rail-group">Governance</div>
-      <button class="nav-btn" data-page="enterprise" onclick="showPage('enterprise')">Enterprise</button>
-      <button class="nav-btn" data-page="settings" onclick="showPage('settings')">Settings</button>
+      <div class="rail-grp" data-grp="observability">
+        <button class="rail-grp-hd" onclick="toggleNavGroup('observability')">Observability<span class="chev">▾</span></button>
+        <div class="rail-grp-body">
+          <button class="nav-btn active" data-page="dashboard" onclick="showPage('dashboard')"><span class="nav-ico">▦</span>Dashboard</button>
+          <button class="nav-btn" data-page="sources" onclick="showPage('sources')"><span class="nav-ico">⊟</span>Sources</button>
+          <button class="nav-btn" data-page="services" onclick="showPage('services')"><span class="nav-ico">⊞</span>Services</button>
+          <button class="nav-btn" data-page="health" onclick="showPage('health')"><span class="nav-ico">✚</span>Health</button>
+        </div>
+      </div>
+      <div class="rail-grp" data-grp="catalog">
+        <button class="rail-grp-hd" onclick="toggleNavGroup('catalog')">Catalog<span class="chev">▾</span></button>
+        <div class="rail-grp-body">
+          <button class="nav-btn" data-page="products" onclick="showPage('products')"><span class="nav-ico">◫</span>Products</button>
+        </div>
+      </div>
+      <div class="rail-grp" data-grp="governance">
+        <button class="rail-grp-hd" onclick="toggleNavGroup('governance')">Governance<span class="chev">▾</span></button>
+        <div class="rail-grp-body">
+          <button class="nav-btn" data-page="access" onclick="showPage('access')"><span class="nav-ico">⛨</span>Access Control</button>
+          <button class="nav-btn" data-page="audit" onclick="showPage('audit')"><span class="nav-ico">❒</span>Audit Log</button>
+        </div>
+      </div>
+      <div class="rail-grp" data-grp="system">
+        <button class="rail-grp-hd" onclick="toggleNavGroup('system')">System<span class="chev">▾</span></button>
+        <div class="rail-grp-body">
+          <div class="rail-item" data-nav="connectors">
+            <button class="nav-btn nav-parent" onclick="navToggle('connectors')"><span class="nav-ico">⇄</span>Connectors<span class="sub-chev">▾</span></button>
+            <div class="rail-sub">
+              <button class="nav-sub" data-sub="installed" onclick="goTab('connectors','installed')">Installed</button>
+              <button class="nav-sub" data-sub="hub" onclick="goTab('connectors','hub')">Connector Hub</button>
+              <button class="nav-sub" data-sub="upload" onclick="goTab('connectors','upload')">Upload Bundle</button>
+            </div>
+          </div>
+          <div class="rail-item" data-nav="settings">
+            <button class="nav-btn nav-parent" onclick="navToggle('settings')"><span class="nav-ico">⚙</span>Settings<span class="sub-chev">▾</span></button>
+            <div class="rail-sub">
+              <button class="nav-sub" data-sub="general" onclick="goTab('settings','general')">General</button>
+              <button class="nav-sub" data-sub="health" onclick="goTab('settings','health')">Health Scoring</button>
+              <button class="nav-sub" data-sub="metrics" onclick="goTab('settings','metrics')">Custom Metrics</button>
+            </div>
+          </div>
+          <button class="nav-btn" data-page="entitlement" onclick="showPage('entitlement')"><span class="nav-ico">⛁</span>Entitlement</button>
+        </div>
+      </div>
     </nav>
     <div class="rail-foot" id="rail-foot">loading…</div>
   </aside>
   <header class="masthead">
-    <span class="badge badge-ok" id="status-badge">Loading...</span>
     <div style="flex:1"></div>
-    <span class="gate-pill gate-unknown" id="gate-pill" title="Enterprise access-control gate">Gate: …</span>
+    <div class="notif-wrap">
+      <button class="notif-btn" id="notif-btn" aria-label="Notifications" title="Notifications" onclick="toggleNotif()">
+        <span class="notif-bell">◔</span><span class="notif-count" id="notif-count" hidden>0</span>
+      </button>
+      <div class="notif-panel" id="notif-panel" hidden>
+        <div class="notif-head"><span>Notifications</span><button class="notif-clear" id="notif-clear" onclick="notifAckAll()">Mark all read</button></div>
+        <div id="notif-list"><div class="notif-empty">No notifications</div></div>
+      </div>
+    </div>
     <button class="theme-toggle" id="theme-toggle" title="Toggle light / dark" aria-label="Toggle theme" onclick="toggleTheme()">◐</button>
     <button class="btn btn-ghost btn-sm" onclick="refresh()">Refresh</button>
   </header>
@@ -649,9 +988,12 @@
   <div class="container">
     <!-- ===== Dashboard ===== -->
     <div class="page active" id="page-dashboard">
-      <div class="dashboard-meta">
-        <h1>Overview</h1>
-        <span class="live-indicator" id="dash-live">Live</span>
+      <div class="page-head">
+        <div class="ph-left">
+          <div class="breadcrumb">Console / <b>Overview</b></div>
+          <h1>Overview</h1>
+        </div>
+        <div class="ph-actions"><span class="live-indicator" id="dash-live">Live</span></div>
       </div>
       <div class="stats">
         <div class="stat-card">
@@ -659,47 +1001,99 @@
           <div class="value" id="stat-sources">-</div>
           <div class="context" id="stat-sources-ctx">configured</div>
         </div>
-        <div class="stat-card">
-          <div class="label">Sources Up</div>
-          <div class="value" id="stat-sources-up">-</div>
-          <div class="context" id="stat-sources-up-ctx">connected</div>
+        <div class="stat-card has-gauge">
+          <div class="stat-body">
+            <div class="label">Sources Up</div>
+            <div class="value" id="stat-sources-up">-</div>
+            <div class="context" id="stat-sources-up-ctx">connected</div>
+          </div>
+          <span id="gauge-sources" class="gauge"></span>
         </div>
         <div class="stat-card">
           <div class="label">Services</div>
           <div class="value" id="stat-services">-</div>
           <div class="context" id="stat-services-ctx">discovered</div>
         </div>
-        <div class="stat-card">
-          <div class="label">MCP Tools</div>
-          <div class="value" id="stat-tools">6</div>
-          <div class="context">available</div>
+        <div class="stat-card has-gauge">
+          <div class="stat-body">
+            <div class="label">Services Healthy</div>
+            <div class="value" id="stat-health">-</div>
+            <div class="context" id="stat-health-ctx">live</div>
+          </div>
+          <span id="gauge-health" class="gauge"></span>
         </div>
       </div>
       <div class="endpoint-bar">
         <span>MCP Endpoint: <strong id="mcp-url">http://localhost:3000/mcp</strong></span>
         <button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText(document.getElementById('mcp-url').textContent);toast('Copied!')">Copy</button>
       </div>
+      <div class="card">
+        <div class="card-header"><h2>How it works
+          <button class="info" aria-label="Explain the request path"
+            data-title="Request path"
+            data-info="An agent calls an MCP tool over the endpoint above. The optional access-control gate evaluates the request (entitlement → RBAC → catalog) and records the decision to the audit log. Allowed calls hit the connectors (Prometheus, Loki, …); the analysis engine turns the raw signals into a scored health verdict."
+            onclick="infoPop(this)">?</button>
+        </h2></div>
+        <div class="flow">
+          <div class="flow-node"><span class="fn-ic">◇</span><span class="fn-t">Agent</span><span class="fn-s">MCP call</span></div>
+          <span class="flow-arrow"></span>
+          <div class="flow-node"><span class="fn-ic">⛨</span><span class="fn-t">Gate</span><span class="fn-s">entitlement · RBAC · catalog</span></div>
+          <span class="flow-arrow"></span>
+          <div class="flow-node"><span class="fn-ic">⇄</span><span class="fn-t">Connectors</span><span class="fn-s">Prometheus · Loki</span></div>
+          <span class="flow-arrow"></span>
+          <div class="flow-node"><span class="fn-ic">✦</span><span class="fn-t">Analysis</span><span class="fn-s">scored health</span></div>
+        </div>
+      </div>
       <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 16px;">
         <div class="card"><div class="card-header"><h2>Sources</h2><button class="btn btn-primary btn-sm" onclick="showPage('sources');openAddModal()">+ Add Source</button></div><div id="dash-sources"><div class="empty">Loading...</div></div></div>
         <div class="card"><div class="card-header"><h2>Services</h2></div><div id="dash-services"><div class="empty">Loading...</div></div></div>
+      </div>
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px;">
+        <div class="card">
+          <div class="card-header"><h2>Needs attention</h2><span id="dash-attn-count" class="tag tag-type">—</span></div>
+          <div id="dash-attention"><div class="empty">Loading…</div></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h2>Services by health score</h2></div>
+          <div id="dash-top"><div class="empty">Loading…</div></div>
+        </div>
       </div>
     </div>
 
     <!-- ===== Sources ===== -->
     <div class="page" id="page-sources">
+      <div class="page-head">
+        <div class="ph-left">
+          <div class="breadcrumb">Console / Observability / <b>Sources</b></div>
+          <h1>Data Sources</h1>
+        </div>
+        <div class="ph-actions"><button class="btn btn-primary btn-sm" onclick="openAddModal()">+ Add Source</button></div>
+      </div>
       <div class="card">
-        <div class="card-header"><h2>Data Sources</h2><button class="btn btn-primary btn-sm" onclick="openAddModal()">+ Add Source</button></div>
+        <div class="card-header"><h2>All sources</h2></div>
         <div id="sources-list"><div class="empty">Loading...</div></div>
       </div>
     </div>
 
     <!-- ===== Services ===== -->
     <div class="page" id="page-services">
-      <div class="card"><div class="card-header"><h2>Discovered Services</h2></div><div id="services-list"><div class="empty">Loading...</div></div></div>
+      <div class="page-head">
+        <div class="ph-left">
+          <div class="breadcrumb">Console / Observability / <b>Services</b></div>
+          <h1>Services</h1>
+        </div>
+      </div>
+      <div class="card"><div class="card-header"><h2>Discovered services</h2></div><div id="services-list"><div class="empty">Loading...</div></div></div>
     </div>
 
     <!-- ===== Connectors ===== -->
     <div class="page" id="page-connectors">
+      <div class="page-head">
+        <div class="ph-left">
+          <div class="breadcrumb">Console / System / <b>Connectors</b></div>
+          <h1>Connectors</h1>
+        </div>
+      </div>
       <div class="card" style="padding:0;">
         <div class="tabs">
           <button class="tab-btn active" onclick="showTab('installed')">Installed</button>
@@ -734,6 +1128,12 @@
 
     <!-- ===== Health ===== -->
     <div class="page" id="page-health">
+      <div class="page-head">
+        <div class="ph-left">
+          <div class="breadcrumb">Console / Observability / <b>Health</b></div>
+          <h1>Service Health</h1>
+        </div>
+      </div>
       <div id="health-cards" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px;">
         <div class="empty">Loading health data...</div>
       </div>
@@ -741,6 +1141,12 @@
 
     <!-- ===== Settings ===== -->
     <div class="page" id="page-settings">
+      <div class="page-head">
+        <div class="ph-left">
+          <div class="breadcrumb">Console / System / <b>Settings</b></div>
+          <h1>Settings</h1>
+        </div>
+      </div>
       <div class="card" style="padding:0;">
         <div class="tabs">
           <button class="tab-btn active" onclick="showTab('general')">General</button>
@@ -846,53 +1252,179 @@
         </div>
       </div>
     </div>
-    <!-- ===== Enterprise (read-only governance console) ===== -->
-    <div class="page" id="page-enterprise">
-      <div class="dashboard-meta">
-        <h1>Enterprise</h1>
-        <span class="live-indicator" id="ent-live">Read-only</span>
+    <!-- ===== Governance: Access Control ===== -->
+    <div class="page" id="page-access">
+      <div class="page-head">
+        <div class="ph-left">
+          <div class="breadcrumb">Console / Governance / <b>Access Control</b></div>
+          <h1>Access Control</h1>
+        </div>
+        <div class="ph-actions"><button class="btn btn-primary btn-sm" onclick="entEditNew('rbac')">+ New role</button><button class="btn btn-sm" id="ent-rbac-editbtn" onclick="entEditOpen('rbac')">Edit policy</button></div>
       </div>
       <div class="card">
-        <div class="card-header"><h2>Access-control gate</h2><span id="ent-mode"></span></div>
-        <div id="ent-status"><div class="empty">Loading…</div></div>
-      </div>
-      <div class="ent-grid">
-        <div class="card">
-          <div class="card-header"><h2>Access control (RBAC)</h2>
-            <button class="btn btn-sm" id="ent-rbac-editbtn" onclick="entToggleRbacEdit(true)">Edit policy</button>
+        <div class="card-header"><h2>Roles &amp; bindings
+          <button class="info" aria-label="About roles and bindings"
+            data-title="Roles &amp; bindings"
+            data-info="A role grants tools/sources/services (use * for all; readOnly blocks mutating tools). A binding maps an API-key principal to one or more roles. Default-deny: a principal with no binding is denied."
+            onclick="infoPop(this)">?</button>
+        </h2></div>
+        <div id="ent-rbac"><div class="empty">Loading…</div></div>
+        <div class="form-hint" style="margin-top:14px">Use <b>Edit policy</b> above — no command line needed. The block below is the optional API equivalent for automation/CI.</div>
+        <div class="codeblock collapsed">
+          <div class="codeblock-hd" onclick="toggleCode(this)">
+            <span class="cb-chev">▾</span><span class="cb-title">API · add a role &amp; binding via curl</span>
+            <button class="codeblock-cp" onclick="event.stopPropagation();copyCode(this)">Copy</button>
           </div>
-          <div id="ent-rbac"><div class="empty">Loading…</div></div>
-          <div id="ent-rbac-editor" class="hidden" style="margin-top:12px">
-            <div class="form-hint" style="margin-bottom:6px">Editing the policy requires an admin API key (a principal the current policy grants <code>enterprise:admin</code>).</div>
-            <input type="password" id="ent-admin-token" placeholder="Admin API key (Bearer)" style="width:100%;margin-bottom:8px">
-            <textarea id="ent-rbac-json" rows="14" spellcheck="false" style="width:100%;font-family:'JetBrains Mono',monospace;font-size:12px"></textarea>
-            <div id="ent-rbac-msg" style="margin:8px 0;font-size:12px"></div>
-            <div style="display:flex;gap:8px;justify-content:flex-end">
-              <button class="btn btn-ghost btn-sm" onclick="entToggleRbacEdit(false)">Cancel</button>
-              <button class="btn btn-primary btn-sm" onclick="entSaveRbac()">Save policy</button>
-            </div>
+          <pre><span class="tok-cmt"># grant the "viewer" role read-only metrics, bind a principal to it.</span>
+<span class="tok-cmt"># needs an admin API key (a principal the current policy grants admin).</span>
+curl -X PUT http://localhost:3000/api/enterprise/policy \
+  -H "Authorization: Bearer &lt;ADMIN_API_KEY&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "roles": {
+      "viewer": { "tools": ["query_metrics","get_service_health"], "readOnly": true }
+    },
+    "bindings": { "alice": ["viewer"] }
+  }'</pre>
+        </div>
+        <div id="ent-rbac-editor" class="hidden" style="margin-top:12px">
+          <div class="ed-bar">
+            <span class="view-toggle" id="rbac-views">
+              <button data-v="form" class="active" onclick="rbacView('form')">Form</button>
+              <button data-v="json" onclick="rbacView('json')">JSON</button>
+              <button data-v="yaml" onclick="rbacView('yaml')">YAML</button>
+            </span>
+            <input type="password" id="ent-admin-token" class="ed-token" placeholder="Admin API key (Bearer)">
+          </div>
+          <div class="form-hint" style="margin-bottom:8px">Edit roles &amp; bindings below — no JSON required. JSON / YAML are optional alternative views. Saving needs an admin API key.</div>
+          <div id="rbac-form"></div>
+          <textarea id="ent-rbac-json" class="ed-code hidden" rows="16" spellcheck="false"></textarea>
+          <div id="ent-rbac-msg" style="margin:8px 0;font-size:12px"></div>
+          <div style="display:flex;gap:8px;justify-content:flex-end">
+            <button class="btn btn-ghost btn-sm" onclick="closeDrawer()">Cancel</button>
+            <button class="btn btn-primary btn-sm" onclick="entSaveRbac()">Save policy</button>
           </div>
         </div>
-        <div class="card">
-          <div class="card-header"><h2>Catalog &amp; products</h2>
-            <button class="btn btn-sm" id="ent-cat-editbtn" onclick="entToggleCatEdit(true)">Edit catalog</button>
-          </div>
-          <div id="ent-catalog"><div class="empty">Loading…</div></div>
-          <div id="ent-cat-editor" class="hidden" style="margin-top:12px">
-            <div class="form-hint" style="margin-bottom:6px">Editing the catalog requires an admin API key (a principal the current policy grants <code>enterprise:admin</code>).</div>
-            <input type="password" id="ent-cat-token" placeholder="Admin API key (Bearer)" style="width:100%;margin-bottom:8px">
-            <textarea id="ent-cat-json" rows="14" spellcheck="false" style="width:100%;font-family:'JetBrains Mono',monospace;font-size:12px"></textarea>
-            <div id="ent-cat-msg" style="margin:8px 0;font-size:12px"></div>
-            <div style="display:flex;gap:8px;justify-content:flex-end">
-              <button class="btn btn-ghost btn-sm" onclick="entToggleCatEdit(false)">Cancel</button>
-              <button class="btn btn-primary btn-sm" onclick="entSaveCat()">Save catalog</button>
-            </div>
-          </div>
+      </div>
+    </div>
+
+    <!-- ===== Catalog: Context Products ===== -->
+    <div class="page" id="page-products">
+      <div class="page-head">
+        <div class="ph-left">
+          <div class="breadcrumb">Console / Catalog / <b>Products</b></div>
+          <h1>Context Products
+            <button class="info" aria-label="What is a context product"
+              data-title="Context products"
+              data-info="A context product is a named, governed bundle of observability context an agent may consume — a curated set of sources, services and tools. It is the unit you grant to a principal. The catalog is the collection of all products plus the grants that map principals to them; it composes with access control (a request must satisfy both RBAC and the catalog)."
+              onclick="infoPop(this)">?</button>
+          </h1>
+        </div>
+        <div class="ph-actions"><button class="btn btn-primary btn-sm" onclick="entEditNew('cat')">+ New product</button><button class="btn btn-sm" id="ent-cat-editbtn" onclick="entEditOpen('cat')">Edit catalog</button></div>
+      </div>
+      <div class="card" style="background:var(--accent-soft);border-color:transparent">
+        <div style="font-size:var(--fs-sm);color:var(--text);line-height:1.6">
+          <b>The catalog</b> publishes <b>context products</b> — reusable bundles of sources, services and tools —
+          and the <b>grants</b> that decide which principals may consume each product. Browse below as cards or a
+          table; an admin can create or change products via the editor or the API example.
         </div>
       </div>
       <div class="card">
-        <div class="card-header"><h2>Audit log</h2><span id="ent-chain"></span></div>
+        <div class="card-header"><h2>Products</h2></div>
+        <div id="ent-catalog"><div class="empty">Loading…</div></div>
+        <div id="ent-cat-editor" class="hidden" style="margin-top:12px">
+          <div class="ed-bar">
+            <span class="view-toggle" id="cat-views">
+              <button data-v="form" class="active" onclick="catView('form')">Form</button>
+              <button data-v="json" onclick="catView('json')">JSON</button>
+              <button data-v="yaml" onclick="catView('yaml')">YAML</button>
+            </span>
+            <input type="password" id="ent-cat-token" class="ed-token" placeholder="Admin API key (Bearer)">
+          </div>
+          <div class="form-hint" style="margin-bottom:8px">Define products &amp; grants below — no JSON required. JSON / YAML are optional alternative views. Saving needs an admin API key.</div>
+          <div id="cat-form"></div>
+          <textarea id="ent-cat-json" class="ed-code hidden" rows="16" spellcheck="false"></textarea>
+          <div id="ent-cat-msg" style="margin:8px 0;font-size:12px"></div>
+          <div style="display:flex;gap:8px;justify-content:flex-end">
+            <button class="btn btn-ghost btn-sm" onclick="closeDrawer()">Cancel</button>
+            <button class="btn btn-primary btn-sm" onclick="entSaveCat()">Save catalog</button>
+          </div>
+        </div>
+        <div class="form-hint" style="margin-top:14px">Use <b>Edit catalog</b> above — no command line needed. The block below is the optional API equivalent for automation/CI.</div>
+        <div class="codeblock collapsed">
+          <div class="codeblock-hd" onclick="toggleCode(this)">
+            <span class="cb-chev">▾</span><span class="cb-title">API · create a context product via curl</span>
+            <button class="codeblock-cp" onclick="event.stopPropagation();copyCode(this)">Copy</button>
+          </div>
+          <pre><span class="tok-cmt"># publish a "payments-eu" product and grant it to a principal.</span>
+<span class="tok-cmt"># needs an admin API key (a principal the current policy grants admin).</span>
+curl -X PUT http://localhost:3000/api/enterprise/catalog \
+  -H "Authorization: Bearer &lt;ADMIN_API_KEY&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "products": {
+      "payments-eu": {
+        "description": "EU payment-service metrics + logs",
+        "sources": ["prometheus","loki"],
+        "services": ["payment-service"]
+      }
+    },
+    "grants": { "alice": ["payments-eu"] }
+  }'</pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== Governance: Audit Log ===== -->
+    <div class="page" id="page-audit">
+      <div class="page-head">
+        <div class="ph-left">
+          <div class="breadcrumb">Console / Governance / <b>Audit Log</b></div>
+          <h1>Audit Log</h1>
+        </div>
+        <div class="ph-actions"><span id="ent-chain"></span></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h2>Recent decisions
+          <button class="info" aria-label="About the audit log"
+            data-title="Audit log"
+            data-info="Every access decision is appended to a hash-chained, tamper-evident log. The chain badge shows whether re-verification of the whole log passes — a break means an entry was modified, reordered or removed."
+            onclick="infoPop(this)">?</button>
+        </h2></div>
         <div id="ent-audit"><div class="empty">Loading…</div></div>
+      </div>
+    </div>
+
+    <!-- ===== Governance: Entitlement ===== -->
+    <div class="page" id="page-entitlement">
+      <div class="page-head">
+        <div class="ph-left">
+          <div class="breadcrumb">Console / Governance / <b>Entitlement</b></div>
+          <h1>Entitlement</h1>
+        </div>
+        <div class="ph-actions"><span class="live-indicator" id="ent-live">Read-only</span></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h2>Access-control gate
+          <button class="info" aria-label="About the gate"
+            data-title="Entitlement gate"
+            data-info="The gate has three modes — off (no controls), active (valid signed entitlement → enforcing), fail-closed (a control is configured but the entitlement is missing/invalid → everything denied). Verification is offline (Ed25519)."
+            onclick="infoPop(this)">?</button>
+        </h2><span id="ent-mode"></span></div>
+        <div id="ent-status"><div class="empty">Loading…</div></div>
+        <div class="codeblock collapsed">
+          <div class="codeblock-hd" onclick="toggleCode(this)">
+            <span class="cb-chev">▾</span><span class="cb-title">CLI · mint a token &nbsp;·&nbsp; API · check the gate</span>
+            <button class="codeblock-cp" onclick="event.stopPropagation();copyCode(this)">Copy</button>
+          </div>
+          <pre><span class="tok-cmt"># issuer side — sign an entitlement token</span>
+node enterprise/entitlement/mint.mjs \
+  --key issuer-ed25519.pem \
+  --sub org-acme --features access-control,audit --ttl 365d
+
+<span class="tok-cmt"># deployment — current gate mode</span>
+curl -s http://localhost:3000/api/enterprise/status</pre>
+        </div>
       </div>
     </div>
   </div>
@@ -960,6 +1492,12 @@
 
   <div class="toast" id="toast-el"></div>
 
+  <div class="drawer-ov" id="drawer-ov" onclick="closeDrawer()"></div>
+  <aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+    <div class="drawer-hd"><h3 id="drawer-title">Detail</h3><button class="dw-x" aria-label="Close" onclick="closeDrawer()">&times;</button></div>
+    <div class="drawer-bd" id="drawer-body"></div>
+  </aside>
+
 <script>
 let sourcesData=[], servicesData=[], supportedTypes=[], settings={}, healthThresholds={}, defaults={};
 let deleteTarget=null, deleteType=null;
@@ -973,11 +1511,14 @@ function showPage(name) {
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('page-'+name).classList.add('active');
-  document.querySelector(`.nav-btn[data-page="${name}"]`).classList.add('active');
+  const nb=document.querySelector(`.nav-btn[data-page="${name}"]`); if(nb) nb.classList.add('active');
+  const it=document.querySelector(`.rail-item[data-nav="${name}"]`);
+  document.querySelectorAll('.rail-item').forEach(r=>{ if(r!==it) r.classList.remove('open'); });
+  if(it) it.classList.add('open');
   if(name==='settings') loadSettingsData();
   if(name==='health') loadHealthData();
   if(name==='connectors') loadConnectors();
-  if(name==='enterprise') loadEnterprise();
+  if(name==='access'||name==='products'||name==='audit'||name==='entitlement') loadEnterprise();
 }
 
 // --- Theme (light / dark) ---
@@ -994,6 +1535,252 @@ function toggleTheme(){
   syncThemeToggle();
 }
 
+// --- Navigation groups (collapsible, persisted) ---
+function navState(){ try{ return JSON.parse(localStorage.getItem('omcp-nav')||'{}'); }catch(e){ return {}; } }
+function toggleNavGroup(id){
+  const g=document.querySelector('.rail-grp[data-grp="'+id+'"]'); if(!g) return;
+  const collapsed=g.classList.toggle('collapsed');
+  const s=navState(); s[id]=collapsed;
+  try{ localStorage.setItem('omcp-nav',JSON.stringify(s)); }catch(e){}
+}
+function initNav(){
+  const s=navState();
+  document.querySelectorAll('.rail-grp').forEach(g=>{
+    if(s[g.getAttribute('data-grp')]===true) g.classList.add('collapsed');
+  });
+}
+// --- Nav items with sub-points (Connectors, Settings) ---
+function navToggle(name){
+  const it=document.querySelector('.rail-item[data-nav="'+name+'"]');
+  if(it) it.classList.toggle('open');
+}
+function setActiveSub(name, sub){
+  const it=document.querySelector('.rail-item[data-nav="'+name+'"]'); if(!it) return;
+  it.querySelectorAll('.nav-sub').forEach(b=>b.classList.toggle('active', b.getAttribute('data-sub')===sub));
+}
+function goTab(name, sub){
+  showPage(name);
+  const el=document.getElementById('tab-'+sub); if(el){
+    const scope=el.closest('.card')||document;
+    scope.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
+    scope.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+    el.classList.add('active');
+    scope.querySelectorAll('.tab-btn').forEach(b=>{ if((b.getAttribute('onclick')||'').indexOf("showTab('"+sub+"')")>=0) b.classList.add('active'); });
+    if(sub==='metrics') populateMetricsSourceSelect();
+  }
+  setActiveSub(name, sub);
+}
+
+// --- Header notification feed (collapsible, acknowledgeable) ---
+function notifAck(){ try{ return JSON.parse(localStorage.getItem('omcp-ack')||'{}'); }catch(e){ return {}; } }
+function notifAckSave(o){ try{ localStorage.setItem('omcp-ack',JSON.stringify(o)); }catch(e){} }
+function notifSeen(){ try{ return JSON.parse(localStorage.getItem('omcp-seen')||'{}'); }catch(e){ return {}; } }
+function notifSeenSave(o){ try{ localStorage.setItem('omcp-seen',JSON.stringify(o)); }catch(e){} }
+let notifItems=[];
+function relTime(iso){
+  const d=Date.now()-new Date(iso).getTime(); const m=Math.floor(d/60000);
+  if(m<1) return 'just now'; if(m<60) return m+'m ago';
+  const h=Math.floor(m/60); if(h<24) return h+'h ago'; return Math.floor(h/24)+'d ago';
+}
+async function buildNotifications(){
+  const out=[];
+  // Sources unreachable
+  for(const s of (sourcesData||[])) if(s.enabled && s.status!=='up')
+    out.push({id:'src:'+s.name, sev:'bad', text:`Source “${s.name}” is unreachable.`});
+  // Service health
+  try{
+    const h=await(await fetch('/api/health')).json();
+    for(const v of Object.values(h||{})) if(v && v.status!=='healthy')
+      out.push({id:'svc:'+v.service+':'+v.status, sev:v.status==='critical'?'bad':'warn', text:`Service “${v.service}” is ${v.status} (health score ${v.score}).`});
+  }catch(e){}
+  // Gate / entitlement
+  try{
+    const g=await(await fetch('/api/enterprise/status')).json();
+    if(g.mode==='fail-closed') out.push({id:'gate:fc', sev:'bad', text:`Access-control gate is fail-closed${g.reason?': '+g.reason:''}.`});
+  }catch(e){}
+  // Audit chain integrity
+  try{
+    const a=await(await fetch('/api/enterprise/audit?limit=1')).json();
+    if(a.configured && a.chain && a.chain.ok===false) out.push({id:'audit:broken', sev:'bad', text:'Audit log chain integrity check failed.'});
+  }catch(e){}
+  // Stamp first-seen times; prune stale seen entries.
+  const seen=notifSeen(), now=new Date().toISOString(), live={};
+  for(const n of out){ if(!seen[n.id]) seen[n.id]=now; n.ts=seen[n.id]; live[n.id]=seen[n.id]; }
+  notifSeenSave(live);
+  notifItems=out.sort((a,b)=> (a.ts<b.ts?1:-1));
+  renderNotif();
+}
+function renderNotif(){
+  const ack=notifAck();
+  const active=notifItems.filter(n=>!ack[n.id]);
+  const cnt=document.getElementById('notif-count'); const list=document.getElementById('notif-list');
+  if(cnt){ if(active.length){ cnt.hidden=false; cnt.textContent=String(active.length); } else cnt.hidden=true; }
+  if(!list) return;
+  list.innerHTML = active.length===0
+    ? '<div class="notif-empty">You’re all caught up — no notifications.</div>'
+    : active.map(n=>`<div class="notif-item"><span class="notif-sev ${n.sev}"></span><div class="notif-body"><div class="notif-text">${escHtml(n.text)}</div><div class="notif-time">${relTime(n.ts)}</div></div><button class="notif-ack" title="Mark read" onclick="notifDo('${escHtml(n.id)}')">✓</button></div>`).join('');
+}
+function notifDo(id){ const a=notifAck(); a[id]=true; notifAckSave(a); renderNotif(); }
+function notifAckAll(){ const a=notifAck(); notifItems.forEach(n=>a[n.id]=true); notifAckSave(a); renderNotif(); }
+function toggleNotif(){
+  const p=document.getElementById('notif-panel'); if(!p) return;
+  p.hidden=!p.hidden;
+  if(!p.hidden){ document.addEventListener('click', notifOutside, true); }
+  else document.removeEventListener('click', notifOutside, true);
+}
+function notifOutside(e){
+  const w=document.querySelector('.notif-wrap'); if(w && !w.contains(e.target)){
+    const p=document.getElementById('notif-panel'); if(p) p.hidden=true;
+    document.removeEventListener('click', notifOutside, true);
+  }
+}
+
+// --- Inline "?" info popovers + copyable CLI/API blocks ---
+function infoPop(btn){
+  let p=document.getElementById('info-pop');
+  if(!p){ p=document.createElement('div'); p.id='info-pop'; p.className='popover'; p.hidden=true; document.body.appendChild(p); }
+  if(p._owner===btn && !p.hidden){ p.hidden=true; p._owner=null; return; }
+  p.innerHTML=(btn.dataset.title?`<h4>${escHtml(btn.dataset.title)}</h4>`:'')+`<div>${escHtml(btn.dataset.info||'')}</div>`;
+  p.hidden=false; p._owner=btn;
+  const r=btn.getBoundingClientRect();
+  p.style.left=Math.max(8,Math.min(window.innerWidth-308, r.left))+'px';
+  p.style.top=(r.bottom+8)+'px';
+  setTimeout(()=>document.addEventListener('click', infoOutside, true),0);
+}
+function infoOutside(e){
+  const p=document.getElementById('info-pop');
+  if(p && !p.hidden && !p.contains(e.target) && !(e.target.classList&&e.target.classList.contains('info'))){
+    p.hidden=true; p._owner=null; document.removeEventListener('click', infoOutside, true);
+  }
+}
+function copyCode(btn){
+  const pre=btn.closest('.codeblock').querySelector('pre');
+  navigator.clipboard.writeText(pre.innerText).then(()=>toast('Copied to clipboard'));
+}
+function toggleCode(hd){ hd.closest('.codeblock').classList.toggle('collapsed'); }
+
+// --- Detail slide-over (clickable elements → inspector) ---
+function openDrawer(title, html){
+  _edRestore();
+  document.getElementById('drawer-title').textContent=title;
+  document.getElementById('drawer-body').innerHTML=html;
+  document.getElementById('drawer').classList.add('open');
+  document.getElementById('drawer-ov').classList.add('open');
+  document.addEventListener('keydown', drawerEsc);
+}
+function closeDrawer(){
+  document.getElementById('drawer').classList.remove('open');
+  document.getElementById('drawer-ov').classList.remove('open');
+  document.removeEventListener('keydown', drawerEsc);
+  _edRestore();
+}
+function drawerEsc(e){ if(e.key==='Escape') closeDrawer(); }
+// --- Edit panels live in the slide-over (clean browse view, focused edit) ---
+let _edNode=null, _edHost=null;
+function entEditNew(kind){ entEditOpen(kind, true); }
+function entEditOpen(kind, seedNew){
+  const id = kind==='cat' ? 'ent-cat-editor' : 'ent-rbac-editor';
+  const node=document.getElementById(id); if(!node) return;
+  const after = seedNew ? (kind==='cat'?catAddProduct:rbacAddRole) : null;
+  if(kind==='cat') entToggleCatEdit(true, after); else entToggleRbacEdit(true, after);
+  _edNode=node; _edHost=node.parentNode;
+  const body=document.getElementById('drawer-body');
+  body.innerHTML=''; body.appendChild(node); node.classList.remove('hidden');
+  document.getElementById('drawer-title').textContent = kind==='cat' ? 'Edit catalog' : 'Edit access policy';
+  const dw=document.getElementById('drawer');
+  dw.classList.add('drawer-wide','open');
+  document.getElementById('drawer-ov').classList.add('open');
+  document.addEventListener('keydown', drawerEsc);
+}
+function _edRestore(){
+  if(_edNode&&_edHost){ _edNode.classList.add('hidden'); _edHost.appendChild(_edNode); _edNode=null; _edHost=null; }
+  document.getElementById('drawer').classList.remove('drawer-wide');
+  ['ent-rbac-editbtn','ent-cat-editbtn'].forEach(i=>{ const b=document.getElementById(i); if(b) b.classList.remove('hidden'); });
+}
+function dwChips(a){ return (a&&a.length?a:['*']).map(x=>`<span class="chip">${escHtml(x)}</span>`).join(''); }
+function dwSec(lbl, inner){ return `<div class="dw-sec"><div class="dw-lbl">${escHtml(lbl)}</div><div>${inner}</div></div>`; }
+
+// --- Data Products view (cards / table toggle + search) ---
+let dpData=null;
+let healthMap={};
+let auditMap={};
+function audDetail(seq){
+  const e=auditMap[seq]; if(!e){ openDrawer('Decision #'+seq,'<div class="empty">No detail.</div>'); return; }
+  const ev=e.event||{}, req=ev.request||{};
+  const tone=ev.allow?'ok':'bad';
+  const reqRows=Object.keys(req).map(k=>`<tr><td>${escHtml(k)}</td><td class="mono">${escHtml(typeof req[k]==='object'?JSON.stringify(req[k]):String(req[k]))}</td></tr>`).join('')||'<tr><td colspan=2 style="color:var(--text-dim)">no request fields</td></tr>';
+  const html=
+    dwSec('Decision', `<span class="stchip ${tone}">${ev.allow?'allow':'deny'}</span> <span style="color:var(--text-muted);font-size:var(--fs-sm)">sequence #${escHtml(String(e.seq))}</span>`)+
+    dwSec('Principal & reason', `<table class="dtable"><tbody>
+      <tr><td>Principal</td><td class="mono">${escHtml(ev.principalId||'—')}</td></tr>
+      <tr><td>Timestamp</td><td class="mono">${escHtml(ev.ts||e.ts||'—')}</td></tr>
+      <tr><td>Reason</td><td>${escHtml(ev.reason||'—')}</td></tr></tbody></table>`)+
+    dwSec('Request', `<table class="dtable"><tbody>${reqRows}</tbody></table>`)+
+    dwSec('Chain integrity', `<table class="dtable"><tbody>
+      <tr><td>Entry hash</td><td class="mono" style="word-break:break-all">${escHtml(e.hash||'—')}</td></tr>
+      <tr><td>Prev hash</td><td class="mono" style="word-break:break-all">${escHtml(e.prevHash||'—')}</td></tr></tbody></table>`);
+  openDrawer('Decision #'+seq, html);
+}
+function dpView(){ try{ return localStorage.getItem('omcp-dp-view')==='table'?'table':'cards'; }catch(e){ return 'cards'; } }
+function dpSetView(v){ try{ localStorage.setItem('omcp-dp-view',v); }catch(e){} dpRender(); }
+function dpOnSearch(){ dpRender(); }
+function dpRender(){
+  const box=document.getElementById('ent-catalog'); if(!box||!dpData) return;
+  const products=dpData.products||{}, grants=dpData.grants||{};
+  // reverse map: product -> [principals]
+  const grantedTo={};
+  for(const [pr,list] of Object.entries(grants)) (list||[]).forEach(pn=>{ (grantedTo[pn]=grantedTo[pn]||[]).push(pr); });
+  const q=(document.getElementById('dp-q')?document.getElementById('dp-q').value:'').trim().toLowerCase();
+  let entries=Object.entries(products);
+  if(q) entries=entries.filter(([n,p])=>(n+' '+((p&&p.description)||'')).toLowerCase().includes(q));
+  const view=dpView(), total=Object.keys(products).length, shown=entries.length;
+  const chips=a=>(a&&a.length?a:['*']).map(x=>`<span class="chip">${escHtml(x)}</span>`).join('');
+  const bar=`<div class="dp-bar">
+      <span class="dp-count"><b>${shown}</b>${shown!==total?` / ${total}`:''} product${total===1?'':'s'}</span>
+      <span class="dp-search"><input id="dp-q" type="search" placeholder="Search products…" value="${escHtml(q)}" oninput="dpOnSearch()"></span>
+      <span class="dp-spacer"></span>
+      <span class="view-toggle">
+        <button class="${view==='cards'?'active':''}" title="Cards" onclick="dpSetView('cards')">▦ Cards</button>
+        <button class="${view==='table'?'active':''}" title="Table" onclick="dpSetView('table')">☰ Table</button>
+      </span>
+    </div>`;
+  let body;
+  if(shown===0){ body='<div class="empty">No products match the filter.</div>'; }
+  else if(view==='table'){
+    body=`<table class="dtable"><thead><tr><th>Product</th><th>Description</th><th>Sources</th><th>Services</th><th>Tools</th><th>Granted to</th></tr></thead><tbody>`+
+      entries.map(([n,p])=>{ const g=grantedTo[n]||[]; return `<tr data-dp="${escHtml(n)}"><td class="mono">${escHtml(n)}</td><td>${escHtml((p&&p.description)||'—')}</td><td>${chips(p&&p.sources)}</td><td>${chips(p&&p.services)}</td><td>${chips(p&&p.tools)}</td><td>${g.length?`<span title="${escHtml(g.join(', '))}">${g.length} principal${g.length===1?'':'s'}</span>`:'—'}</td></tr>`; }).join('')+
+      `</tbody></table>`;
+  } else {
+    body='<div class="dp-grid">'+entries.map(([n,p])=>{ const g=grantedTo[n]||[];
+      return `<div class="dp-card" data-dp="${escHtml(n)}"><h3>${escHtml(n)}</h3>
+        <div class="dp-desc">${escHtml((p&&p.description)||'No description provided.')}</div>
+        <div class="dp-attr"><span class="lbl">Sources</span>${chips(p&&p.sources)}</div>
+        <div class="dp-attr"><span class="lbl">Services</span>${chips(p&&p.services)}</div>
+        <div class="dp-attr"><span class="lbl">Tools</span>${chips(p&&p.tools)}</div>
+        <div class="dp-foot"><span class="dp-grants">${g.length?`Granted to ${g.length} principal${g.length===1?'':'s'}`:'No grants'}</span></div>
+      </div>`; }).join('')+'</div>';
+  }
+  box.innerHTML=bar+body;
+  box.querySelectorAll('[data-dp]').forEach(el=>el.addEventListener('click',()=>dpDetail(el.getAttribute('data-dp'))));
+  const inp=document.getElementById('dp-q'); if(inp&&q){ inp.focus(); inp.setSelectionRange(q.length,q.length); }
+}
+function dpDetail(name){
+  if(!dpData) return;
+  const p=(dpData.products||{})[name]||{};
+  const grantedTo=[]; for(const [pr,list] of Object.entries(dpData.grants||{})) if((list||[]).includes(name)) grantedTo.push(pr);
+  const ex=`curl -X PUT http://localhost:3000/api/enterprise/catalog \\
+  -H "Authorization: Bearer &lt;ADMIN_API_KEY&gt;" -H "Content-Type: application/json" \\
+  -d '{"grants":{"&lt;principal&gt;":["${escHtml(name)}"]}}'`;
+  const html=
+    dwSec('Description', `<div style="font-size:var(--fs-sm);color:var(--text-muted)">${escHtml(p.description||'No description provided.')}</div>`)+
+    dwSec('Sources', dwChips(p.sources))+
+    dwSec('Services', dwChips(p.services))+
+    dwSec('Tools', dwChips(p.tools))+
+    dwSec('Granted to ('+grantedTo.length+')', grantedTo.length?grantedTo.map(x=>`<span class="chip">${escHtml(x)}</span>`).join(''):'<span style="color:var(--text-dim);font-size:var(--fs-sm)">No principals granted this product.</span>')+
+    `<div class="codeblock collapsed" style="margin-top:14px"><div class="codeblock-hd" onclick="toggleCode(this)"><span class="cb-chev">▾</span><span class="cb-title">API · grant this product</span><button class="codeblock-cp" onclick="event.stopPropagation();copyCode(this)">Copy</button></div><pre>${ex}</pre></div>`;
+  openDrawer(name, html);
+}
+
 // --- Enterprise (read-only governance console) ---
 const GATE_CLASS={off:'gate-off',active:'gate-active','fail-closed':'gate-failclosed'};
 async function loadGatePill(){
@@ -1002,7 +1789,7 @@ async function loadGatePill(){
     const s=await(await fetch('/api/enterprise/status')).json();
     el.className='gate-pill '+(GATE_CLASS[s.mode]||'gate-unknown');
     el.textContent='Gate: '+(s.mode||'unknown');
-    el.title=s.reason?('Enterprise gate — '+s.reason):'Enterprise access-control gate';
+    el.title=s.reason?('Access-control gate — '+s.reason):'Access-control gate';
   }catch{ el.className='gate-pill gate-unknown'; el.textContent='Gate: n/a'; }
 }
 function entKV(o){return '<dl class="kv">'+Object.entries(o).map(([k,v])=>`<dt>${escHtml(k)}</dt><dd class="mono">${escHtml(v)}</dd>`).join('')+'</dl>';}
@@ -1039,21 +1826,14 @@ async function loadEnterprise(){
         <table class="dtable"><thead><tr><th>Principal</th><th>Roles</th></tr></thead><tbody>${bt||'<tr><td colspan=2>—</td></tr>'}</tbody></table>`;
     }
   }catch{ document.getElementById('ent-rbac').innerHTML='<div class="empty">Policy unavailable.</div>'; }
-  // Catalog (read-only)
+  // Data Products — rich, toggleable (cards / table) + search
   try{
     const c=await(await fetch('/api/enterprise/catalog')).json();
     const box=document.getElementById('ent-catalog');
-    if(!c.configured){ box.innerHTML='<div class="empty">No product catalog configured.</div>'; }
-    else if(c.error){ box.innerHTML=`<div class="empty">Catalog unreadable: ${escHtml(c.error)}</div>`; }
-    else {
-      const prod=c.data.products||{}, grants=c.data.grants||{};
-      const pt=Object.entries(prod).map(([n,p])=>`<tr><td class="mono">${escHtml(n)}</td><td>${(p.sources||[]).map(x=>`<span class="chip">${escHtml(x)}</span>`).join('')||'—'}</td><td>${(p.services||['*']).map(x=>`<span class="chip">${escHtml(x)}</span>`).join('')}</td></tr>`).join('');
-      const gt=Object.entries(grants).map(([k,v])=>`<tr><td class="mono">${escHtml(k)}</td><td>${(v||[]).map(x=>`<span class="chip">${escHtml(x)}</span>`).join('')}</td></tr>`).join('');
-      box.innerHTML=`<table class="dtable"><thead><tr><th>Product</th><th>Sources</th><th>Services</th></tr></thead><tbody>${pt||'<tr><td colspan=3>—</td></tr>'}</tbody></table>
-        <div style="margin:12px 0 6px;color:var(--text-dim);font-size:10px;letter-spacing:.08em;text-transform:uppercase">Grants</div>
-        <table class="dtable"><thead><tr><th>Principal</th><th>Products</th></tr></thead><tbody>${gt||'<tr><td colspan=2>—</td></tr>'}</tbody></table>`;
-    }
-  }catch{ document.getElementById('ent-catalog').innerHTML='<div class="empty">Catalog unavailable.</div>'; }
+    if(!c.configured){ box.innerHTML='<div class="empty">No product catalog configured.</div>'; dpData=null; }
+    else if(c.error){ box.innerHTML=`<div class="empty">Catalog unreadable: ${escHtml(c.error)}</div>`; dpData=null; }
+    else { dpData=c.data||{products:{},grants:{}}; dpRender(); }
+  }catch{ const b=document.getElementById('ent-catalog'); if(b) b.innerHTML='<div class="empty">Catalog unavailable.</div>'; }
   // Audit tail + chain integrity
   try{
     const a=await(await fetch('/api/enterprise/audit?limit=25')).json();
@@ -1063,62 +1843,260 @@ async function loadEnterprise(){
     else {
       const ok=a.chain&&a.chain.ok===true;
       chip.innerHTML=`<span class="gate-pill ${ok?'gate-active':'gate-failclosed'}">chain ${ok?'intact':'broken'}</span>`;
+      auditMap={};
       const rows=(a.entries||[]).slice().reverse().map(e=>{
-        const ev=e.event||{};
-        return `<tr><td class="mono">${e.seq}</td><td class="mono">${escHtml(ev.principalId)}</td><td>${escHtml((ev.request||{}).tool)}</td><td>${ev.allow?'<span class="pill-yes">allow</span>':'<span class="pill-no">deny</span>'}</td><td style="color:var(--text-muted)">${escHtml(ev.reason||'')}</td></tr>`;
+        const ev=e.event||{}; auditMap[e.seq]=e;
+        return `<tr data-aud="${escHtml(String(e.seq))}"><td class="mono">${e.seq}</td><td class="mono">${escHtml(ev.principalId)}</td><td>${escHtml((ev.request||{}).tool)}</td><td>${ev.allow?'<span class="pill-yes">allow</span>':'<span class="pill-no">deny</span>'}</td><td style="color:var(--text-muted)">${escHtml(ev.reason||'')}</td></tr>`;
       }).join('');
-      box.innerHTML=`<div style="color:var(--text-muted);font-size:12px;margin-bottom:8px">${a.total} total decisions · showing latest ${(a.entries||[]).length}</div>
+      box.innerHTML=`<div style="color:var(--text-muted);font-size:12px;margin-bottom:8px">${a.total} total decisions · showing latest ${(a.entries||[]).length} · click a row for detail</div>
         <table class="dtable"><thead><tr><th>#</th><th>Principal</th><th>Tool</th><th>Decision</th><th>Reason</th></tr></thead><tbody>${rows||'<tr><td colspan=5>no decisions yet</td></tr>'}</tbody></table>`;
+      box.querySelectorAll('[data-aud]').forEach(el=>el.addEventListener('click',()=>audDetail(el.getAttribute('data-aud'))));
     }
   }catch{ document.getElementById('ent-audit').innerHTML='<div class="empty">Audit unavailable.</div>'; }
 }
-function entToggleRbacEdit(on){
+// ---- Minimal YAML for the flat policy/catalog schema (maps, string
+// arrays, booleans, strings). Optional alternative view to the form. ----
+function yQuote(s){
+  if(s==='') return '""';
+  if(/^[A-Za-z0-9_.\-\/*]+$/.test(s) && !/^(true|false|null|~)$/i.test(s) && !/^-?\d/.test(s)) return s;
+  return '"'+String(s).replace(/\\/g,'\\\\').replace(/"/g,'\\"')+'"';
+}
+function yamlDump(v, ind){
+  ind=ind||0; const pad=' '.repeat(ind); let out='';
+  if(Array.isArray(v)){
+    if(v.length===0) return ' []\n';
+    out='\n'; for(const it of v) out+=pad+'- '+yQuote(String(it))+'\n'; return out;
+  }
+  if(v && typeof v==='object'){
+    const ks=Object.keys(v); if(ks.length===0) return ' {}\n';
+    out=(ind?'\n':''); for(const k of ks){
+      const val=v[k];
+      if(val && typeof val==='object'){ out+=pad+yQuote(k)+':'+yamlDump(val,ind+2); }
+      else out+=pad+yQuote(k)+': '+(typeof val==='boolean'?String(val):yQuote(String(val)))+'\n';
+    }
+    return out;
+  }
+  return ' '+(typeof v==='boolean'?String(v):yQuote(String(v)))+'\n';
+}
+function yUnq(s){ s=s.trim();
+  if(s==='[]') return []; if(s==='{}') return {};
+  if(s==='true') return true; if(s==='false') return false;
+  if(s.length>1 && s[0]==='"' && s[s.length-1]==='"') return s.slice(1,-1).replace(/\\"/g,'"').replace(/\\\\/g,'\\');
+  return s;
+}
+function yamlParse(text){
+  const raw=text.replace(/\t/g,'  ').split('\n')
+    .filter(l=>l.trim()!=='' && !/^\s*#/.test(l))
+    .map(l=>({ind:l.match(/^ */)[0].length, t:l.trim()}));
+  let i=0;
+  function block(minInd){
+    if(i>=raw.length || raw[i].ind<minInd) return null;
+    const ind=raw[i].ind;
+    if(raw[i].t.startsWith('- ')){
+      const arr=[]; while(i<raw.length && raw[i].ind===ind && raw[i].t.startsWith('- ')){ arr.push(yUnq(raw[i].t.slice(2))); i++; } return arr;
+    }
+    const obj={};
+    while(i<raw.length && raw[i].ind===ind && !raw[i].t.startsWith('- ')){
+      const line=raw[i].t, c=line.indexOf(':');
+      if(c<0) throw new Error('invalid YAML line: '+line);
+      const key=yUnq(line.slice(0,c)), rest=line.slice(c+1).trim();
+      i++;
+      if(rest!=='' ){ obj[key]=yUnq(rest); }
+      else { const child=block(ind+1); obj[key]= child===null ? {} : child; }
+    }
+    return obj;
+  }
+  const r=block(0); if(i<raw.length) throw new Error('unexpected indentation near: '+raw[i].t);
+  return r||{};
+}
+
+// ---- RBAC editor: Form (primary) + JSON / YAML alternative views ----
+let rbacModel={roles:{},bindings:{},defaultRoles:[]};
+let rbacCur='form';
+function entToggleRbacEdit(on, after){
   const ed=document.getElementById('ent-rbac-editor'), btn=document.getElementById('ent-rbac-editbtn');
   document.getElementById('ent-rbac-msg').textContent='';
   if(on){
     fetch('/api/enterprise/policy').then(r=>r.json()).then(p=>{
-      document.getElementById('ent-rbac-json').value = p&&p.configured&&p.data ? JSON.stringify(p.data,null,2) : '{\n  "roles": {},\n  "bindings": {}\n}';
+      const d=(p&&p.configured&&p.data)?p.data:{};
+      rbacModel={roles:d.roles||{}, bindings:d.bindings||{}, defaultRoles:d.defaultRoles||[]};
+      rbacCur='form'; rbacSetView('form');
+      if(typeof after==='function') after();
     });
     ed.classList.remove('hidden'); btn.classList.add('hidden');
   } else { ed.classList.add('hidden'); btn.classList.remove('hidden'); }
+}
+function csv(a){ return (a||[]).join(', '); }
+function fromCsv(s){ return String(s||'').split(',').map(x=>x.trim()).filter(Boolean); }
+function rbacRenderForm(){
+  const m=rbacModel; let h='';
+  h+=`<div class="fe-block"><div class="fe-hd"><span class="fe-t">Roles</span><button class="fe-add" onclick="rbacAddRole()">+ Add role</button></div>`;
+  const rk=Object.keys(m.roles);
+  h+= rk.length?rk.map(rn=>{ const r=m.roles[rn]||{}; return `<div class="fe-card" data-role>
+      <div class="fe-cardhd"><input type="text" class="r-name fe-grow" value="${escHtml(rn)}" placeholder="role name"><label class="fe-il"><input type="checkbox" class="r-ro" ${r.readOnly?'checked':''}> read-only</label><button class="fe-x" title="Remove role" onclick="this.closest('.fe-card').remove()">&times;</button></div>
+      <div class="fe-fieldlbl">Tools (comma-separated · * = all)</div><input type="text" class="r-tools" value="${escHtml(csv(r.tools))}" placeholder="query_metrics, get_service_health">
+      <div class="fe-fieldlbl">Sources</div><input type="text" class="r-sources" value="${escHtml(csv(r.sources))}" placeholder="* or prometheus, loki">
+      <div class="fe-fieldlbl">Services</div><input type="text" class="r-services" value="${escHtml(csv(r.services))}" placeholder="* or payment-service">
+    </div>`; }).join(''):'<div class="form-hint">No roles yet.</div>';
+  h+=`</div>`;
+  h+=`<div class="fe-block"><div class="fe-hd"><span class="fe-t">Bindings (principal → roles)</span><button class="fe-add" onclick="rbacAddBinding()">+ Add binding</button></div>`;
+  const bk=Object.keys(m.bindings);
+  h+= bk.length?bk.map(pn=>`<div class="fe-row" data-bind>
+      <input type="text" class="b-pr fe-grow" value="${escHtml(pn)}" placeholder="principal (API-key name)">
+      <input type="text" class="b-roles fe-grow" value="${escHtml(csv(m.bindings[pn]))}" placeholder="role1, role2">
+      <button class="fe-x" onclick="this.closest('.fe-row').remove()">&times;</button></div>`).join(''):'<div class="form-hint">No bindings yet.</div>';
+  h+=`</div>`;
+  h+=`<div class="fe-block"><div class="fe-hd"><span class="fe-t">Default roles (unbound principals)</span></div>
+    <input type="text" id="r-defaults" value="${escHtml(csv(m.defaultRoles))}" placeholder="empty = default-deny"></div>`;
+  document.getElementById('rbac-form').innerHTML=h;
+}
+function rbacAddRole(){ rbacCollectForm(); rbacModel.roles['new-role']={tools:[],sources:['*'],services:['*']}; rbacRenderForm(); }
+function rbacAddBinding(){ rbacCollectForm(); rbacModel.bindings['principal']=[]; rbacRenderForm(); }
+function rbacCollectForm(){
+  const roles={}, bindings={};
+  document.querySelectorAll('#rbac-form [data-role]').forEach(c=>{
+    const n=c.querySelector('.r-name').value.trim(); if(!n) return;
+    const r={tools:fromCsv(c.querySelector('.r-tools').value), sources:fromCsv(c.querySelector('.r-sources').value), services:fromCsv(c.querySelector('.r-services').value)};
+    if(c.querySelector('.r-ro').checked) r.readOnly=true;
+    roles[n]=r;
+  });
+  document.querySelectorAll('#rbac-form [data-bind]').forEach(c=>{
+    const p=c.querySelector('.b-pr').value.trim(); if(!p) return;
+    bindings[p]=fromCsv(c.querySelector('.b-roles').value);
+  });
+  const dr=document.getElementById('r-defaults');
+  rbacModel={roles,bindings,defaultRoles:dr?fromCsv(dr.value):[]};
+  return rbacModel;
+}
+function rbacSyncFrom(view){
+  if(view==='form'){ rbacCollectForm(); return true; }
+  const ta=document.getElementById('ent-rbac-json'); const msg=document.getElementById('ent-rbac-msg');
+  try{
+    const obj = view==='json' ? JSON.parse(ta.value) : yamlParse(ta.value);
+    rbacModel={roles:obj.roles||{}, bindings:obj.bindings||{}, defaultRoles:obj.defaultRoles||[]};
+    return true;
+  }catch(e){ msg.style.color='var(--danger)'; msg.textContent='Invalid '+view.toUpperCase()+': '+e.message; return false; }
+}
+function rbacSetView(v){
+  const form=document.getElementById('rbac-form'), ta=document.getElementById('ent-rbac-json');
+  document.querySelectorAll('#rbac-views button').forEach(b=>b.classList.toggle('active', b.dataset.v===v));
+  if(v==='form'){ form.classList.remove('hidden'); ta.classList.add('hidden'); rbacRenderForm(); }
+  else {
+    form.classList.add('hidden'); ta.classList.remove('hidden');
+    ta.value = v==='json' ? JSON.stringify(rbacModel,null,2) : ('# roles / bindings / defaultRoles\n'+yamlDump(rbacModel));
+  }
+  rbacCur=v;
+}
+function rbacView(v){
+  if(v===rbacCur) return;
+  document.getElementById('ent-rbac-msg').textContent='';
+  if(!rbacSyncFrom(rbacCur)) return;     // keep current view if it can't be parsed
+  rbacSetView(v);
 }
 async function entSaveRbac(){
   const msg=document.getElementById('ent-rbac-msg');
   const tok=document.getElementById('ent-admin-token').value.trim();
-  let body;
-  try { body=JSON.parse(document.getElementById('ent-rbac-json').value); }
-  catch(e){ msg.style.color='var(--danger)'; msg.textContent='Invalid JSON: '+e.message; return; }
+  if(!rbacSyncFrom(rbacCur)) return;
   if(!tok){ msg.style.color='var(--danger)'; msg.textContent='Admin API key required.'; return; }
   msg.style.color='var(--text-muted)'; msg.textContent='Saving…';
   try{
-    const r=await fetch('/api/enterprise/policy',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify(body)});
+    const r=await fetch('/api/enterprise/policy',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify(rbacModel)});
     const d=await r.json().catch(()=>({}));
-    if(r.ok){ msg.style.color='var(--success)'; msg.textContent='Policy updated.'; toast('RBAC policy saved'); entToggleRbacEdit(false); loadEnterprise(); }
+    if(r.ok){ msg.style.color='var(--success)'; msg.textContent='Policy updated.'; toast('RBAC policy saved'); closeDrawer(); loadEnterprise(); }
     else { msg.style.color='var(--danger)'; msg.textContent='Rejected ('+r.status+'): '+(d.error||'unknown'); }
   }catch(e){ msg.style.color='var(--danger)'; msg.textContent='Request failed: '+e.message; }
 }
-function entToggleCatEdit(on){
+let catModel={products:{},grants:{},defaultProducts:[]};
+let catCur='form';
+function entToggleCatEdit(on, after){
   const ed=document.getElementById('ent-cat-editor'), btn=document.getElementById('ent-cat-editbtn');
   document.getElementById('ent-cat-msg').textContent='';
   if(on){
     fetch('/api/enterprise/catalog').then(r=>r.json()).then(p=>{
-      document.getElementById('ent-cat-json').value = p&&p.configured&&p.data ? JSON.stringify(p.data,null,2) : '{\n  "products": {},\n  "grants": {}\n}';
+      const d=(p&&p.configured&&p.data)?p.data:{};
+      catModel={products:d.products||{}, grants:d.grants||{}, defaultProducts:d.defaultProducts||[]};
+      catCur='form'; catSetView('form');
+      if(typeof after==='function') after();
     });
     ed.classList.remove('hidden'); btn.classList.add('hidden');
   } else { ed.classList.add('hidden'); btn.classList.remove('hidden'); }
 }
+function catRenderForm(){
+  const m=catModel; let h='';
+  h+=`<div class="fe-block"><div class="fe-hd"><span class="fe-t">Products</span><button class="fe-add" onclick="catAddProduct()">+ Add product</button></div>`;
+  const pk=Object.keys(m.products);
+  h+= pk.length?pk.map(pn=>{ const p=m.products[pn]||{}; return `<div class="fe-card" data-prod>
+      <div class="fe-cardhd"><input type="text" class="p-name fe-grow" value="${escHtml(pn)}" placeholder="product name"><button class="fe-x" title="Remove product" onclick="this.closest('.fe-card').remove()">&times;</button></div>
+      <div class="fe-fieldlbl">Description</div><input type="text" class="p-desc" value="${escHtml(p.description||'')}" placeholder="what this product bundles">
+      <div class="fe-fieldlbl">Sources (comma-separated · * = all)</div><input type="text" class="p-sources" value="${escHtml(csv(p.sources))}" placeholder="* or prometheus, loki">
+      <div class="fe-fieldlbl">Services (optional)</div><input type="text" class="p-services" value="${escHtml(csv(p.services))}" placeholder="* or payment-service">
+    </div>`; }).join(''):'<div class="form-hint">No products yet.</div>';
+  h+=`</div>`;
+  h+=`<div class="fe-block"><div class="fe-hd"><span class="fe-t">Grants (principal → products)</span><button class="fe-add" onclick="catAddGrant()">+ Add grant</button></div>`;
+  const gk=Object.keys(m.grants);
+  h+= gk.length?gk.map(pn=>`<div class="fe-row" data-grant>
+      <input type="text" class="g-pr fe-grow" value="${escHtml(pn)}" placeholder="principal (API-key name)">
+      <input type="text" class="g-prod fe-grow" value="${escHtml(csv(m.grants[pn]))}" placeholder="product1, product2">
+      <button class="fe-x" onclick="this.closest('.fe-row').remove()">&times;</button></div>`).join(''):'<div class="form-hint">No grants yet.</div>';
+  h+=`</div>`;
+  h+=`<div class="fe-block"><div class="fe-hd"><span class="fe-t">Default products (ungranted principals)</span></div>
+    <input type="text" id="c-defaults" value="${escHtml(csv(m.defaultProducts))}" placeholder="empty = no default access"></div>`;
+  document.getElementById('cat-form').innerHTML=h;
+}
+function catAddProduct(){ catCollectForm(); catModel.products['new-product']={description:'',sources:['*']}; catRenderForm(); }
+function catAddGrant(){ catCollectForm(); catModel.grants['principal']=[]; catRenderForm(); }
+function catCollectForm(){
+  const products={}, grants={};
+  document.querySelectorAll('#cat-form [data-prod]').forEach(c=>{
+    const n=c.querySelector('.p-name').value.trim(); if(!n) return;
+    const p={sources:fromCsv(c.querySelector('.p-sources').value)};
+    const desc=c.querySelector('.p-desc').value.trim(); if(desc) p.description=desc;
+    const svc=fromCsv(c.querySelector('.p-services').value); if(svc.length) p.services=svc;
+    products[n]=p;
+  });
+  document.querySelectorAll('#cat-form [data-grant]').forEach(c=>{
+    const p=c.querySelector('.g-pr').value.trim(); if(!p) return;
+    grants[p]=fromCsv(c.querySelector('.g-prod').value);
+  });
+  const dp=document.getElementById('c-defaults');
+  catModel={products,grants,defaultProducts:dp?fromCsv(dp.value):[]};
+  return catModel;
+}
+function catSyncFrom(view){
+  if(view==='form'){ catCollectForm(); return true; }
+  const ta=document.getElementById('ent-cat-json'); const msg=document.getElementById('ent-cat-msg');
+  try{
+    const obj = view==='json' ? JSON.parse(ta.value) : yamlParse(ta.value);
+    catModel={products:obj.products||{}, grants:obj.grants||{}, defaultProducts:obj.defaultProducts||[]};
+    return true;
+  }catch(e){ msg.style.color='var(--danger)'; msg.textContent='Invalid '+view.toUpperCase()+': '+e.message; return false; }
+}
+function catSetView(v){
+  const form=document.getElementById('cat-form'), ta=document.getElementById('ent-cat-json');
+  document.querySelectorAll('#cat-views button').forEach(b=>b.classList.toggle('active', b.dataset.v===v));
+  if(v==='form'){ form.classList.remove('hidden'); ta.classList.add('hidden'); catRenderForm(); }
+  else {
+    form.classList.add('hidden'); ta.classList.remove('hidden');
+    ta.value = v==='json' ? JSON.stringify(catModel,null,2) : ('# products / grants / defaultProducts\n'+yamlDump(catModel));
+  }
+  catCur=v;
+}
+function catView(v){
+  if(v===catCur) return;
+  document.getElementById('ent-cat-msg').textContent='';
+  if(!catSyncFrom(catCur)) return;
+  catSetView(v);
+}
 async function entSaveCat(){
   const msg=document.getElementById('ent-cat-msg');
   const tok=document.getElementById('ent-cat-token').value.trim();
-  let body;
-  try { body=JSON.parse(document.getElementById('ent-cat-json').value); }
-  catch(e){ msg.style.color='var(--danger)'; msg.textContent='Invalid JSON: '+e.message; return; }
+  if(!catSyncFrom(catCur)) return;
   if(!tok){ msg.style.color='var(--danger)'; msg.textContent='Admin API key required.'; return; }
   msg.style.color='var(--text-muted)'; msg.textContent='Saving…';
   try{
-    const r=await fetch('/api/enterprise/catalog',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify(body)});
+    const r=await fetch('/api/enterprise/catalog',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify(catModel)});
     const d=await r.json().catch(()=>({}));
-    if(r.ok){ msg.style.color='var(--success)'; msg.textContent='Catalog updated.'; toast('Catalog saved'); entToggleCatEdit(false); loadEnterprise(); }
+    if(r.ok){ msg.style.color='var(--success)'; msg.textContent='Catalog updated.'; toast('Catalog saved'); closeDrawer(); loadEnterprise(); }
     else { msg.style.color='var(--danger)'; msg.textContent='Rejected ('+r.status+'): '+(d.error||'unknown'); }
   }catch(e){ msg.style.color='var(--danger)'; msg.textContent='Request failed: '+e.message; }
 }
@@ -1203,6 +2181,8 @@ function showTab(name) {
   if (el) el.classList.add('active');
   if (event && event.target) event.target.classList.add('active');
   if(name==='metrics') populateMetricsSourceSelect();
+  const sp = {installed:'connectors',hub:'connectors',upload:'connectors',general:'settings',health:'settings',metrics:'settings'}[name];
+  if(sp) setActiveSub(sp, name);
 }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
@@ -1240,25 +2220,148 @@ function updateStats() {
     svcCtx.textContent = backends.size > 0 ? `across ${backends.size} backend${backends.size===1?'':'s'}` : 'discovered';
   }
 
-  const allUp=sourcesData.length>0&&sourcesData.filter(s=>s.enabled).every(s=>s.status==='up');
+  const sPct = total > 0 ? Math.round((up / total) * 100) : 0;
+  const sTone = total === 0 ? 'tone-warn' : up === total ? 'tone-ok' : up === 0 ? 'tone-bad' : 'tone-warn';
+  renderGauge('gauge-sources', sPct, sTone);
+
+  // Status is now surfaced via the header notification feed, not a badge.
   const b=document.getElementById('status-badge');
-  b.textContent=sourcesData.length===0?'No sources':allUp?'All systems operational':'Issues detected';
-  b.className='badge '+(allUp?'badge-ok':'badge-err');
+  if(b){ const allUp=sourcesData.length>0&&sourcesData.filter(s=>s.enabled).every(s=>s.status==='up');
+    b.textContent=sourcesData.length===0?'No sources':allUp?'All systems operational':'Issues detected';
+    b.className='badge '+(allUp?'badge-ok':'badge-err'); }
+}
+
+// SVG ring gauge (capacity-style). pct 0..100, tone class on .gauge.
+function renderGauge(elId, pct, toneClass){
+  const el=document.getElementById(elId); if(!el) return;
+  const p=Math.max(0,Math.min(100,Math.round(pct)));
+  const r=24, c=2*Math.PI*r, off=c*(1-p/100);
+  el.className='gauge '+(toneClass||'');
+  el.innerHTML=
+    '<svg viewBox="0 0 56 56" width="56" height="56" role="img" aria-label="'+p+'%">'+
+    '<circle class="g-track" cx="28" cy="28" r="'+r+'" fill="none" stroke-width="5"/>'+
+    '<circle class="g-fill" cx="28" cy="28" r="'+r+'" fill="none" stroke-width="5" stroke-linecap="round" '+
+    'transform="rotate(-90 28 28)" stroke-dasharray="'+c.toFixed(1)+'" stroke-dashoffset="'+off.toFixed(1)+'"/>'+
+    '<text x="28" y="28" text-anchor="middle" dominant-baseline="central">'+p+'%</text></svg>';
+}
+
+// Dashboard "Services Healthy" gauge — light poll of the analyzed health API.
+async function updateHealthStat(){
+  const v=document.getElementById('stat-health'), ctx=document.getElementById('stat-health-ctx');
+  if(!v) return;
+  try{
+    const h=await(await fetch('/api/health')).json();
+    healthMap=h||{};
+    const svcs=Object.values(h||{});
+    const total=svcs.length;
+    const healthy=svcs.filter(s=>s&&s.status==='healthy').length;
+    const pct=total>0?Math.round((healthy/total)*100):0;
+    v.textContent=total>0?healthy+'/'+total:'—';
+    if(ctx) ctx.textContent=total===0?'no services':pct===100?'all healthy':(total-healthy)+' need attention';
+    renderGauge('gauge-health', pct, total===0?'tone-warn':pct===100?'tone-ok':pct>=50?'tone-warn':'tone-bad');
+    renderHealthPanels(svcs);
+  }catch(e){
+    v.textContent='—'; if(ctx) ctx.textContent='unavailable';
+    renderGauge('gauge-health', 0, 'tone-warn');
+    const a=document.getElementById('dash-attention'); if(a) a.innerHTML='<div class="empty">Health data unavailable.</div>';
+    const t=document.getElementById('dash-top'); if(t) t.innerHTML='<div class="empty">Health data unavailable.</div>';
+  }
+}
+function svcTone(s){
+  const st=(s&&s.status)||''; if(st==='critical') return 'bad'; if(st!=='healthy') return 'warn'; return 'ok';
+}
+function renderHealthPanels(svcs){
+  const attn=document.getElementById('dash-attention'), top=document.getElementById('dash-top'), cnt=document.getElementById('dash-attn-count');
+  if(attn){
+    const bad=svcs.filter(s=>s&&s.status!=='healthy').sort((a,b)=>(a.score||0)-(b.score||0));
+    if(cnt) cnt.textContent=String(bad.length);
+    attn.innerHTML = bad.length===0
+      ? '<div class="empty">All services healthy — nothing needs attention.</div>'
+      : bad.map(s=>{
+          const tn=svcTone(s);
+          const an=(s.anomalies&&s.anomalies[0]&&(s.anomalies[0].metric||s.anomalies[0].description))||(s.correlations&&s.correlations[0])||'no dominant signal';
+          return `<div class="feed-row"><span class="stchip ${tn}">${esc(s.status)}</span><div class="fr-main"><div class="fr-title">${esc(s.service)}</div><div class="fr-sub">score ${esc(s.score)} · ${esc(an)}</div></div></div>`;
+        }).join('');
+  }
+  if(top){
+    const ranked=svcs.slice().sort((a,b)=>(a.score||0)-(b.score||0)).slice(0,8);
+    top.innerHTML = ranked.length===0
+      ? '<div class="empty">No services discovered.</div>'
+      : '<div class="rank">'+ranked.map(s=>{
+          const sc=Math.max(0,Math.min(100,Number(s.score)||0)), tn=svcTone(s);
+          return `<div class="rank-row"><span class="rk-name" title="${esc(s.service)}">${esc(s.service)}</span><span class="rk-track"><span class="rk-fill ${tn}" style="width:${sc}%"></span></span><span class="rk-val">${sc}</span></div>`;
+        }).join('')+'</div>';
+  }
 }
 
 // --- Render Sources ---
+function srcView(){ try{ return localStorage.getItem('omcp-src-view')==='table'?'table':'list'; }catch(e){ return 'list'; } }
+function setSrcView(v){ try{ localStorage.setItem('omcp-src-view',v); }catch(e){} renderSources(); }
+function srcRow(s){
+  const sc=!s.enabled?'dot-disabled':s.status==='up'?'dot-up':'dot-down';
+  return `<div class="source-row" data-src="${esc(s.name)}"><div class="dot ${sc}"></div><div class="source-info"><div class="name">${esc(s.name)}<span class="tag tag-type">${esc(s.type)}</span>${s.signalType?`<span class="tag tag-${s.signalType}">${s.signalType}</span>`:''}</div><div class="url">${esc(s.url)}</div></div>${s.latencyMs?`<span class="tag-latency">${s.latencyMs}ms</span>`:''}<div class="source-actions" onclick="event.stopPropagation()"><label class="toggle"><input type="checkbox" ${s.enabled?'checked':''} onchange="toggleSource('${esc(s.name)}')"><span class="slider"></span></label><button class="btn-icon" onclick="openEditModal('${esc(s.name)}')">&#9998;</button><button class="btn-icon" onclick="openDeleteConfirm('source','${esc(s.name)}')">&#128465;</button></div></div>`;
+}
 function renderSources() {
-  const html = sourcesData.length===0 ? '<div class="empty">No sources configured.</div>' : sourcesData.map(s=>{
-    const sc=!s.enabled?'dot-disabled':s.status==='up'?'dot-up':'dot-down';
-    return `<div class="source-row"><div class="dot ${sc}"></div><div class="source-info"><div class="name">${esc(s.name)}<span class="tag tag-type">${esc(s.type)}</span>${s.signalType?`<span class="tag tag-${s.signalType}">${s.signalType}</span>`:''}</div><div class="url">${esc(s.url)}</div></div>${s.latencyMs?`<span class="tag-latency">${s.latencyMs}ms</span>`:''}<div class="source-actions"><label class="toggle"><input type="checkbox" ${s.enabled?'checked':''} onchange="toggleSource('${esc(s.name)}')"><span class="slider"></span></label><button class="btn-icon" onclick="openEditModal('${esc(s.name)}')">&#9998;</button><button class="btn-icon" onclick="openDeleteConfirm('source','${esc(s.name)}')">&#128465;</button></div></div>`;
-  }).join('');
-  document.getElementById('sources-list').innerHTML=html;
-  document.getElementById('dash-sources').innerHTML=html;
+  const dashHtml = sourcesData.length===0 ? '<div class="empty">No sources configured.</div>' : sourcesData.map(srcRow).join('');
+  document.getElementById('dash-sources').innerHTML=dashHtml;
+  const box=document.getElementById('sources-list'); if(!box) return;
+  if(sourcesData.length===0){ box.innerHTML='<div class="empty">No sources configured.</div>'; return; }
+  const view=srcView();
+  const bar=`<div class="dp-bar"><span style="color:var(--text-muted);font-size:12px">${sourcesData.length} source${sourcesData.length===1?'':'s'} · click for detail</span>
+    <span class="view-toggle" style="margin-left:auto"><button class="${view==='list'?'active':''}" onclick="setSrcView('list')">List</button><button class="${view==='table'?'active':''}" onclick="setSrcView('table')">Table</button></span></div>`;
+  let body;
+  if(view==='table'){
+    body=`<table class="dtable"><thead><tr><th>Name</th><th>Type</th><th>Signal</th><th>URL</th><th>Status</th><th>Latency</th></tr></thead><tbody>`+
+      sourcesData.map(s=>`<tr data-src="${esc(s.name)}"><td class="mono">${esc(s.name)}</td><td>${esc(s.type)}</td><td>${s.signalType?esc(s.signalType):'—'}</td><td class="mono" style="color:var(--text-muted)">${esc(s.url)}</td><td>${!s.enabled?'disabled':s.status==='up'?'<span class="pill-yes">up</span>':'<span class="pill-no">down</span>'}</td><td class="mono">${s.latencyMs?s.latencyMs+'ms':'—'}</td></tr>`).join('')+
+      `</tbody></table>`;
+  } else {
+    body=sourcesData.map(srcRow).join('');
+  }
+  box.innerHTML=bar+body;
+  box.querySelectorAll('[data-src]').forEach(el=>el.addEventListener('click',()=>srcDetail(el.getAttribute('data-src'))));
+}
+function srcDetail(name){
+  const s=sourcesData.find(x=>x.name===name);
+  if(!s){ openDrawer(name,'<div class="empty">Source not found.</div>'); return; }
+  const tone=!s.enabled?'warn':s.status==='up'?'ok':'bad';
+  const svc=(servicesData||[]).filter(x=>(x.sources||[]).includes(s.name)).map(x=>x.name);
+  const html=
+    dwSec('Status', `<span class="stchip ${tone}">${!s.enabled?'disabled':s.status==='up'?'up':'down'}</span>${s.latencyMs?` <span style="color:var(--text-muted);font-size:var(--fs-sm)">${s.latencyMs}ms</span>`:''}`)+
+    dwSec('Configuration', `<table class="dtable"><tbody>
+      <tr><td>Type</td><td class="mono">${escHtml(s.type)}</td></tr>
+      <tr><td>Signal type</td><td class="mono">${escHtml(s.signalType||'—')}</td></tr>
+      <tr><td>URL</td><td class="mono" style="word-break:break-all">${escHtml(s.url)}</td></tr>
+      <tr><td>Enabled</td><td>${s.enabled?'yes':'no'}</td></tr></tbody></table>`)+
+    dwSec('Services from this source', svc.length?svc.map(n=>`<span class="chip">${escHtml(n)}</span>`).join(' '):'<span style="color:var(--text-dim);font-size:var(--fs-sm)">none discovered</span>')+
+    `<div style="display:flex;gap:8px;margin-top:14px"><button class="btn btn-sm" onclick="closeDrawer();openEditModal('${esc(s.name)}')">Edit source</button><button class="btn btn-ghost btn-sm" onclick="closeDrawer();openDeleteConfirm('source','${esc(s.name)}')">Delete</button></div>`+
+    `<div class="codeblock collapsed" style="margin-top:12px"><div class="codeblock-hd" onclick="toggleCode(this)"><span class="cb-chev">▾</span><span class="cb-title">API · all sources</span><button class="codeblock-cp" onclick="event.stopPropagation();copyCode(this)">Copy</button></div><pre>curl -s http://localhost:3000/api/sources</pre></div>`;
+  openDrawer(name, html);
 }
 function renderServices() {
-  const html = servicesData.length===0 ? '<div class="empty">No services discovered.</div>' : servicesData.map(s=>`<div class="service-row"><div><span class="name">${esc(s.name)}</span>${s.signalTypes.map(t=>`<span class="tag tag-${t}">${t}</span>`).join('')}</div><span style="color:var(--text2);font-size:12px">${s.sources.join(', ')}</span></div>`).join('');
-  document.getElementById('services-list').innerHTML=html;
+  const html = servicesData.length===0 ? '<div class="empty">No services discovered.</div>' : servicesData.map(s=>`<div class="service-row" data-svc="${esc(s.name)}"><div><span class="name">${esc(s.name)}</span>${s.signalTypes.map(t=>`<span class="tag tag-${t}">${t}</span>`).join('')}</div><span style="color:var(--text2);font-size:12px">${s.sources.join(', ')}</span></div>`).join('');
+  const sl=document.getElementById('services-list'); sl.innerHTML=html;
+  sl.querySelectorAll('[data-svc]').forEach(el=>el.addEventListener('click',()=>svcDetail(el.getAttribute('data-svc'))));
   document.getElementById('dash-services').innerHTML=html;
+}
+async function svcDetail(name){
+  let v=healthMap[name];
+  if(!v){ try{ const h=await(await fetch('/api/health')).json(); healthMap=h||{}; v=healthMap[name]; }catch(e){} }
+  if(!v){ openDrawer(name, '<div class="empty">No health data available for this service.</div>'); return; }
+  const tone=v.status==='critical'?'bad':v.status!=='healthy'?'warn':'ok';
+  const m=(v.signals&&v.signals.metrics)||{};
+  const fmtN=x=>x==null?'—':(Math.round(Number(x)*100)/100);
+  const html=
+    dwSec('Status', `<span class="stchip ${tone}">${escHtml(v.status)}</span> <span style="color:var(--text-muted);font-size:var(--fs-sm)">health score ${escHtml(v.score)}</span>`)+
+    dwSec('Signals', `<table class="dtable"><tbody>
+      <tr><td>CPU</td><td class="mono">${fmtN(m.cpu)}</td></tr>
+      <tr><td>Memory (MB)</td><td class="mono">${fmtN(m.memory)}</td></tr>
+      <tr><td>Error rate</td><td class="mono">${fmtN(m.errorRate)}</td></tr>
+      <tr><td>Latency p99 (s)</td><td class="mono">${fmtN(m.latencyP99)}</td></tr>
+      <tr><td>Log errors (5m)</td><td class="mono">${fmtN(v.signals&&v.signals.logs&&v.signals.logs.errorRate)}</td></tr></tbody></table>`)+
+    dwSec('Anomalies', (v.anomalies&&v.anomalies.length)?v.anomalies.map(a=>`<div class="feed-row"><span class="stchip ${a.severity==='high'?'bad':'warn'}">${escHtml(a.metric)}</span><div class="fr-main"><div class="fr-sub">${escHtml(a.description||'')}</div></div></div>`).join(''):'<span style="color:var(--text-dim);font-size:var(--fs-sm)">None detected.</span>')+
+    dwSec('Correlations', (v.correlations&&v.correlations.length)?v.correlations.map(c=>`<div class="fr-sub" style="margin-bottom:4px">• ${escHtml(c)}</div>`).join(''):'<span style="color:var(--text-dim);font-size:var(--fs-sm)">None.</span>')+
+    `<div class="codeblock collapsed" style="margin-top:6px"><div class="codeblock-hd" onclick="toggleCode(this)"><span class="cb-chev">▾</span><span class="cb-title">API · this service's health</span><button class="codeblock-cp" onclick="event.stopPropagation();copyCode(this)">Copy</button></div><pre>curl -s http://localhost:3000/api/health/${escHtml(name)}</pre></div>`;
+  openDrawer(name, html);
 }
 
 // --- TLS helpers ---
@@ -1579,7 +2682,7 @@ async function loadInfo(){
 // Show the endpoint the user is actually reaching the server through
 // (localhost, a port-forward, or an ingress) — not a hardcoded host.
 document.getElementById('mcp-url').textContent = window.location.origin + '/mcp';
-(async()=>{syncThemeToggle();await loadTypes();await refresh();await loadInfo();await loadGatePill();setInterval(refresh,15000);setInterval(loadGatePill,15000);})();
+(async()=>{syncThemeToggle();initNav();await loadTypes();await refresh();await loadInfo();await updateHealthStat();await buildNotifications();setInterval(refresh,15000);setInterval(updateHealthStat,15000);setInterval(buildNotifications,15000);})();
 </script>
 
 <footer id="info-footer" class="info-footer"><span class="spinner"></span>&nbsp;loading server info…</footer>
