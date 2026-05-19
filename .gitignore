@@ -14,3 +14,8 @@ TASKS.md
 # connector packing artifacts
 dist-connectors/
 connectors/*/manifest.json.sig
+
+# Local-only working artifacts — never commit
+/ui/
+experiments/
+docker-compose.override.yml
