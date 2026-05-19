@@ -4,6 +4,19 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Observability MCP Gateway</title>
+  <script>
+    // Resolve the theme BEFORE first paint to avoid a flash. Explicit
+    // user choice (localStorage) wins; otherwise follow the OS setting.
+    (function(){
+      try {
+        var t = localStorage.getItem('omcp-theme');
+        if (t !== 'light' && t !== 'dark') {
+          t = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        }
+        document.documentElement.setAttribute('data-theme', t);
+      } catch (e) { document.documentElement.setAttribute('data-theme','dark'); }
+    })();
+  </script>
   <link rel="preconnect" href="https://rsms.me/">
   <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
   <style>
@@ -79,7 +92,49 @@
       /* Motion */
       --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
       --t-fast: 120ms;
+
+      /* Chrome — the masthead + nav rail stay dark in BOTH themes
+         (enterprise consoles keep dark chrome over a light workspace).
+         These tokens never flip. */
+      --chrome-bg:         #12151c;
+      --chrome-bg-2:       #181c25;
+      --chrome-border:     rgba(255,255,255,0.10);
+      --chrome-text:       #e8ecf2;
+      --chrome-text-muted: #9aa3b2;
+      --chrome-active:     rgba(79,140,255,0.16);
     }
+
+    /* ===== Light theme — only the workspace tokens flip ===== */
+    :root[data-theme="light"] {
+      --bg:        #f3f4f6;
+      --surface:   #ffffff;
+      --surface-2: #f5f6f8;
+      --surface-3: #e9ebef;
+      --border:        rgba(17,24,39,0.10);
+      --border-strong: rgba(17,24,39,0.16);
+
+      --text:       #161a22;
+      --text-muted: #565d6b;
+      --text-dim:   #7b8290;
+      --text-inv:   #ffffff;
+
+      --accent-soft:  rgba(79,140,255,0.12);
+      --accent-ring:  rgba(79,140,255,0.40);
+      --success-soft: rgba(22,163,74,0.12);
+      --warning-soft: rgba(202,138,4,0.14);
+      --danger-soft:  rgba(220,38,38,0.12);
+      --info-soft:    rgba(124,58,237,0.12);
+      /* Slightly deepen semantic hues so they read on white */
+      --success: #16a34a;
+      --warning: #b45309;
+      --danger:  #dc2626;
+      --info:    #7c3aed;
+
+      --shadow-sm: 0 1px 2px rgba(17,24,39,0.06);
+      --shadow:    0 4px 12px rgba(17,24,39,0.08), 0 0 0 1px var(--border);
+      --shadow-lg: 0 12px 32px rgba(17,24,39,0.14), 0 0 0 1px var(--border-strong);
+    }
+
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
     html { -webkit-text-size-adjust: 100%; }
     body {
@@ -487,45 +542,57 @@
     body { padding-left: var(--rail-w); }
     .siderail {
       position: fixed; left: 0; top: 0; bottom: 0; width: var(--rail-w);
-      background: linear-gradient(180deg, var(--surface-2), var(--surface));
-      border-right: 1px solid var(--border-strong);
+      background: linear-gradient(180deg, var(--chrome-bg-2), var(--chrome-bg));
+      border-right: 1px solid var(--chrome-border);
+      color: var(--chrome-text);
       display: flex; flex-direction: column; z-index: 30;
     }
     .rail-brand {
       display: flex; align-items: center; gap: var(--sp-3);
       padding: var(--sp-5) var(--sp-5) var(--sp-4);
-      border-bottom: 1px solid var(--border);
+      border-bottom: 1px solid var(--chrome-border);
     }
     .rail-mark {
       width: 26px; height: 26px; border-radius: var(--radius-sm); flex-shrink: 0;
       background: linear-gradient(135deg, var(--accent), var(--info));
-      box-shadow: 0 0 0 1px var(--border-strong) inset;
+      box-shadow: 0 0 0 1px var(--chrome-border) inset;
     }
-    .rail-title { font-size: var(--fs-md); font-weight: 700; letter-spacing: -0.01em; line-height: 1.2; }
-    .rail-title span { font-weight: 500; color: var(--text-muted); font-size: var(--fs-xs); letter-spacing: 0.06em; text-transform: uppercase; }
+    .rail-title { font-size: var(--fs-md); font-weight: 700; letter-spacing: -0.01em; line-height: 1.2; color: var(--chrome-text); }
+    .rail-title span { font-weight: 500; color: var(--chrome-text-muted); font-size: var(--fs-xs); letter-spacing: 0.06em; text-transform: uppercase; }
     .rail-nav { display: flex; flex-direction: column; padding: var(--sp-3) 0; overflow-y: auto; }
     .rail-group {
       font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
-      color: var(--text-dim); padding: var(--sp-4) var(--sp-5) var(--sp-2);
+      color: var(--chrome-text-muted); opacity: 0.7; padding: var(--sp-4) var(--sp-5) var(--sp-2);
     }
     .rail-nav .nav-btn {
       display: block; width: 100%; text-align: left;
       border-radius: 0; padding: 9px var(--sp-5);
       border-left: 2px solid transparent;
+      color: var(--chrome-text-muted);
     }
+    .rail-nav .nav-btn:hover { background: var(--chrome-bg-2); color: var(--chrome-text); }
     .rail-nav .nav-btn.active {
-      background: var(--accent-soft); color: var(--text);
+      background: var(--chrome-active); color: var(--chrome-text);
       box-shadow: none; border-left-color: var(--accent);
     }
-    .rail-foot { margin-top: auto; padding: var(--sp-4) var(--sp-5); border-top: 1px solid var(--border); font-size: var(--fs-xs); color: var(--text-dim); }
+    .rail-foot { margin-top: auto; padding: var(--sp-4) var(--sp-5); border-top: 1px solid var(--chrome-border); font-size: var(--fs-xs); color: var(--chrome-text-muted); }
     .masthead {
       position: sticky; top: 0; z-index: 20;
       display: flex; align-items: center; gap: var(--sp-3);
       padding: var(--sp-3) var(--sp-6);
-      background: linear-gradient(180deg, var(--surface), rgba(17,20,27,0.92));
-      border-bottom: 1px solid var(--border);
-      backdrop-filter: saturate(160%) blur(8px);
+      background: var(--chrome-bg);
+      border-bottom: 1px solid var(--chrome-border);
+      color: var(--chrome-text);
     }
+    .masthead .btn-ghost { color: var(--chrome-text-muted); }
+    .masthead .btn-ghost:hover { color: var(--chrome-text); background: var(--chrome-bg-2); }
+    .theme-toggle {
+      background: none; border: 1px solid var(--chrome-border); color: var(--chrome-text-muted);
+      width: 30px; height: 30px; border-radius: var(--radius-sm); cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center; font-size: 15px;
+      transition: color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
+    }
+    .theme-toggle:hover { color: var(--chrome-text); border-color: var(--chrome-text-muted); }
     .gate-pill {
       display: inline-flex; align-items: center; gap: 7px;
       padding: 4px 12px; border-radius: var(--radius-pill);
@@ -575,6 +642,7 @@
     <span class="badge badge-ok" id="status-badge">Loading...</span>
     <div style="flex:1"></div>
     <span class="gate-pill gate-unknown" id="gate-pill" title="Enterprise access-control gate">Gate: …</span>
+    <button class="theme-toggle" id="theme-toggle" title="Toggle light / dark" aria-label="Toggle theme" onclick="toggleTheme()">◐</button>
     <button class="btn btn-ghost btn-sm" onclick="refresh()">Refresh</button>
   </header>
 
@@ -910,6 +978,20 @@ function showPage(name) {
   if(name==='health') loadHealthData();
   if(name==='connectors') loadConnectors();
   if(name==='enterprise') loadEnterprise();
+}
+
+// --- Theme (light / dark) ---
+function syncThemeToggle(){
+  const t=document.documentElement.getAttribute('data-theme')||'dark';
+  const b=document.getElementById('theme-toggle');
+  if(b){ b.textContent = t==='light' ? '☀' : '☾'; b.title = 'Switch to '+(t==='light'?'dark':'light')+' mode'; }
+}
+function toggleTheme(){
+  const cur=document.documentElement.getAttribute('data-theme')==='light'?'light':'dark';
+  const next=cur==='light'?'dark':'light';
+  document.documentElement.setAttribute('data-theme',next);
+  try{ localStorage.setItem('omcp-theme',next); }catch(e){}
+  syncThemeToggle();
 }
 
 // --- Enterprise (read-only governance console) ---
@@ -1497,7 +1579,7 @@ async function loadInfo(){
 // Show the endpoint the user is actually reaching the server through
 // (localhost, a port-forward, or an ingress) — not a hardcoded host.
 document.getElementById('mcp-url').textContent = window.location.origin + '/mcp';
-(async()=>{await loadTypes();await refresh();await loadInfo();await loadGatePill();setInterval(refresh,15000);setInterval(loadGatePill,15000);})();
+(async()=>{syncThemeToggle();await loadTypes();await refresh();await loadInfo();await loadGatePill();setInterval(refresh,15000);setInterval(loadGatePill,15000);})();
 </script>
 
 <footer id="info-footer" class="info-footer"><span class="spinner"></span>&nbsp;loading server info…</footer>
