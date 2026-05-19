@@ -12,8 +12,8 @@
     "@modelcontextprotocol/sdk": "^1.12.0"
   },
   "devDependencies": {
-    "@types/node": "^25.7.0",
-    "tsx": "^4.22.0",
+    "@types/node": "^25.9.0",
+    "tsx": "^4.22.2",
     "typescript": "^6.0.3"
   },
   "overrides": {
