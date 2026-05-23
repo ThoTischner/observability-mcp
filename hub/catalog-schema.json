@@ -27,7 +27,7 @@
     "signalTypes": {
       "type": "array",
       "minItems": 1,
-      "items": { "enum": ["metrics", "logs", "traces"] }
+      "items": { "enum": ["metrics", "logs", "traces", "topology"] }
     },
     "screenshots": {
       "type": "array",
