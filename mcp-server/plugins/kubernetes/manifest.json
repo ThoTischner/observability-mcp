@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "name": "kubernetes",
+  "displayName": "Kubernetes",
+  "version": "0.1.0",
+  "description": "Watches a Kubernetes cluster (in-cluster or via kubeconfig) and exposes pods, nodes, deployments, replicasets and namespaces as an infrastructure topology graph. Edges: RUNS_ON (pod→node), OWNED_BY (pod→rs→deployment), IN_NAMESPACE.",
+  "signalTypes": ["topology"],
+  "license": "Apache-2.0",
+  "capabilities": {},
+  "compat": {
+    "serverVersion": ">=1.7.0"
+  }
+}

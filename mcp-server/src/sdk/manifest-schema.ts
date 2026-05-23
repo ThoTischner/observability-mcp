@@ -17,7 +17,7 @@ export const manifestSchema = z.object({
     message: "version must be semver",
   }),
   description: z.string().min(1),
-  signalTypes: z.array(z.enum(["metrics", "logs", "traces"])).min(1),
+  signalTypes: z.array(z.enum(["metrics", "logs", "traces", "topology"])).min(1),
   homepage: z.string().url().optional(),
   license: z.string().optional(),
   logo: z.string().optional(),
