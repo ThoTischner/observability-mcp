@@ -32,6 +32,11 @@ export type {
   LogEntry,
   LogSummary,
   MetricDefinition,
+  Resource,
+  Edge,
+  TopologySnapshot,
+  TopologyChangeEvent,
+  TopologyChangeListener,
 } from "../types.js";
 
 /**
@@ -50,7 +55,7 @@ export interface ConnectorManifest {
   /** Semver of this connector build. */
   version: string;
   description: string;
-  signalTypes: Array<"metrics" | "logs" | "traces">;
+  signalTypes: Array<"metrics" | "logs" | "traces" | "topology">;
   homepage?: string;
   license?: string;
   logo?: string;

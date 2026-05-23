@@ -1,0 +1,36 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: omcp-it
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: omcp-it-echo
+  namespace: omcp-it
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: omcp-it-echo
+  template:
+    metadata:
+      labels:
+        app: omcp-it-echo
+    spec:
+      containers:
+        - name: echo
+          image: ealen/echo-server:0.9.2
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 1
+            periodSeconds: 2
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi

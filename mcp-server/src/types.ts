@@ -1,5 +1,5 @@
 // --- Signal Types ---
-export type SignalType = "metrics" | "logs" | "traces";
+export type SignalType = "metrics" | "logs" | "traces" | "topology";
 export type HealthStatus = "healthy" | "degraded" | "critical";
 export type Trend = "rising" | "falling" | "stable";
 export type AnomalySeverity = "low" | "medium" | "high";
@@ -157,6 +157,73 @@ export interface LogResult {
   entries: LogEntry[];
   summary: LogSummary;
 }
+
+// --- Topology ---
+
+/**
+ * A discrete infrastructure entity discovered by a topology-aware connector.
+ *
+ * `kind` and the relation strings on Edge are intentionally open (not unions):
+ * future connectors (vCenter, NetBox, SNMP, ...) will introduce new kinds and
+ * relations. Document common values here, but do not hard-restrict the type.
+ *
+ * `id` is a stable, human-readable canonical key. For Kubernetes we use
+ *   `k8s:<kind>:<namespace>/<name>` for namespaced kinds, `k8s:<kind>:<name>`
+ *   for cluster-scoped kinds. Pod names are ephemeral by design — that's
+ *   acceptable since pods are short-lived; deployments/nodes/services are
+ *   stable. Backend identifiers (e.g. K8s metadata.uid) belong in `attributes`.
+ *
+ * `source` is mandatory so a future entity-resolution layer can merge views
+ * from multiple connectors without ambiguity.
+ *
+ * Common kinds (Kubernetes): "pod", "node", "deployment", "service", "namespace".
+ */
+export interface Resource {
+  id: string;
+  kind: string;
+  name: string;
+  source: string;
+  labels: Record<string, string>;
+  attributes?: Record<string, unknown>;
+}
+
+/**
+ * A directed relationship between two Resources.
+ *
+ * Common relations (Kubernetes):
+ *   - "RUNS_ON"      pod -> node, container -> host, vm -> hypervisor
+ *   - "OWNED_BY"     pod -> replicaset/deployment
+ *   - "ROUTES_TO"    service -> pod
+ *   - "IN_NAMESPACE" pod/service/deployment -> namespace
+ *
+ * `confidence` is 0..1. For data that comes straight from an authoritative
+ * source (K8s API), use 1.0. Inferred relations (e.g. label-based matching)
+ * should report lower values.
+ */
+export interface Edge {
+  from: string;
+  to: string;
+  relation: string;
+  source: string;
+  confidence: number;
+}
+
+/** Snapshot of the topology graph as known by a single connector. */
+export interface TopologySnapshot {
+  source: string;
+  resources: Resource[];
+  edges: Edge[];
+  /** Monotonic counter; bumped on each successful watch event apply. */
+  revision: number;
+}
+
+/** Event emitted by a watching connector when its in-memory graph changes. */
+export type TopologyChangeEvent =
+  | { type: "resource_added" | "resource_updated" | "resource_removed"; resource: Resource }
+  | { type: "edge_added" | "edge_removed"; edge: Edge }
+  | { type: "resync"; snapshot: TopologySnapshot };
+
+export type TopologyChangeListener = (event: TopologyChangeEvent) => void;
 
 // --- Health & Anomaly ---
 export interface AnomalyReport {

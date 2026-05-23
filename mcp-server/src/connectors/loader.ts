@@ -7,6 +7,7 @@ import type { ConnectorFactory, ConnectorManifest } from "../sdk/index.js";
 import { manifestSchema } from "../sdk/manifest-schema.js";
 import { PrometheusConnector } from "./prometheus.js";
 import { LokiConnector } from "./loki.js";
+import { KubernetesConnector } from "./kubernetes.js";
 import { sanitizeForLog } from "../util/sanitize.js";
 import { instrumentConnector } from "../metrics/instrument-connector.js";
 import {
@@ -133,6 +134,11 @@ export class PluginLoader {
       name: "loki",
       source: "builtin",
       factory: () => new LokiConnector(),
+    });
+    this.register({
+      name: "kubernetes",
+      source: "builtin",
+      factory: () => new KubernetesConnector(),
     });
   }
 
