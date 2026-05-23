@@ -68,6 +68,25 @@
       ]
     },
     {
+      "name": "kubernetes",
+      "displayName": "Kubernetes",
+      "description": "Watches a Kubernetes cluster (in-cluster or via kubeconfig) and exposes pods, nodes, deployments, replicasets and namespaces as an infrastructure topology graph. Edges: RUNS_ON (pod→node), OWNED_BY (pod→rs→deployment), IN_NAMESPACE. Built on @kubernetes/client-node Informers — no polling.",
+      "tier": "official",
+      "builtin": true,
+      "signalTypes": [
+        "topology"
+      ],
+      "latest": "0.1.0",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "releasedAt": "2026-05-23",
+          "serverCompat": ">=1.7.0",
+          "changelog": "Initial release: watch-based topology graph (pods, nodes, deployments, replicasets, namespaces) with incremental change events. Bundled with the server image — no install step."
+        }
+      ]
+    },
+    {
       "name": "loki",
       "displayName": "Grafana Loki",
       "description": "LogQL-based logs backend. Service discovery from log streams and label-scoped log queries.",
