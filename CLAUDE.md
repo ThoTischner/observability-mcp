@@ -64,7 +64,7 @@ the compose file maps k3s NodePort 30080/30081/30082 onto host
 | Service | URL | Purpose |
 |---------|-----|---------|
 | MCP Server | http://localhost:3000/mcp | MCP Streamable HTTP endpoint |
-| Web UI | http://localhost:3000 | Management UI (5 pages) |
+| Web UI | http://localhost:3000 | Management UI (Dashboard / Sources / Services / Health / Topology / Settings) |
 | Health API | http://localhost:3000/api/health | Live health data for all services |
 | Prometheus | http://localhost:9090 | Prometheus UI |
 | Loki | http://localhost:3100 | Loki API |

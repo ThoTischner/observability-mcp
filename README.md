@@ -111,7 +111,7 @@ graph TB
     Agent["AI Agent<br/><small>Claude, Ollama, etc.</small>"]
 
     subgraph MCP ["observability-mcp :3000"]
-        Tools["6 MCP Tools"]
+        Tools["8 MCP Tools"]
         Analysis["Analysis Engine<br/><small>Robust stats, Health Scoring, Correlation</small>"]
         UI["Web UI"]
     end
@@ -254,6 +254,10 @@ Without `--profile demo`, only `mcp-server` starts — useful when you already r
 | `query_logs` | logs | Query logs with error/warning counts and top patterns |
 | `get_service_health` | unified | Health score combining metrics + logs (0–100) |
 | `detect_anomalies` | unified | Cross-signal anomaly detection with robust (median/MAD + trend) analysis |
+| `get_topology` | topology | Return the merged infrastructure graph (resources + edges) from every topology-capable connector, filterable by source/kind/scope |
+| `get_blast_radius` | topology | Pivot on the universal `RUNS_ON` relation — "if this resource's host fails, who else fails?". Works for pod→node, vm→hypervisor, container→host |
+
+The two topology tools require a topology-capable connector. The bundled [Kubernetes connector](docs/kubernetes.md) is the first; future connectors (vCenter, NetBox, …) plug in via the same `isTopologyProvider` interface.
 
 ## Using with Claude Code
 

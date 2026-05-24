@@ -304,7 +304,7 @@ flowchart TB
 
     subgraph MCP ["observability-mcp :3000"]
         direction TB
-        Tools["6 MCP Tools"]
+        Tools["8 MCP Tools"]
         Analysis["Analysis Engine"]
         UI["Web UI"]
     end
@@ -330,10 +330,10 @@ flowchart TB
       </div>
     </section>
 
-    <!-- ===== SLIDE 7: THE 6 TOOLS ===== -->
+    <!-- ===== SLIDE 7: THE 8 TOOLS ===== -->
     <section>
       <span class="tag">Surface area</span>
-      <h2>6 tools. One contract.</h2>
+      <h2>8 tools. One contract.</h2>
       <table style="margin-top:24px;width:100%;">
         <thead>
           <tr><th>Tool</th><th>Signal</th><th>What it does</th></tr>
@@ -345,6 +345,8 @@ flowchart TB
           <tr><td><code>query_logs</code></td><td>logs</td><td>Log entries with error counts and top patterns</td></tr>
           <tr><td><code>get_service_health</code></td><td>unified</td><td>0–100 score combining metrics &amp; logs</td></tr>
           <tr><td><code>detect_anomalies</code></td><td>unified</td><td>Cross-signal anomalies via z-score analysis</td></tr>
+          <tr><td><code>get_topology</code></td><td>topology</td><td>Merged infrastructure graph (resources + edges) across topology connectors</td></tr>
+          <tr><td><code>get_blast_radius</code></td><td>topology</td><td>"If this host dies, who else fails?" — pivots on the generic RUNS_ON relation</td></tr>
         </tbody>
       </table>
       <p style="margin-top:24px;font-size:0.7em;" class="muted">
@@ -512,8 +514,8 @@ docker-compose up</code></pre>
         <div>
           <h3>Shipped</h3>
           <ul style="font-size:0.75em;">
-            <li>Prometheus + Loki connectors</li>
-            <li>Web UI (5 pages, real-time)</li>
+            <li>Prometheus + Loki + Kubernetes (topology) connectors</li>
+            <li>Web UI (6 pages, real-time — incl. Topology graph)</li>
             <li>prom-client + node_exporter adaptive defaults</li>
             <li>Per-instance <code>groupBy</code> breakdown</li>
             <li>Grafana Cloud / Mimir / managed Loki support</li>
