@@ -1,71 +1,112 @@
-# Benchmark overlay — pointing the harness at the OpenTelemetry Demo
+# Benchmark profile — OpenTelemetry Demo (Astronomy Shop) hybrid
 
-The benchmark script at `scripts/benchmark-rca.mjs` (see
-`docs/benchmark-astronomy-shop.md` for the methodology) is
-backend-agnostic: it asks MCP, MCP asks whichever
-Prometheus/Loki/Tempo the operator has wired up. So pointing the same
-harness at the OpenTelemetry Demo ("Astronomy Shop") is a matter of
-running their stack alongside ours and re-pointing our MCP sources.
+The `benchmark` compose profile and the `make benchmark-up/down/run`
+targets stand up a hybrid stack where:
 
-This file is a recipe, not an integrated profile, because the OTel
-Demo is ~15 services / ~4 GB of images — too heavy to belong in this
-repo's compose stack.
+- **Our side** (this repo, `--profile benchmark`) brings up
+  - `tempo` — single-binary, metrics-generator enabled
+  - `otel-collector-bridge` — OTLP gRPC/HTTP receiver that forwards
+    traces to Tempo and exposes metrics for Prometheus to scrape
+  - the always-on `mcp-server`
+- **Upstream side** (cloned from <https://github.com/open-telemetry/opentelemetry-demo>)
+  brings up the full Astronomy Shop workload (~23 services). Upstream's
+  own Prometheus + Jaeger + Grafana + OpenSearch stay in place — they
+  power the Astronomy Shop UI — but service telemetry is *also* pushed
+  to our bridge via `OTEL_COLLECTOR_HOST=otel-collector-bridge`.
 
-## Recipe
+We don't fork or vendor the upstream stack: `make benchmark-up` clones
+the upstream repo (shallow) into `.benchmark/opentelemetry-demo/` on
+first run, then re-uses it.
+
+## One-shot
 
 ```bash
-# 1. Pull and start Astronomy Shop in a separate compose project
-git clone --depth=1 https://github.com/open-telemetry/opentelemetry-demo /tmp/otel-demo
-cd /tmp/otel-demo
-docker compose up -d
-
-# 2. Verify their Prometheus + Grafana are up
-curl http://localhost:9090/api/v1/status/runtimeinfo   # Astronomy Shop's Prometheus
-curl http://localhost:8080                              # the demo frontend
-
-# 3. Point this repo's MCP server at their backends instead of ours
-#    Use the Web UI at http://localhost:3000 → Sources, or edit
-#    mcp-server/config/sources.yaml:
-#
-#    sources:
-#      - name: prom-otel-demo
-#        type: prometheus
-#        url: http://host.docker.internal:9090
-#      - name: tempo-otel-demo
-#        type: tempo
-#        url: http://host.docker.internal:3200
-#
-# 4. Trigger a real incident pattern in the Astronomy Shop. They
-#    expose a feature flags page at http://localhost:8080/feature
-#    — enable e.g. `paymentServiceFailure` or `cartServiceFailure`
-#    for a controlled error spike.
-
-# 5. Run the benchmark, pointing chaos at the feature-flag toggle
-#    instead of our /chaos/error-spike endpoint:
-cd <this repo>
-node scripts/benchmark-rca.mjs \
-  --mode=baseline \
-  --target=paymentservice \
-  --chaos=http://localhost:8080/api/feature \
-  --iterations=5
+make benchmark-up         # boots ours + upstream, joins networks
+make benchmark-run        # runs harness baseline + topology, writes JSON
+make benchmark-down       # tears down both
 ```
 
-The `--target` flag changes which service name the correctness scorer
-looks for. The chaos trigger URL is currently hard-coded to
-`POST <chaos>/chaos/error-spike`; if you want to drive feature flags
-instead, that's a one-line patch in `chaosTrigger()`. We deliberately
-have not generalised it because the OTel Demo chaos surface is wholly
-different from our `/chaos/*` endpoints — coupling them would obscure
-which workload produced which numbers.
+`benchmark-run` defaults to 5 iterations per arm. Override:
+
+```bash
+make benchmark-run ITERATIONS=10
+```
+
+Results land in `.benchmark/results/{baseline,topology}.json`.
+
+## Manual steps
+
+If you want to drive the pieces yourself:
+
+```bash
+# 1. Clone upstream demo (or `make benchmark-deps`)
+git clone --depth=1 https://github.com/open-telemetry/opentelemetry-demo \
+  .benchmark/opentelemetry-demo
+
+# 2. Start our side (Tempo + bridge + mcp-server)
+docker compose --profile benchmark up -d --wait
+
+# 3. Start upstream Astronomy Shop, repointing telemetry at our bridge
+cd .benchmark/opentelemetry-demo
+OTEL_COLLECTOR_HOST=otel-collector-bridge docker compose -p otel-demo up -d
+cd -
+
+# 4. Join the upstream network to ours so the bridge resolves
+docker network connect observability_observability otel-demo_default
+
+# 5. Point mcp-server at the benchmark sources (Web UI Sources tab,
+#    or mount examples/benchmark/sources.yaml as
+#    mcp-server/config/sources.yaml)
+
+# 6. Run the harness
+node scripts/benchmark-rca.mjs \
+  --mode=topology \
+  --chaos-driver=feature-flag \
+  --target=paymentservice \
+  --iterations=5 > /tmp/topology.json
+```
+
+## How the chaos driver works
+
+In `--chaos-driver=feature-flag` mode, the harness toggles an Astronomy
+Shop feature flag via flagd's HTTP API. Default flag:
+`paymentServiceFailure`. Override with `--flag=<name>` and
+`--flag-variant=<variant>`.
+
+`reset()` sets the variant to `off`; `trigger()` sets it to `on`.
+Between iterations the harness waits `--window=<ms>` (default 45 000) so
+the failure is visible to Prometheus + Tempo's service-graph before the
+LLM is asked.
+
+If `flagd` is unreachable at `--flagd=<url>`, the harness logs a warning
+and continues — the iteration will simply not produce a fault, which
+shows up as poor accuracy. That's a deliberate failure-visible mode, not
+a silent skip.
+
+## What `--mode=topology` actually adds
+
+Same six metrics/logs tools as `--mode=baseline`, plus:
+
+- `get_topology` — merged graph from every topology-capable connector
+- `get_blast_radius` — host-pivot walk over `RUNS_ON`
+
+On the benchmark stack the topology graph is populated entirely from
+**Tempo `CALLS` edges**: services exchanging spans across the e-commerce
+flow (`frontend → cart → checkout → payment → currency → …`). There's
+no Kubernetes connector active in this profile — Astronomy Shop runs in
+Docker, not k3s — so the topology arm is testing whether *service-graph*
+context helps RCA, not infrastructure topology.
 
 ## Caveats
 
-- Port `8080` collides between Astronomy Shop's frontend and our
-  api-gateway NodePort. Stop our demo (`docker compose stop`) first
-  or remap.
-- Astronomy Shop's Prometheus runs on its own scrape interval; allow
-  a longer `--window` (e.g. 90 000) so the topology snapshot has
-  caught the failure.
-- Astronomy Shop ships Jaeger, not Tempo, by default. The Tempo
-  connector won't have data — switch their `tracing-backend` flag to
-  Tempo or skip the `CALLS`-edge half of the topology test.
+- **Port 8080** is used by the Astronomy Shop frontend AND our k3s demo
+  api-gateway NodePort. The benchmark profile leaves our `demo`
+  profile down, so there's no collision in practice — but if you run
+  both at once, the second `up` will fail. Stop one first.
+- **Logs**: Astronomy Shop ships OpenSearch for logs, not Loki. The
+  bundled `sources.yaml` for this profile omits Loki entirely. Logs
+  queries against `mcp-server` will report "no logs backend
+  configured". An OpenSearch connector is a separate piece of work.
+- **First-time pull**: ~4 GB of upstream images. Plan accordingly.
+- **Network connect** is idempotent but adds a noisy "already
+  exists" line on subsequent `make benchmark-up`. Ignore.

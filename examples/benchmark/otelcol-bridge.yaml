@@ -1,0 +1,50 @@
+# OpenTelemetry Collector — benchmark bridge.
+#
+# Receives OTLP from the Astronomy Shop workload (running in its own
+# compose project) and forwards traces to our Tempo + metrics to our
+# Prometheus. Sits on the shared `observability` docker network so the
+# Astronomy Shop services can target `otel-collector-bridge:4317`.
+#
+# Why a separate collector instead of reusing upstream's:
+# - keeps the override surface tiny — one yaml file, no fork of their
+#   compose
+# - lets us evolve our routing (e.g. add Loki later) without breaking
+#   upstream's defaults
+# - upstream's own collector keeps running for *their* Jaeger/Prometheus
+#   stack so the Astronomy Shop UI stays usable
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 1s
+
+exporters:
+  # Tempo accepts OTLP over gRPC on :4317 (insecure inside the docker net).
+  otlp/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+  # Prometheus scrapes this endpoint via the prometheus.yml job below.
+  prometheus:
+    endpoint: 0.0.0.0:8889
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp/tempo]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [prometheus]
+  telemetry:
+    logs:
+      level: info

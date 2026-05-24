@@ -1,4 +1,4 @@
-.PHONY: help build up demo down logs test lint smoke clean release-dryrun
+.PHONY: help build up demo down logs test lint smoke clean release-dryrun benchmark-up benchmark-down benchmark-run benchmark-deps
 
 # Print every target with its leading-comment description.
 help: ## Show this help
@@ -74,3 +74,67 @@ release-dryrun: ## Print what the auto-release workflow would publish
 clean: ## Stop the stack and prune dangling images
 	docker compose --profile demo down -v
 	docker image prune -f
+
+##@ Benchmark (Astronomy Shop hybrid)
+
+# Where the upstream OTel Demo (Astronomy Shop) gets cloned to. Override
+# with `make benchmark-up OTEL_DEMO_DIR=/path/to/your/clone` to reuse an
+# existing checkout.
+OTEL_DEMO_DIR ?= .benchmark/opentelemetry-demo
+OTEL_DEMO_REPO ?= https://github.com/open-telemetry/opentelemetry-demo
+
+benchmark-deps: ## Ensure the upstream OpenTelemetry Demo checkout exists
+	@if [ ! -d "$(OTEL_DEMO_DIR)/.git" ]; then \
+	  mkdir -p "$$(dirname $(OTEL_DEMO_DIR))"; \
+	  echo "cloning $(OTEL_DEMO_REPO) → $(OTEL_DEMO_DIR) (shallow)"; \
+	  git clone --depth 1 "$(OTEL_DEMO_REPO)" "$(OTEL_DEMO_DIR)"; \
+	fi
+	@echo "upstream demo ready at $(OTEL_DEMO_DIR)"
+
+benchmark-up: benchmark-deps ## Start the hybrid benchmark stack: our Tempo+bridge + Astronomy Shop
+	docker compose --profile benchmark up -d --wait
+	# OTEL_COLLECTOR_HOST repoints upstream services from their own
+	# collector to our bridge so traces land in our Tempo. The
+	# upstream stack still brings up its own collector for its own
+	# Jaeger UI — they coexist.
+	@echo "starting upstream Astronomy Shop (this may pull ~4GB the first time)..."
+	cd "$(OTEL_DEMO_DIR)" && \
+	  OTEL_COLLECTOR_HOST=otel-collector-bridge \
+	  docker compose -p otel-demo up -d
+	# Join upstream's default network to ours so the bridge is
+	# reachable from their services as `otel-collector-bridge:4317`.
+	docker network connect observability_observability otel-demo_default 2>/dev/null || true
+	@echo
+	@echo "benchmark stack up."
+	@echo "  Astronomy Shop frontend: http://localhost:8080"
+	@echo "  Feature flag UI:         http://localhost:8080/feature"
+	@echo "  observability-mcp:       http://localhost:3000"
+	@echo "  Tempo:                   http://localhost:3200"
+	@echo
+	@echo "Re-point mcp-server sources at examples/benchmark/sources.yaml"
+	@echo "via the Web UI (Sources tab) or by mounting the file as"
+	@echo "/app/config/sources.yaml on next mcp-server restart."
+
+benchmark-down: ## Stop the hybrid benchmark stack (both ours and upstream)
+	-cd "$(OTEL_DEMO_DIR)" && docker compose -p otel-demo down
+	# Stop only benchmark-profile services; do NOT pass -v here — it
+	# would also wipe compose-wide volumes like k3s-kubeconfig and
+	# mcp-plugins that belong to the demo profile.
+	docker compose stop tempo otel-collector-bridge
+	docker compose rm -f tempo otel-collector-bridge
+	-docker volume rm observability-mcp_tempo-data 2>/dev/null || true
+
+benchmark-run: ## Run the RCA harness baseline vs topology against the benchmark stack
+	@command -v node >/dev/null || { echo "node required on the host for the harness"; exit 1; }
+	@mkdir -p .benchmark/results
+	node scripts/benchmark-rca.mjs \
+	  --mode=baseline --chaos-driver=feature-flag --target=paymentservice \
+	  --iterations=$(or $(ITERATIONS),5) \
+	  > .benchmark/results/baseline.json
+	node scripts/benchmark-rca.mjs \
+	  --mode=topology --chaos-driver=feature-flag --target=paymentservice \
+	  --iterations=$(or $(ITERATIONS),5) \
+	  > .benchmark/results/topology.json
+	@echo
+	@echo "results:"
+	@jq -r '"\(.mode): \(.totals)"' .benchmark/results/baseline.json .benchmark/results/topology.json

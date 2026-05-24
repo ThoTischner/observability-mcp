@@ -244,6 +244,18 @@ The same Deployments that Prometheus scrapes and Loki receives logs from are als
 
 Without `--profile demo`, only `mcp-server` starts — useful when you already run Prometheus/Loki elsewhere and just want to expose them via MCP.
 
+### Option D: Benchmark mode (OpenTelemetry Demo / Astronomy Shop)
+
+For producing credible RCA numbers against a real microservice workload (~23 services, native OTel instrumentation):
+
+```bash
+make benchmark-up         # clones upstream Astronomy Shop, brings up both stacks
+make benchmark-run        # runs the harness baseline vs topology, writes JSON
+make benchmark-down       # tears down
+```
+
+`make benchmark-up` adds Tempo + an OTel collector bridge under our `--profile benchmark` and orchestrates the upstream stack in a separate compose project, joining their network to ours so Astronomy Shop services push traces into our Tempo. See [docs/benchmark-astronomy-shop.md](docs/benchmark-astronomy-shop.md) and [examples/benchmark/README.md](examples/benchmark/README.md). First-time pull is ~4 GB.
+
 ## MCP Tools
 
 | Tool | Signal | Purpose |

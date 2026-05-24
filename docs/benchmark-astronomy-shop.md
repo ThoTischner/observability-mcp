@@ -73,22 +73,32 @@ in isolation.
 
 ## Running it
 
+Pick one of the two demos and run the harness against it.
+
+### Against the k3s demo (3 services + chaos)
+
 ```bash
-# 1. bring up the demo stack (k3s + Prometheus + Loki + MCP server)
 docker compose --profile demo up -d
-
-# 2. wait for the chaos endpoints to be live
 curl http://localhost:8081/chaos/reset
-
-# 3. make sure Ollama is reachable with the model pulled
-ollama pull llama3.1:8b   # or whatever model you intend to test
-
-# 4. run baseline (no topology)
-node scripts/benchmark-rca.mjs --mode=baseline  --iterations=5 > baseline.json
-
-# 5. run topology
-node scripts/benchmark-rca.mjs --mode=topology  --iterations=5 > topology.json
+ollama pull llama3.1:8b
+node scripts/benchmark-rca.mjs --mode=baseline --iterations=5 > baseline.json
+node scripts/benchmark-rca.mjs --mode=topology --iterations=5 > topology.json
 ```
+
+### Against Astronomy Shop (~23 services, OTel-native)
+
+```bash
+ollama pull llama3.1:8b
+make benchmark-up
+make benchmark-run ITERATIONS=5
+# results land in .benchmark/results/{baseline,topology}.json
+make benchmark-down
+```
+
+Under the hood `benchmark-run` invokes the harness with
+`--chaos-driver=feature-flag --target=paymentservice`, toggling
+Astronomy Shop's `paymentServiceFailure` flag via flagd between
+iterations.
 
 Defaults assume:
 
@@ -149,23 +159,39 @@ anyone can reproduce a real one. Append your run to this table.
 
 Open a PR adding a row when you run a head-to-head.
 
-## Why no Astronomy Shop in our compose stack
+## Two demos, two purposes
 
-The OpenTelemetry Demo (Astronomy Shop) is the obvious workload to
-benchmark against: 15 services, real microservice topology, OTel
-instrumentation already wired up. We do **not** bundle it because:
+| profile                         | workload                          | what it's good for                                   |
+|---------------------------------|-----------------------------------|------------------------------------------------------|
+| `docker compose --profile demo` | 3 chaos services in k3s           | onboarding, fast feedback, k8s-topology A/B          |
+| `make benchmark-up`             | OpenTelemetry Astronomy Shop (~23 services) + our Tempo + OTel bridge | credible service-graph A/B, real OTel telemetry |
 
-- ~4 GB of images and 15 containers would dwarf our entire demo stack,
-  and most users running this benchmark only need 3 services + chaos
-  to get a comparable A/B.
-- The Astronomy Shop ships its own Prometheus/Grafana/Jaeger; making
-  it cohabit with our k3s-in-compose layout is more compose surgery
-  than the result is worth.
+The `demo` profile is for showing the product in 10 seconds. The
+`benchmark` profile is for producing numbers that hold up next to peer
+products. Both run side-by-side using the same `mcp-server`; pick
+whichever fits the question.
 
-If you want to point this benchmark at Astronomy Shop, use the
-overlay recipe at `examples/benchmark/README.md`. The benchmark script
-itself is backend-agnostic — it talks to MCP, MCP talks to whatever
-Prometheus/Loki/Tempo the operator configured.
+The `benchmark` profile does **not** bundle Astronomy Shop in our
+compose. `make benchmark-up` clones the upstream OpenTelemetry Demo
+into `.benchmark/opentelemetry-demo/` (shallow) on first run and
+orchestrates both stacks: ours brings up Tempo + an OTel collector
+bridge under `--profile benchmark`; upstream runs in its own compose
+project (`-p otel-demo`) with `OTEL_COLLECTOR_HOST` repointed at our
+bridge so traces land in our Tempo. See
+[examples/benchmark/README.md](../examples/benchmark/README.md) for the
+exact commands and caveats.
+
+### Why this split
+
+- Upstream's compose is ~23 services + Prometheus + Jaeger + Grafana
+  + OpenSearch. Forking or vendoring it means tracking their releases
+  forever. Cloning on-demand is one git pull less to forget.
+- Our `mcp-server` is *the* thing under test — keeping it on our side
+  of the boundary means the benchmark surface is unchanged regardless
+  of which workload we point at.
+- The k3s `demo` profile is pedagogically valuable (you can see exactly
+  what 3 services + chaos do); the Astronomy Shop profile is too dense
+  to teach with. Keeping both keeps both audiences.
 
 ## Reproducibility checklist
 
