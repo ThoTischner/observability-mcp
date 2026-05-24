@@ -86,6 +86,98 @@ test("queryMetrics maps trace durations → seconds, sorted by start time", asyn
   assert.equal(r.summary.min, 0.1);
 });
 
+test("topology — derives CALLS edges from cross-service parent/child spans, dedupes", async () => {
+  const c = create();
+  await c.connect({ url: "http://tempo", traceSample: 2 });
+  const batch = (svc, spans) => ({
+    resource: { attributes: [{ key: "service.name", value: { stringValue: svc } }] },
+    scopeSpans: [{ spans }],
+  });
+  // Same shape, different traces — should produce one CALLS edge frontend→checkout,
+  // not two. Plus a same-service intra-call that must NOT become an edge.
+  const traceOne = {
+    batches: [
+      batch("frontend", [{ spanId: "s1", parentSpanId: "" }]),
+      batch("checkout", [{ spanId: "s2", parentSpanId: "s1" }, { spanId: "s3", parentSpanId: "s2" }]),
+    ],
+  };
+  const traceTwo = {
+    trace: { // older wrapper shape — must still parse
+      batches: [
+        batch("frontend", [{ spanId: "x1", parentSpanId: "" }]),
+        batch("checkout", [{ spanId: "x2", parentSpanId: "x1" }]),
+      ],
+    },
+  };
+  globalThis.fetch = mockFetch([
+    ["/api/v2/search/tag/resource.service.name/values", () =>
+      ok({ tagValues: ["frontend", "checkout"] })],
+    ["/api/search", () => ok({ traces: [{ traceID: "T1" }, { traceID: "T2" }] })],
+    ["/api/traces/T1", () => ok(traceOne)],
+    ["/api/traces/T2", () => ok(traceTwo)],
+  ]);
+  const snap = await c.getTopologySnapshot();
+  assert.equal(snap.source, "tempo");
+  assert.equal(snap.resources.length, 2);
+  assert.deepEqual(snap.resources.map((r) => r.kind).sort(), ["service", "service"]);
+  assert.deepEqual(snap.edges.length, 1);
+  const e = snap.edges[0];
+  assert.equal(e.from, "tempo:service:frontend");
+  assert.equal(e.to, "tempo:service:checkout");
+  assert.equal(e.relation, "CALLS");
+  assert.equal(e.source, "tempo");
+  assert.ok(e.confidence > 0 && e.confidence < 1, "inferred edges carry sub-1.0 confidence");
+});
+
+test("topology — second snapshot call within TTL is served from cache (no extra HTTP)", async () => {
+  const c = create();
+  await c.connect({ url: "http://tempo" });
+  let traceQueries = 0;
+  globalThis.fetch = mockFetch([
+    ["/api/v2/search/tag", () => ok({ tagValues: ["a"] })],
+    ["/api/search", () => { traceQueries += 1; return ok({ traces: [] }); }],
+  ]);
+  await c.getTopologySnapshot();
+  await c.getTopologySnapshot();
+  assert.equal(traceQueries, 1, "second call should hit cache, not Tempo");
+});
+
+test("topology — adds resources for services seen only via spans", async () => {
+  const c = create();
+  await c.connect({ url: "http://tempo" });
+  const b = (svc, spans) => ({
+    resource: { attributes: [{ key: "service.name", value: { stringValue: svc } }] },
+    scopeSpans: [{ spans }],
+  });
+  globalThis.fetch = mockFetch([
+    // listServices only knows "a"; the trace also references "b" — connector
+    // must promote "b" to a Resource so the CALLS edge is not dangling.
+    ["/api/v2/search/tag", () => ok({ tagValues: ["a"] })],
+    ["/api/search", () => ok({ traces: [{ traceID: "t" }] })],
+    ["/api/traces/t", () => ok({ batches: [
+      b("a", [{ spanId: "p", parentSpanId: "" }]),
+      b("b", [{ spanId: "c", parentSpanId: "p" }]),
+    ] })],
+  ]);
+  const snap = await c.getTopologySnapshot();
+  assert.deepEqual(snap.resources.map((r) => r.name).sort(), ["a", "b"]);
+  assert.equal(snap.edges.length, 1);
+  assert.equal(snap.edges[0].to, "tempo:service:b");
+});
+
+test("topology — listResources / listEdges defer to the same snapshot", async () => {
+  const c = create();
+  await c.connect({ url: "http://tempo" });
+  globalThis.fetch = mockFetch([
+    ["/api/v2/search/tag", () => ok({ tagValues: ["s1", "s2"] })],
+    ["/api/search", () => ok({ traces: [] })],
+  ]);
+  const r = await c.listResources();
+  const e = await c.listEdges();
+  assert.equal(r.length, 2);
+  assert.deepEqual(e, []);
+});
+
 test("queryMetrics rejects unknown metrics, drops NaN samples", async () => {
   const c = create();
   await c.connect({ url: "http://tempo" });

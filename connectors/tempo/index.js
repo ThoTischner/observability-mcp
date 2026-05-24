@@ -66,14 +66,34 @@ const DEFAULT_METRICS = [
 // Accepted aliases → all resolve to the trace-duration series.
 const LATENCY_ALIASES = new Set(["latency", "latency_p99", "duration", "response_time"]);
 
+// Topology cache TTL — Tempo trace data lags real-world calls by tens of
+// seconds anyway, so refreshing more often just burns Tempo API quota.
+const TOPOLOGY_TTL_MS = 30_000;
+// How many recent traces we sample per refresh. Larger = better edge
+// coverage but more /api/traces round-trips. 50 is a defensible compromise
+// for demos and CI; operators can override via source config.
+const DEFAULT_TRACE_SAMPLE = 50;
+// Inferred trace-derived edges carry lower confidence than authoritative
+// k8s ownerReferences edges (1.0). Documented in topology-vocabulary.md.
+const CALLS_CONFIDENCE = 0.7;
+
 export class TempoConnector {
   constructor() {
     this.name = "tempo";
     this.type = "tempo";
+    // Honest reporting: we now emit both — metrics (trace-derived latency)
+    // AND topology (service graph from trace spans). The connector
+    // surface in interface.ts inspects the topology methods, not this
+    // string; `signalType` stays informational.
     this.signalType = "metrics";
     this._metrics = DEFAULT_METRICS;
     this._base = "";
     this._token = "";
+    this._traceSample = DEFAULT_TRACE_SAMPLE;
+    // Memoized topology snapshot — built lazily, refreshed on demand.
+    this._topology = { snap: null, expiresAt: 0, revision: 0 };
+    this._watchers = new Set();
+    this._watchTimer = null;
   }
 
   async connect(config) {
@@ -84,10 +104,18 @@ export class TempoConnector {
     if (Array.isArray(config && config.metrics) && config.metrics.length > 0) {
       this._metrics = config.metrics;
     }
+    const sample = config && Number(config.traceSample);
+    if (Number.isFinite(sample) && sample > 0) {
+      this._traceSample = Math.min(Math.floor(sample), 500);
+    }
   }
 
   async disconnect() {
-    /* stateless */
+    if (this._watchTimer) {
+      clearInterval(this._watchTimer);
+      this._watchTimer = null;
+    }
+    this._watchers.clear();
   }
 
   _headers() {
@@ -169,6 +197,199 @@ export class TempoConnector {
       resolvedSeries: q,
     };
   }
+
+  // --- Topology capability ---
+  //
+  // Tempo does not expose a service-graph endpoint directly — what it
+  // exposes is the raw trace store. We derive the service graph the same
+  // way Grafana's "Service Graph" tab does client-side: sample N recent
+  // traces, walk the span tree, and for every parent → child span pair
+  // where the resource.service.name differs, emit one CALLS edge. Edges
+  // are de-duplicated across the sample so a chatty path does not produce
+  // N copies.
+  //
+  // This is a sampled, eventually-consistent view — confidence < 1.0 on
+  // every edge. See docs/topology-vocabulary.md for the meaning of CALLS
+  // and the confidence convention.
+
+  async _buildTopology() {
+    const services = await this.listServices();
+    const resources = services.map((s) => ({
+      id: serviceId(s.name),
+      kind: "service",
+      name: s.name,
+      source: this.name,
+      labels: {},
+      attributes: {},
+    }));
+    const edgeMap = new Map();
+    let traceIds;
+    try {
+      traceIds = await this._sampleTraceIds();
+    } catch {
+      traceIds = [];
+    }
+    for (const id of traceIds) {
+      let trace;
+      try {
+        trace = await this._fetchTrace(id);
+      } catch {
+        continue;
+      }
+      for (const [from, to] of callPairs(trace)) {
+        if (!from || !to || from === to) continue;
+        const key = `${from}|${to}`;
+        if (edgeMap.has(key)) continue;
+        edgeMap.set(key, {
+          from: serviceId(from),
+          to: serviceId(to),
+          relation: "CALLS",
+          source: this.name,
+          confidence: CALLS_CONFIDENCE,
+        });
+      }
+    }
+    // Make sure every endpoint of an edge appears as a resource — a service
+    // discovered only via a trace span (never returned by listServices)
+    // would otherwise produce a dangling edge that get_topology strips.
+    const have = new Set(resources.map((r) => r.id));
+    for (const e of edgeMap.values()) {
+      for (const id of [e.from, e.to]) {
+        if (have.has(id)) continue;
+        have.add(id);
+        const name = id.replace(/^tempo:service:/, "");
+        resources.push({ id, kind: "service", name, source: this.name, labels: {}, attributes: {} });
+      }
+    }
+    this._topology.revision += 1;
+    return {
+      source: this.name,
+      resources,
+      edges: [...edgeMap.values()],
+      revision: this._topology.revision,
+    };
+  }
+
+  async _refreshIfStale() {
+    const now = Date.now();
+    if (this._topology.snap && now < this._topology.expiresAt) return this._topology.snap;
+    const snap = await this._buildTopology();
+    this._topology.snap = snap;
+    this._topology.expiresAt = now + TOPOLOGY_TTL_MS;
+    return snap;
+  }
+
+  async _sampleTraceIds() {
+    const u = new URL(`${this._base}/api/search`);
+    u.searchParams.set("q", "{}");
+    u.searchParams.set("limit", String(this._traceSample));
+    const res = await fetch(u, { headers: this._headers() });
+    if (!res.ok) return [];
+    const body = await res.json();
+    const traces = (body && body.traces) || [];
+    return traces.map((t) => t && (t.traceID || t.traceId)).filter(Boolean);
+  }
+
+  async _fetchTrace(id) {
+    const res = await fetch(`${this._base}/api/traces/${encodeURIComponent(id)}`, {
+      headers: this._headers(),
+    });
+    if (!res.ok) return null;
+    return res.json();
+  }
+
+  async listResources() {
+    return (await this._refreshIfStale()).resources;
+  }
+
+  async listEdges() {
+    return (await this._refreshIfStale()).edges;
+  }
+
+  async getTopologySnapshot() {
+    return this._refreshIfStale();
+  }
+
+  watchTopology(listener) {
+    this._watchers.add(listener);
+    // Initial resync so subscribers see the current state without racing
+    // the next poll tick — same contract as the k8s connector.
+    queueMicrotask(async () => {
+      try {
+        const snap = await this._refreshIfStale();
+        listener({ type: "resync", snapshot: snap });
+      } catch { /* swallow */ }
+    });
+    if (!this._watchTimer) {
+      this._watchTimer = setInterval(async () => {
+        let snap;
+        try { snap = await this._buildTopology(); } catch { return; }
+        this._topology.snap = snap;
+        this._topology.expiresAt = Date.now() + TOPOLOGY_TTL_MS;
+        for (const l of this._watchers) {
+          try { l({ type: "resync", snapshot: snap }); } catch { /* skip */ }
+        }
+      }, TOPOLOGY_TTL_MS);
+      // Don't keep the event loop alive just for this poller.
+      if (this._watchTimer && typeof this._watchTimer.unref === "function") {
+        this._watchTimer.unref();
+      }
+    }
+    return () => {
+      this._watchers.delete(listener);
+      if (this._watchers.size === 0 && this._watchTimer) {
+        clearInterval(this._watchTimer);
+        this._watchTimer = null;
+      }
+    };
+  }
+}
+
+function serviceId(name) {
+  return `tempo:service:${name}`;
+}
+
+// Walk an OTLP-JSON trace and return [parentService, childService] pairs
+// for every cross-service span edge. Handles both Tempo response shapes:
+// `{batches:[...]}` (newer) and `{trace:{batches:[...]}}` (older wrapper).
+function callPairs(trace) {
+  const batches = (trace && (trace.batches || (trace.trace && trace.trace.batches))) || [];
+  // Build spanId → serviceName once across all batches.
+  const svcOf = new Map();
+  const spans = [];
+  for (const b of batches) {
+    const svc = serviceNameOf(b && b.resource);
+    if (!svc) continue;
+    const scopes = (b && b.scopeSpans) || (b && b.instrumentationLibrarySpans) || [];
+    for (const sc of scopes) {
+      for (const s of sc.spans || []) {
+        if (!s || !s.spanId) continue;
+        svcOf.set(s.spanId, svc);
+        spans.push(s);
+      }
+    }
+  }
+  const pairs = [];
+  for (const s of spans) {
+    const child = svcOf.get(s.spanId);
+    const parentId = s.parentSpanId || s.parentSpanID;
+    if (!parentId) continue;
+    const parent = svcOf.get(parentId);
+    if (!parent || !child || parent === child) continue;
+    pairs.push([parent, child]);
+  }
+  return pairs;
+}
+
+function serviceNameOf(resource) {
+  const attrs = (resource && resource.attributes) || [];
+  for (const a of attrs) {
+    if (!a || a.key !== "service.name") continue;
+    const v = a.value;
+    if (!v) continue;
+    return v.stringValue || (typeof v === "string" ? v : null);
+  }
+  return null;
 }
 
 export default function create() {
