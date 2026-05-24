@@ -12,6 +12,7 @@
       "version": "1.1.0",
       "releasedAt": "2026-05-24",
       "serverCompat": ">=1.7.0",
+      "integrity": "sha256-p43JS48KOAU5wrfvNuCeTsYYO5ArpR3xwvMf+LEQQLw=",
       "changelog": "Adds topology capability: derives CALLS edges between services from a sampled batch of recent Tempo traces (default 50). Snapshots memoized for 30s. Sample size configurable via source config (`traceSample`)."
     },
     {
