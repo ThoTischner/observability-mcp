@@ -28,6 +28,7 @@ import {
   type KubeReplicaSet,
   type KubeNamespace,
 } from "./kubernetes-graph.js";
+import { validateSnapshot } from "./topology-vocabulary.js";
 
 // Minimal informer abstraction so the connector is unit-testable without
 // a live cluster. The real implementation in createInformerFactory wraps
@@ -77,6 +78,7 @@ export class KubernetesConnector implements ObservabilityConnector {
 
   name = "";
   private store!: TopologyStore;
+  private warnedVocab = new Set<string>();
   private factory?: InformerFactory;
   private informers: Informer<unknown>[] = [];
   private providerOverride?: InformerFactoryProvider;
@@ -205,14 +207,19 @@ export class KubernetesConnector implements ObservabilityConnector {
     return this.store?.listEdges() ?? [];
   }
   async getTopologySnapshot(): Promise<TopologySnapshot> {
-    return (
-      this.store?.snapshot() ?? {
-        source: this.name,
-        resources: [],
-        edges: [],
-        revision: 0,
-      }
-    );
+    const snap = this.store?.snapshot() ?? {
+      source: this.name,
+      resources: [],
+      edges: [],
+      revision: 0,
+    };
+    for (const w of validateSnapshot(snap.resources, snap.edges)) {
+      const key = `${w.kind}:${w.value}`;
+      if (this.warnedVocab.has(key)) continue;
+      this.warnedVocab.add(key);
+      console.warn("topology vocabulary warning (source=%s): %s", this.name, w.message);
+    }
+    return snap;
   }
   watchTopology(listener: TopologyChangeListener): () => void {
     if (!this.store) return () => {};

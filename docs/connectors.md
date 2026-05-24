@@ -16,7 +16,7 @@ Optional connectors (Datadog, Grafana, Elasticsearch, …) are distributed via t
    - `listServices()` — discover services from the backend
    - `getDefaultMetrics()` / `getMetrics()` — return `MetricDefinition[]` in the backend's query language
    - `queryMetrics?()` and/or `queryLogs?()` — implement what the backend supports
-   - `listResources?()` / `listEdges?()` / `getTopologySnapshot?()` / `watchTopology?()` — implement these if your backend models infrastructure topology (Kubernetes pods on nodes, VMs on hypervisors, …). The `isTopologyProvider()` guard in `interface.ts` is the contract the new MCP tools (`get_topology`, `get_blast_radius`) and the Web UI Topology page consume.
+   - `listResources?()` / `listEdges?()` / `getTopologySnapshot?()` / `watchTopology?()` — implement these if your backend models infrastructure topology (Kubernetes pods on nodes, VMs on hypervisors, …). The `isTopologyProvider()` guard in `interface.ts` is the contract the new MCP tools (`get_topology`, `get_blast_radius`) and the Web UI Topology page consume. Emit `kind` and `relation` values from the canonical [topology vocabulary](topology-vocabulary.md) so cross-connector reasoning works; the validator in `topology-vocabulary.ts` warns on drift.
 3. Register a factory in `mcp-server/src/connectors/registry.ts`:
    ```ts
    connectorFactories[type] = () => new MyConnector();

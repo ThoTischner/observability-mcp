@@ -257,7 +257,7 @@ Without `--profile demo`, only `mcp-server` starts — useful when you already r
 | `get_topology` | topology | Return the merged infrastructure graph (resources + edges) from every topology-capable connector, filterable by source/kind/scope |
 | `get_blast_radius` | topology | Pivot on the universal `RUNS_ON` relation — "if this resource's host fails, who else fails?". Works for pod→node, vm→hypervisor, container→host |
 
-The two topology tools require a topology-capable connector. The bundled [Kubernetes connector](docs/kubernetes.md) is the first; future connectors (vCenter, NetBox, …) plug in via the same `isTopologyProvider` interface.
+The two topology tools require a topology-capable connector. The bundled [Kubernetes connector](docs/kubernetes.md) is the first; future connectors (vCenter, NetBox, …) plug in via the same `isTopologyProvider` interface and emit `kind`/`relation` values from the canonical [topology vocabulary](docs/topology-vocabulary.md).
 
 ## Using with Claude Code
 
