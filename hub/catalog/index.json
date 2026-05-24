@@ -127,14 +127,21 @@
     {
       "name": "tempo",
       "displayName": "Grafana Tempo",
-      "description": "Grafana Tempo connector — OTLP-native tracing backend. Surfaces trace-derived service latency via the Tempo TraceQL search API, feeding the same anomaly/health path as a Prometheus latency metric.",
+      "description": "Grafana Tempo connector — OTLP-native tracing backend. Surfaces trace-derived service latency via the TraceQL search API and derives a service-graph (CALLS edges) by walking cross-service parent/child spans across a recent-trace sample.",
       "tier": "official",
       "builtin": false,
       "signalTypes": [
-        "metrics"
+        "metrics",
+        "topology"
       ],
-      "latest": "1.0.0",
+      "latest": "1.1.0",
       "versions": [
+        {
+          "version": "1.1.0",
+          "releasedAt": "2026-05-24",
+          "serverCompat": ">=1.7.0",
+          "changelog": "Adds topology capability: derives CALLS edges between services from a sampled batch of recent Tempo traces (default 50). Snapshots memoized for 30s. Sample size configurable via source config (`traceSample`)."
+        },
         {
           "version": "1.0.0",
           "releasedAt": "2026-05-18",

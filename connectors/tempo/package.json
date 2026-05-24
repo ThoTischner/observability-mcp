@@ -1,7 +1,7 @@
 {
   "name": "@observability-mcp/connector-tempo",
-  "version": "1.0.0",
-  "description": "Grafana Tempo connector for observability-mcp — trace-derived service latency via the Tempo TraceQL search API.",
+  "version": "1.1.0",
+  "description": "Grafana Tempo connector for observability-mcp — trace-derived service latency + service-graph (CALLS) topology via the Tempo TraceQL search API.",
   "type": "module",
   "main": "./index.js",
   "license": "MIT",
