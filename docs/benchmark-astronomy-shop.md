@@ -148,16 +148,45 @@ jq '.totals' baseline.json topology.json
 
 ## Results
 
-Numbers are populated *only when run with Ollama up*. We deliberately
-do not commit synthetic numbers — the point of the harness is that
-anyone can reproduce a real one. Append your run to this table.
+Append your own runs as new rows. Don't delete the existing ones — the
+point of the table is comparison across models and setups, not "newest
+wins".
 
-| run date    | model           | iterations | mode      | mean tokens / iter | accuracy | mean rounds | mean duration |
-|-------------|-----------------|------------|-----------|---------------------|----------|-------------|----------------|
-| _example_   | llama3.1:8b     | 5          | baseline  | TBD                 | TBD      | TBD         | TBD            |
-| _example_   | llama3.1:8b     | 5          | topology  | TBD                 | TBD      | TBD         | TBD            |
+| run date   | repo SHA | model         | iterations | mode      | mean tokens / iter | accuracy | mean rounds | mean LLM time |
+|------------|----------|---------------|------------|-----------|---------------------|----------|-------------|----------------|
+| 2026-05-24 | 5da8285  | llama3.2:3b   | 5          | baseline  | 2,351               | 1/5 (20%) | 1.0         | 1.5 s          |
+| 2026-05-24 | 5da8285  | llama3.2:3b   | 5          | topology  | 3,097 (+32%)        | 0/5 (0%)  | 1.0         | 2.6 s          |
 
-Open a PR adding a row when you run a head-to-head.
+### Honest read of the first row
+
+This is **the opposite** of what the hypothesis predicted. Worth
+unpacking, not hiding:
+
+- `llama3.2:3b` is the only tool-capable model we had locally for this
+  run (`deepseek-r1:8b` returned `does not support tools` from Ollama).
+- Across all 10 iterations on both arms, the model emitted **zero**
+  tool calls. `mean rounds = 1.0` means every iteration ended on the
+  first LLM turn with a direct answer — the model didn't bother
+  invoking `query_metrics`, `detect_anomalies`, `get_topology`, or
+  anything else. It just guessed from the prompt.
+- The topology arm's +32 % token cost is therefore pure overhead from
+  the extra tool definitions in the prompt, with no behavioural
+  upside. Accuracy went 20 % → 0 % because the longer tool list seems
+  to push the model toward hallucinated "database service" answers.
+- **What this shows**: at the 3B scale, more tools is worse, not
+  better. Anyone deploying observability-mcp with a small model
+  should either curate the tool set tightly, or accept that the LLM
+  is doing structured guessing, not real RCA.
+- **What this does NOT show**: whether topology context helps a model
+  that actually uses tools. That's the live question. Re-run with
+  `--model=llama3.1:8b` (or any larger tool-capable model) and append
+  the row.
+
+The honest version of "we beat Causely's published 60 % token
+reduction" is: *we built the harness, ran it, and the small model
+on hand inverted the expected sign*. The hypothesis is testable, the
+test is on disk, and the next person with a bigger model can move
+the number.
 
 ## Two demos, two purposes
 
