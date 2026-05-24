@@ -930,6 +930,7 @@
           <button class="nav-btn" data-page="sources" onclick="showPage('sources')"><span class="nav-ico">⊟</span>Sources</button>
           <button class="nav-btn" data-page="services" onclick="showPage('services')"><span class="nav-ico">⊞</span>Services</button>
           <button class="nav-btn" data-page="health" onclick="showPage('health')"><span class="nav-ico">✚</span>Health</button>
+          <button class="nav-btn" data-page="topology" onclick="showPage('topology')"><span class="nav-ico">◇</span>Topology</button>
         </div>
       </div>
       <div class="rail-grp" data-grp="catalog">
@@ -1136,6 +1137,65 @@
       </div>
       <div id="health-cards" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px;">
         <div class="empty">Loading health data...</div>
+      </div>
+    </div>
+
+    <!-- ===== Topology ===== -->
+    <div class="page" id="page-topology">
+      <div class="page-head">
+        <div class="ph-left">
+          <div class="breadcrumb">Console / Observability / <b>Topology</b></div>
+          <h1>Infrastructure Topology</h1>
+        </div>
+        <div class="ph-actions">
+          <button class="btn" onclick="loadTopology()">Refresh</button>
+        </div>
+      </div>
+      <div class="tabs">
+        <button class="tab-btn active" onclick="showTopologyTab('summary')">Summary</button>
+        <button class="tab-btn" onclick="showTopologyTab('blast')">Blast radius</button>
+        <button class="tab-btn" onclick="showTopologyTab('graph')">Graph</button>
+      </div>
+      <div id="topology-tab-summary" class="tab-content active">
+        <div class="card">
+          <div class="card-header"><h2>Sources & counts</h2></div>
+          <div id="topology-summary" class="empty">Loading topology...</div>
+        </div>
+      </div>
+      <div id="topology-tab-blast" class="tab-content">
+        <div class="card">
+          <div class="card-header">
+            <h2>Grouped by host <span class="muted" style="font-weight:400; font-size: var(--fs-sm);">(pivots on the <code>RUNS_ON</code> relation)</span></h2>
+          </div>
+          <div style="padding: 0 16px 8px; display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+            <label class="muted" style="display:flex; gap:6px; align-items:center; font-size: var(--fs-sm);">
+              Scope filter
+              <select id="topology-scope-filter" style="background:var(--surface); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:4px 8px;">
+                <option value="">All</option>
+              </select>
+            </label>
+            <span class="muted" style="font-size: var(--fs-xs);">Scope = any resource pointed to by an <code>IN_NAMESPACE</code> edge (e.g. k8s namespaces, future: vCenter folders).</span>
+          </div>
+          <div id="topology-by-host" class="empty" style="padding: 0 16px 16px;">Loading...</div>
+        </div>
+      </div>
+      <div id="topology-tab-graph" class="tab-content">
+        <div class="card">
+          <div class="card-header">
+            <h2>Layered graph</h2>
+            <span class="muted" style="font-size: var(--fs-xs);">click a resource to inspect · drag to reposition · wheel to zoom · drag the background to pan</span>
+          </div>
+          <div style="display:grid; grid-template-columns: 1fr 340px; gap: 0; border-top: 1px solid var(--border); height: 660px;">
+            <div id="topology-graph-host" style="position:relative; overflow:hidden; background: var(--surface-2); border-right: 1px solid var(--border);">
+              <svg id="topology-graph-svg" style="position:absolute; inset:0; width:100%; height:100%; cursor: grab;"></svg>
+              <div id="topology-graph-legend" style="position:absolute; bottom:10px; left:10px; font-size: var(--fs-xs); padding:8px 10px; background: var(--surface); border:1px solid var(--border); border-radius: 6px; max-width: 75%;"></div>
+            </div>
+            <aside id="topology-inspector" style="background: var(--surface); padding: 16px; overflow-y: auto; font-size: var(--fs-sm);">
+              <div id="topology-inspector-empty" class="empty" style="margin: 24px 0;">Select a resource on the left to inspect its labels, attributes and neighbours.</div>
+              <div id="topology-inspector-body" style="display:none;"></div>
+            </aside>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1517,6 +1577,7 @@ function showPage(name) {
   if(it) it.classList.add('open');
   if(name==='settings') loadSettingsData();
   if(name==='health') loadHealthData();
+  if(name==='topology') loadTopology();
   if(name==='connectors') loadConnectors();
   if(name==='access'||name==='products'||name==='audit'||name==='entitlement') loadEnterprise();
 }
@@ -2653,6 +2714,768 @@ function renderHealthCards() {
       ${(h.correlations&&h.correlations.length>0)?h.correlations.map(c=>`<div class="hc-correlation">${esc(c)}</div>`).join(''):''}
     </div>`;
   }).join('');
+}
+
+// --- Topology ---
+let topologyData = null;
+let topologyInterval = null;
+let topologyScopeFilter = '';
+let topologyActiveTab = 'summary';
+let topologyGraphState = null;     // memo: last rendered graph state (positions, view)
+let topologyLastRevHash = '';      // revisions-of-all-sources signature; re-renders only on change
+let topologySelectedId = null;     // currently selected node id (preserved across renders)
+
+// --- Generic helpers (no kind/relation hardcoding) ---
+
+// Walk OWNED_BY edges from startId until no outgoing OWNED_BY remains.
+// Returns the terminal owner id (or startId if it has no owner). Universal:
+// k8s pod→rs→deployment, vCenter vm→resource-pool→folder, AWS pod→ASG, etc.
+function ownershipRoot(startId, ownedByMap){
+  let cur = startId;
+  for (let i = 0; i < 16; i++) { // hard cap defends against cycles
+    const next = ownedByMap.get(cur);
+    if (!next || next === cur) return cur;
+    cur = next;
+  }
+  return cur;
+}
+
+// Index edges once per render so views are O(N).
+function indexTopology(d){
+  const byId = new Map();
+  for (const r of d.resources) byId.set(r.id, r);
+  const runsOn = new Map();       // from → to (assume single host per child)
+  const ownedBy = new Map();      // from → to (single owner walk)
+  const inScope = new Map();      // from → to (single IN_NAMESPACE-style scope per resource)
+  const scopeKindCount = {};      // kind of every IN_NAMESPACE target → count of incoming
+  for (const e of d.edges){
+    if (e.relation === 'RUNS_ON') runsOn.set(e.from, e.to);
+    else if (e.relation === 'OWNED_BY') {
+      // keep only the first OWNED_BY out-edge per source (most connectors emit
+      // one); the walker handles chains via the map.
+      if (!ownedBy.has(e.from)) ownedBy.set(e.from, e.to);
+    } else if (e.relation === 'IN_NAMESPACE') {
+      if (!inScope.has(e.from)) inScope.set(e.from, e.to);
+      const target = byId.get(e.to);
+      if (target) scopeKindCount[target.kind] = (scopeKindCount[target.kind]||0)+1;
+    }
+  }
+  return { byId, runsOn, ownedBy, inScope, scopeKindCount };
+}
+
+async function loadTopology(){
+  try {
+    const r = await fetch('/api/topology');
+    if (!r.ok) throw new Error('http '+r.status);
+    const fresh = await r.json();
+    // Only re-render when topology actually changed. Otherwise the
+    // 5-second poll would rebuild the SVG and wipe the user's selection.
+    const revHash = (fresh.sources || []).map(s => `${s.source}:${s.revision}`).join('|') +
+                    `#r=${fresh.resources.length}#e=${fresh.edges.length}`;
+    const isFirst = topologyData == null;
+    topologyData = fresh;
+    if (isFirst || revHash !== topologyLastRevHash) {
+      topologyLastRevHash = revHash;
+      renderTopology();
+    }
+  } catch(e) {
+    topologyData = null;
+    topologyLastRevHash = '';
+    document.getElementById('topology-summary').innerHTML =
+      '<div class="empty">No topology data available. Add a topology-capable source (e.g. <code>kubernetes</code>) under Sources.</div>';
+    const bh = document.getElementById('topology-by-host'); if (bh) bh.innerHTML = '';
+  }
+  if(!topologyInterval) topologyInterval = setInterval(()=>{
+    if(document.getElementById('page-topology').classList.contains('active')) loadTopology();
+  }, 5000);
+}
+
+function showTopologyTab(name){
+  topologyActiveTab = name;
+  const page = document.getElementById('page-topology');
+  page.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  page.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
+  const btn = Array.from(page.querySelectorAll('.tab-btn')).find(b=>b.textContent.trim().toLowerCase().includes(name)||(name==='blast'&&b.textContent.includes('Blast'))||(name==='graph'&&b.textContent==='Graph')||(name==='summary'&&b.textContent==='Summary'));
+  if (btn) btn.classList.add('active');
+  document.getElementById('topology-tab-'+name).classList.add('active');
+  if (name === 'graph') renderTopologyGraph(); // graph rendering is lazy
+}
+
+function renderTopology(){
+  const d = topologyData || { sources: [], resources: [], edges: [] };
+  const idx = indexTopology(d);
+
+  // --- Sync scope filter (any IN_NAMESPACE target — generic) ---
+  // Build the option list from actual edge targets, not from a hardcoded kind.
+  const scopeIds = new Set(idx.inScope.values());
+  const scopeRes = Array.from(scopeIds).map(id=>idx.byId.get(id)).filter(Boolean)
+    .sort((a,b)=>a.name.localeCompare(b.name));
+  const sel = document.getElementById('topology-scope-filter');
+  if (sel) {
+    const prev = topologyScopeFilter;
+    sel.innerHTML = '<option value="">All</option>' +
+      scopeRes.map(r=>`<option value="${esc(r.id)}"${prev===r.id?' selected':''}>${esc(r.name)} <span>(${esc(r.kind)})</span></option>`).join('');
+    sel.onchange = (e)=>{ topologyScopeFilter = e.target.value; renderTopology(); };
+  }
+
+  // --- Summary tab ---
+  const summary = document.getElementById('topology-summary');
+  if (d.sources.length === 0) {
+    summary.innerHTML = '<div class="empty">No topology-capable sources connected. Add a topology source (e.g. <b>kubernetes</b>) under Sources.</div>';
+    const bh = document.getElementById('topology-by-host'); if (bh) bh.innerHTML = '';
+    renderTopologyGraph(); // shows empty-state legend too
+    return;
+  }
+  const kindCounts = {}, relCounts = {};
+  for (const r of d.resources) kindCounts[r.kind] = (kindCounts[r.kind]||0)+1;
+  for (const e of d.edges) relCounts[e.relation] = (relCounts[e.relation]||0)+1;
+  const srcBadges = d.sources.map(s=>`<span class="badge">${esc(s.source)} <span class="muted">(${esc(s.type)}, rev ${s.revision})</span></span>`).join(' ');
+  const kindRow = Object.entries(kindCounts).sort((a,b)=>b[1]-a[1])
+    .map(([k,v])=>`<div class="hc-metric"><div class="label">${esc(k)}</div><div class="val">${v}</div></div>`).join('');
+  const relRow = Object.entries(relCounts).sort((a,b)=>b[1]-a[1])
+    .map(([k,v])=>`<div class="hc-metric"><div class="label">${esc(k)}</div><div class="val">${v}</div></div>`).join('');
+  summary.innerHTML = `
+    <div style="display:flex; flex-direction:column; gap:12px;">
+      <div><b>Sources:</b> ${srcBadges}</div>
+      <div>
+        <div class="muted" style="margin-bottom:6px;">Resources by kind</div>
+        <div class="hc-metrics">${kindRow}</div>
+      </div>
+      <div>
+        <div class="muted" style="margin-bottom:6px;">Edges by relation</div>
+        <div class="hc-metrics">${relRow}</div>
+      </div>
+    </div>`;
+
+  // --- Blast radius tab (relation-driven on RUNS_ON) ---
+  renderBlastRadius(d, idx);
+  // --- Graph tab (only re-render if it's active to avoid wasted simulation) ---
+  if (topologyActiveTab === 'graph') renderTopologyGraph();
+}
+
+function renderBlastRadius(d, idx){
+  const target = document.getElementById('topology-by-host');
+  if (!target) return;
+
+  // Hosts = anything that is the TO of at least one RUNS_ON edge. Generic:
+  // k8s nodes, vCenter hypervisors, NetBox switches, libvirt hosts, …
+  const hostIds = new Set(idx.runsOn.values());
+  if (hostIds.size === 0){
+    target.innerHTML = '<div class="empty">No <code>RUNS_ON</code> edges in the graph yet — blast-radius view appears once topology connectors report which resources run on which hosts.</div>';
+    return;
+  }
+
+  // Optional scope filter applied to the children (not the hosts).
+  const scope = topologyScopeFilter; // resource id, or ''
+
+  const cards = Array.from(hostIds).map(hostId=>{
+    const host = idx.byId.get(hostId);
+    const hostName = host ? host.name : hostId;
+    const hostKind = host ? host.kind : '?';
+    // children that RUN_ON this host
+    let children = [];
+    for (const [fromId, toId] of idx.runsOn.entries()){
+      if (toId !== hostId) continue;
+      if (scope && idx.inScope.get(fromId) !== scope) continue;
+      const c = idx.byId.get(fromId);
+      if (c) children.push(c);
+    }
+    // Group children by their ownership root (terminal OWNED_BY target).
+    const groups = new Map();
+    for (const c of children){
+      const rootId = ownershipRoot(c.id, idx.ownedBy);
+      const arr = groups.get(rootId) || [];
+      arr.push(c);
+      groups.set(rootId, arr);
+    }
+    const rootIds = Array.from(groups.keys()).sort();
+    const sharedNote = rootIds.length > 1
+      ? `<div class="hc-correlation">${rootIds.length} ownership roots share this host — blast radius if it fails</div>` : '';
+    const body = rootIds.length === 0
+      ? `<div class="empty">No resources on this host${scope?` matching the scope filter`:''}.</div>`
+      : rootIds.map(rid=>{
+          const rootRes = idx.byId.get(rid);
+          const rootLabel = rootRes
+            ? `${esc(rootRes.name)} <span class="muted">(${esc(rootRes.kind)})</span>`
+            : `<span class="muted">${esc(rid)}</span>`;
+          const items = groups.get(rid).map(c=>{
+            const attrs = c.attributes || {};
+            // Show up to 2 generic attribute hints — no specific keys assumed.
+            const hints = Object.entries(attrs).filter(([k])=>k!=='uid').slice(0,2)
+              .map(([k,v])=>`${esc(k)}=${esc(String(v))}`).join(' · ');
+            return `<li>
+              <span style="font-family:monospace; font-size:12px;">${esc(c.name)}</span>
+              <span class="muted" style="font-size: 11px;">${esc(c.kind)}${hints?' · '+hints:''}</span>
+            </li>`;
+          }).join('');
+          return `<div style="margin: 8px 0 6px;">
+            <div style="font-weight:600; color:var(--text);">${rootLabel} <span class="muted">— ${groups.get(rid).length} resource${groups.get(rid).length===1?'':'s'}</span></div>
+            <ul style="margin: 4px 0 0 18px; padding:0;">${items}</ul>
+          </div>`;
+        }).join('');
+    return `<div class="card" style="margin-bottom: 12px;">
+      <div class="card-header"><h2 style="font-size:14px;">⬡ ${esc(hostName)} <span class="muted" style="font-weight:400; font-size:12px;">(${esc(hostKind)})</span></h2>
+        <span class="muted" style="font-size:12px;">${children.length} child${children.length===1?'':'ren'}</span>
+      </div>
+      <div style="padding: 0 16px 12px;">
+        ${sharedNote}
+        ${body}
+      </div>
+    </div>`;
+  }).join('');
+  target.innerHTML = cards;
+}
+
+// --- Layered topology graph (hand-rolled Sugiyama-style, no external deps) ---
+// Hosts (incoming RUNS_ON targets) anchor the top tier; ownership chains
+// drop down towards the workload tier at the bottom. IN_NAMESPACE targets
+// are drawn as tinted background bands rather than edges — drawing them
+// as edges turns into a star pattern and dominates the view.
+//
+// Framework-free to keep the airgapped build path clean
+// (docs/airgapped-deployment.md). Layout uses one-pass barycenter sorting
+// for crossing reduction — enough for graphs of a few hundred nodes; for
+// larger graphs the path forward is full Sugiyama with crossing-min.
+
+const TOPO_KIND_PALETTE = [
+  '#58a6ff','#3fb950','#f0883e','#a371f7','#f85149',
+  '#79c0ff','#56d364','#ffa657','#d2a8ff','#ff7b72',
+];
+const TOPO_REL_STYLE = {
+  RUNS_ON:  { stroke: 'var(--text-muted)', dash: '', width: 1.5 },
+  OWNED_BY: { stroke: 'var(--accent, #58a6ff)', dash: '4 4', width: 1.3 },
+};
+const TOPO_REL_DEFAULT = { stroke: 'var(--text-muted)', dash: '', width: 1.2 };
+
+function topoKindColor(kind){
+  let h = 0; for (let i = 0; i < kind.length; i++) h = (h*31 + kind.charCodeAt(i)) | 0;
+  return TOPO_KIND_PALETTE[Math.abs(h) % TOPO_KIND_PALETTE.length];
+}
+function topoRelStyle(rel){ return TOPO_REL_STYLE[rel] || TOPO_REL_DEFAULT; }
+
+function renderTopologyGraph(){
+  const svg = document.getElementById('topology-graph-svg');
+  const host = document.getElementById('topology-graph-host');
+  const legend = document.getElementById('topology-graph-legend');
+  if (!svg || !host) return;
+  const d = topologyData || { resources: [], edges: [] };
+
+  // Reset
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  if (d.resources.length === 0){
+    legend.innerHTML = '<span class="muted">No resources to plot.</span>';
+    return;
+  }
+
+  const idx = indexTopology(d);
+
+  // --- Classify resources --------------------------------------------------
+  // A "scope" is a resource that is targeted by IN_NAMESPACE AND has no
+  // outgoing edges of its own (i.e. a container, not a workload). Drawn as
+  // tinted background bands behind their members, not as graph nodes.
+  // Works generically: k8s namespace, vCenter folder, AWS account, …
+  const scopeTargets = new Set(idx.inScope.values());
+  const outgoingByFrom = {};
+  for (const e of d.edges){
+    (outgoingByFrom[e.from] = outgoingByFrom[e.from] || []).push(e);
+  }
+  const pureScope = new Set();
+  for (const id of scopeTargets){
+    if ((outgoingByFrom[id] || []).length === 0 && !idx.runsOn.has(id)) pureScope.add(id);
+  }
+
+  const drawables = d.resources.filter(r=>!pureScope.has(r.id));
+
+  // --- Tier assignment -----------------------------------------------------
+  // Hosts (incoming RUNS_ON) → tier 0 (top).
+  // Other resources → tier = 1 + length of longest OWNED_BY chain TO that
+  // resource (i.e. roots like Deployment sit close to top, deepest leaves
+  // like Pods sit at the bottom). Generic: works for any OWNED_BY chain.
+  const incomingRunsOn = new Set(idx.runsOn.values());
+  // Build outgoingOwnedBy (already in idx as ownedBy: from → to).
+  // Compute longest path from each node BACKWARDS via OWNED_BY (i.e. how
+  // deep it sits below the ownership root). Equivalent: longest chain of
+  // OWNED_BY out-edges starting at this node.
+  const ownDepth = new Map();
+  function computeOwnDepth(id, seen){
+    if (ownDepth.has(id)) return ownDepth.get(id);
+    if (seen.has(id)) return 0; // cycle guard
+    seen.add(id);
+    const next = idx.ownedBy.get(id);
+    const dep = next ? 1 + computeOwnDepth(next, new Set(seen)) : 0;
+    ownDepth.set(id, dep);
+    return dep;
+  }
+  for (const r of drawables) computeOwnDepth(r.id, new Set());
+
+  // Maximum chain depth across non-host resources informs how many tiers
+  // we draw below the host row.
+  let maxChain = 0;
+  for (const r of drawables){
+    if (incomingRunsOn.has(r.id)) continue;
+    const dd = ownDepth.get(r.id) || 0;
+    if (dd > maxChain) maxChain = dd;
+  }
+
+  function tierOf(r){
+    if (incomingRunsOn.has(r.id)) return 0; // top: hosts
+    // Below hosts: tier = (maxChain - ownDepth) + 1
+    // So an ownership root (depth=0) sits at tier 1; deepest leaves at tier maxChain+1.
+    return (maxChain - (ownDepth.get(r.id) || 0)) + 1;
+  }
+
+  // Bucket resources per tier (deterministic order: by name, then id).
+  const tierMap = new Map();
+  for (const r of drawables){
+    const t = tierOf(r);
+    const arr = tierMap.get(t) || [];
+    arr.push(r);
+    tierMap.set(t, arr);
+  }
+  const tierIndices = Array.from(tierMap.keys()).sort((a,b)=>a-b);
+
+  // --- Barycenter ordering (one-pass) to reduce edge crossings -------------
+  // Place tier 0 alphabetically. For each subsequent tier, order nodes by
+  // the mean x-position of the parents they connect to (RUNS_ON or
+  // OWNED_BY target) in the tier above. Simple but effective for small
+  // graphs and matches what dagre / Sugiyama do as a base step.
+  function parentsOf(r){
+    const parents = [];
+    if (idx.ownedBy.get(r.id)) parents.push(idx.ownedBy.get(r.id));
+    if (idx.runsOn.get(r.id))  parents.push(idx.runsOn.get(r.id));
+    return parents;
+  }
+  // Layout dimensions
+  const W = host.clientWidth || 1000, H = host.clientHeight || 660;
+  const TOP_MARGIN = 36, BOTTOM_MARGIN = 36;
+  const TIER_LABEL_W = 110; // left gutter reserved for tier labels
+  const SIDE_MARGIN = TIER_LABEL_W + 28;
+  const RIGHT_MARGIN = 32;
+  const totalTiers = tierIndices.length;
+  const tierHeight = (H - TOP_MARGIN - BOTTOM_MARGIN) / Math.max(1, totalTiers);
+  const positions = new Map(); // id → {x,y}
+
+  // Initial ordering: alphabetical within tier
+  for (const t of tierIndices) tierMap.get(t).sort((a,b)=>a.name.localeCompare(b.name));
+
+  for (let i = 0; i < tierIndices.length; i++){
+    const t = tierIndices[i];
+    const row = tierMap.get(t);
+    if (i > 0){
+      // Compute barycenter x from already-placed parents.
+      const bary = new Map();
+      for (const r of row){
+        const ps = parentsOf(r).map(pid => positions.get(pid)?.x).filter(x=>x!=null);
+        bary.set(r.id, ps.length ? ps.reduce((a,b)=>a+b,0) / ps.length : Number.POSITIVE_INFINITY);
+      }
+      row.sort((a,b)=>{
+        const ba = bary.get(a.id), bb = bary.get(b.id);
+        if (ba === bb) return a.name.localeCompare(b.name);
+        return ba - bb;
+      });
+    }
+    const usableW = W - SIDE_MARGIN - RIGHT_MARGIN;
+    const step = row.length > 1 ? usableW / (row.length - 1) : 0;
+    const y = TOP_MARGIN + i * tierHeight + tierHeight/2;
+    for (let j = 0; j < row.length; j++){
+      const x = row.length === 1 ? SIDE_MARGIN + usableW/2 : SIDE_MARGIN + j * step;
+      positions.set(row[j].id, { x, y });
+    }
+  }
+
+  // Pick a label per tier: the most frequent kind. Falls back to "tier N".
+  function tierLabelFor(rows){
+    if (!rows || rows.length === 0) return '';
+    const counts = {};
+    for (const r of rows) counts[r.kind] = (counts[r.kind] || 0) + 1;
+    return Object.entries(counts).sort((a,b)=>b[1]-a[1])[0][0];
+  }
+
+  // --- Scope background bands ---------------------------------------------
+  // For each pure-scope (e.g. namespace), find members and draw a tinted
+  // rectangle behind them. The bands span the union of members' bounding
+  // boxes, so they visually cluster siblings without occluding anything.
+  const scopeColor = (id)=>{
+    const r = idx.byId.get(id);
+    const base = topoKindColor(r ? r.kind : 'scope');
+    // soft alpha + slightly lighter
+    return base.replace(/^#/, '#') + '22'; // append alpha (works because we use hex)
+  };
+  const scopeBands = [];
+  for (const scopeId of pureScope){
+    const members = drawables.filter(r => idx.inScope.get(r.id) === scopeId).map(r => positions.get(r.id)).filter(Boolean);
+    if (members.length === 0) continue;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of members){
+      if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+    }
+    const PADX = 28, PADY = 18;
+    scopeBands.push({
+      id: scopeId,
+      ref: idx.byId.get(scopeId),
+      x: minX - PADX, y: minY - PADY,
+      w: (maxX - minX) + 2*PADX,
+      h: (maxY - minY) + 2*PADY,
+      fill: scopeColor(scopeId),
+    });
+  }
+
+  // --- Legend (auto-derived) ----------------------------------------------
+  const kinds = Array.from(new Set(drawables.map(r=>r.kind))).sort();
+  const rels = Array.from(new Set(d.edges.map(e=>e.relation).filter(r=>r!=='IN_NAMESPACE'))).sort();
+  legend.innerHTML =
+    '<div style="display:flex; gap:14px; flex-wrap:wrap; align-items:center;">' +
+    '<div><b>Kinds:</b> ' + kinds.map(k=>
+      `<span style="display:inline-flex; gap:4px; align-items:center; margin-right:8px;"><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${topoKindColor(k)};"></span>${esc(k)}</span>`
+    ).join('') + '</div>' +
+    '<div><b>Edges:</b> ' + rels.map(r=>{
+      const s = topoRelStyle(r);
+      return `<span style="display:inline-flex; gap:4px; align-items:center; margin-right:8px;"><span style="display:inline-block; width:18px; height:0; border-bottom: ${s.width}px ${s.dash?'dashed':'solid'} ${s.stroke};"></span>${esc(r)}</span>`;
+    }).join('') + '</div>' +
+    (pureScope.size > 0 ? '<div class="muted"><b>Scope</b> (e.g. namespaces) shown as tinted backgrounds, not edges.</div>' : '') +
+    '</div>';
+
+  // --- Build SVG -----------------------------------------------------------
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  g.setAttribute('id', 'topo-g');
+  let view = { tx: 0, ty: 0, scale: 1 };
+  function applyView(){ g.setAttribute('transform', `translate(${view.tx} ${view.ty}) scale(${view.scale})`); }
+  applyView();
+  svg.appendChild(g);
+
+  // Alternating tier background bands + tier labels in the left gutter.
+  for (let i = 0; i < tierIndices.length; i++){
+    const yTop = TOP_MARGIN + i * tierHeight;
+    if (i % 2 === 1){
+      const band = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      band.setAttribute('x', '0'); band.setAttribute('y', String(yTop));
+      band.setAttribute('width', String(W)); band.setAttribute('height', String(tierHeight));
+      band.setAttribute('fill', 'var(--text)');
+      band.setAttribute('fill-opacity', '0.025');
+      g.appendChild(band);
+    }
+    // tier separator line
+    if (i > 0){
+      const sep = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      sep.setAttribute('x1', '0'); sep.setAttribute('y1', String(yTop));
+      sep.setAttribute('x2', String(W)); sep.setAttribute('y2', String(yTop));
+      sep.setAttribute('stroke', 'var(--border)');
+      sep.setAttribute('stroke-opacity', '0.5');
+      sep.setAttribute('stroke-dasharray', '2 4');
+      g.appendChild(sep);
+    }
+    const lbl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    lbl.setAttribute('x', '16'); lbl.setAttribute('y', String(yTop + tierHeight/2 + 3));
+    lbl.setAttribute('font-size', '11');
+    lbl.setAttribute('font-weight', '600');
+    lbl.setAttribute('fill', 'var(--text-muted)');
+    lbl.setAttribute('letter-spacing', '0.08em');
+    lbl.textContent = tierLabelFor(tierMap.get(tierIndices[i])).toUpperCase();
+    g.appendChild(lbl);
+  }
+
+  // Scope bands (drawn over tier bands so members are clearly grouped)
+  scopeBands.sort((a,b)=>(b.w*b.h)-(a.w*a.h));
+  for (const b of scopeBands){
+    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('x', b.x); rect.setAttribute('y', b.y);
+    rect.setAttribute('width', b.w); rect.setAttribute('height', b.h);
+    rect.setAttribute('rx', '14'); rect.setAttribute('ry', '14');
+    rect.setAttribute('fill', b.fill);
+    rect.setAttribute('stroke', topoKindColor(b.ref ? b.ref.kind : 'scope'));
+    rect.setAttribute('stroke-opacity', '0.3');
+    rect.setAttribute('stroke-dasharray', '2 4');
+    g.appendChild(rect);
+    const lbl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    lbl.setAttribute('x', b.x + 12); lbl.setAttribute('y', b.y + 16);
+    lbl.setAttribute('font-size', '10');
+    lbl.setAttribute('fill', 'var(--text-muted)');
+    lbl.textContent = `${b.ref ? b.ref.name : b.id} (${b.ref ? b.ref.kind : 'scope'})`;
+    g.appendChild(lbl);
+  }
+
+  // Edges as Bezier paths (smooth vertical flow between tiers).
+  // Skip IN_NAMESPACE since scopes are drawn as bands.
+  const drawEdges = d.edges.filter(e =>
+    e.relation !== 'IN_NAMESPACE' && positions.has(e.from) && positions.has(e.to)
+  );
+  function bezierPath(a, b){
+    // Vertical-bias S-curve; control points pulled toward each endpoint's y
+    // so the line leaves and enters its node vertically. Reads as "flow
+    // downward through tiers" without zig-zags.
+    const cy = (a.y + b.y) / 2;
+    return `M ${a.x} ${a.y} C ${a.x} ${cy}, ${b.x} ${cy}, ${b.x} ${b.y}`;
+  }
+  for (const e of drawEdges){
+    const a = positions.get(e.from), b = positions.get(e.to);
+    const s = topoRelStyle(e.relation);
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', bezierPath(a, b));
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', s.stroke);
+    path.setAttribute('stroke-width', String(s.width));
+    if (s.dash) path.setAttribute('stroke-dasharray', s.dash);
+    path.setAttribute('opacity', '0.85');
+    path.dataset.from = e.from; path.dataset.to = e.to;
+    g.appendChild(path);
+  }
+
+  // Nodes
+  // Compute a per-tier label budget so long names (k8s pod hashes etc.)
+  // don't bleed into each other. Each node "owns" the slot width between
+  // its neighbours in the same row.
+  const labelBudget = new Map(); // id → max chars
+  for (const t of tierIndices){
+    const row = tierMap.get(t);
+    const usableW = W - SIDE_MARGIN - RIGHT_MARGIN;
+    const slot = row.length > 1 ? usableW / row.length : usableW;
+    // ~6.5 px per character at font-size 10
+    const maxChars = Math.max(6, Math.floor(slot / 6.5) - 2);
+    for (const r of row) labelBudget.set(r.id, maxChars);
+  }
+  function truncLabel(name, max){
+    if (name.length <= max) return name;
+    // For k8s-style names like "checkout-7f89d-mdblh" the suffix carries
+    // the identifying entropy; keep the tail.
+    return '…' + name.slice(-(max - 1));
+  }
+
+  const nodeEls = new Map();
+  for (const r of drawables){
+    const p = positions.get(r.id); if (!p) continue;
+    const grp = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    grp.setAttribute('transform', `translate(${p.x} ${p.y})`);
+    grp.style.cursor = 'grab';
+    grp.dataset.id = r.id;
+    const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    // Hosts a touch bigger to read as anchors of the layout.
+    const radius = incomingRunsOn.has(r.id) ? 9 : 6.5;
+    c.setAttribute('r', String(radius));
+    c.setAttribute('fill', topoKindColor(r.kind));
+    c.setAttribute('stroke', 'rgba(0,0,0,0.45)');
+    c.setAttribute('stroke-width', '0.8');
+    grp.appendChild(c);
+    // Label centered BELOW the node. A subtle text-stroke in the surface
+    // color acts as a halo so labels stay readable when they cross a
+    // scope band or an edge.
+    const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    txt.setAttribute('x', '0');
+    txt.setAttribute('y', String(radius + 12));
+    txt.setAttribute('font-size', '10');
+    txt.setAttribute('text-anchor', 'middle');
+    txt.setAttribute('fill', 'var(--text)');
+    txt.setAttribute('stroke', 'var(--surface-2)');
+    txt.setAttribute('stroke-width', '3');
+    txt.setAttribute('paint-order', 'stroke');
+    txt.setAttribute('style', 'pointer-events: none;');
+    txt.textContent = truncLabel(r.name, labelBudget.get(r.id) || 16);
+    // SVG <title> = native browser tooltip for the full name on hover.
+    const tip = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+    tip.textContent = r.name;
+    grp.appendChild(tip);
+    grp.appendChild(txt);
+    g.appendChild(grp);
+    nodeEls.set(r.id, { grp, circle: c, radius });
+  }
+
+  // --- Interactions (drag a node, pan background, wheel zoom, click info) --
+  let dragId = null, dragOffset = null;
+  let panning = false, panStart = null;
+
+  function clientToWorld(cx, cy){
+    const rect = svg.getBoundingClientRect();
+    return { x: (cx - rect.left - view.tx) / view.scale, y: (cy - rect.top - view.ty) / view.scale };
+  }
+  function repaintEdgesFor(id){
+    g.querySelectorAll('path[data-from]').forEach(pth=>{
+      if (pth.dataset.from === id || pth.dataset.to === id){
+        const a = positions.get(pth.dataset.from);
+        const b = positions.get(pth.dataset.to);
+        if (a && b) pth.setAttribute('d', bezierPath(a, b));
+      }
+    });
+  }
+
+  svg.onwheel = (ev)=>{
+    ev.preventDefault();
+    const k = ev.deltaY < 0 ? 1.12 : 1/1.12;
+    const rect = svg.getBoundingClientRect();
+    const mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
+    view.tx = mx - (mx - view.tx) * k;
+    view.ty = my - (my - view.ty) * k;
+    view.scale *= k;
+    applyView();
+  };
+  svg.onmousedown = (ev)=>{
+    const el = ev.target.closest && ev.target.closest('g[data-id]');
+    if (el){
+      dragId = el.dataset.id;
+      const p = positions.get(dragId);
+      const w2 = clientToWorld(ev.clientX, ev.clientY);
+      dragOffset = { dx: p.x - w2.x, dy: p.y - w2.y };
+      svg.style.cursor = 'grabbing';
+    } else {
+      panning = true;
+      panStart = { x: ev.clientX - view.tx, y: ev.clientY - view.ty };
+      svg.style.cursor = 'grabbing';
+    }
+  };
+  function onMove(ev){
+    if (dragId){
+      const w2 = clientToWorld(ev.clientX, ev.clientY);
+      const p = { x: w2.x + dragOffset.dx, y: w2.y + dragOffset.dy };
+      positions.set(dragId, p);
+      const el = nodeEls.get(dragId);
+      if (el) el.grp.setAttribute('transform', `translate(${p.x} ${p.y})`);
+      repaintEdgesFor(dragId);
+    } else if (panning){
+      view.tx = ev.clientX - panStart.x;
+      view.ty = ev.clientY - panStart.y;
+      applyView();
+    }
+  }
+  function onUp(){
+    if (dragId){ dragId = null; svg.style.cursor = 'grab'; }
+    if (panning){ panning = false; svg.style.cursor = 'grab'; }
+  }
+  // Re-attach (these handlers are global by design — pointer can leave svg)
+  window.removeEventListener('mousemove', window.__topoMove);
+  window.removeEventListener('mouseup', window.__topoUp);
+  window.__topoMove = onMove; window.__topoUp = onUp;
+  window.addEventListener('mousemove', window.__topoMove);
+  window.addEventListener('mouseup', window.__topoUp);
+
+  // Click: highlight 1-hop neighbours + populate the side inspector.
+  function clearHighlight(){
+    g.querySelectorAll('path[data-from]').forEach(p=>p.setAttribute('opacity','0.85'));
+    g.querySelectorAll('g[data-id]').forEach(n=>{ n.style.opacity = '1'; });
+    nodeEls.forEach(({circle})=>{ circle.setAttribute('stroke','rgba(0,0,0,0.45)'); circle.setAttribute('stroke-width','0.8'); });
+  }
+  function selectResource(id){
+    const ref = idx.byId.get(id);
+    if (!ref) return;
+    topologySelectedId = id;
+    const neighbours = new Set([id]);
+    const incoming = []; const outgoing = [];
+    for (const e of drawEdges){
+      if (e.from === id){ neighbours.add(e.to); outgoing.push(e); }
+      if (e.to === id){ neighbours.add(e.from); incoming.push(e); }
+    }
+    g.querySelectorAll('path[data-from]').forEach(p=>{
+      const on = neighbours.has(p.dataset.from) && neighbours.has(p.dataset.to);
+      p.setAttribute('opacity', on ? '1' : '0.1');
+    });
+    g.querySelectorAll('g[data-id]').forEach(n=>{
+      n.style.opacity = neighbours.has(n.dataset.id) ? '1' : '0.25';
+    });
+    const myEl = nodeEls.get(id);
+    if (myEl){ myEl.circle.setAttribute('stroke', 'var(--accent, #58a6ff)'); myEl.circle.setAttribute('stroke-width','2.5'); }
+    renderInspector(ref, incoming, outgoing);
+  }
+  svg.onclick = (ev)=>{
+    const el = ev.target.closest && ev.target.closest('g[data-id]');
+    if (!el){
+      topologySelectedId = null;
+      clearHighlight();
+      showInspectorEmpty();
+      return;
+    }
+    selectResource(el.dataset.id);
+  };
+
+  function showInspectorEmpty(){
+    document.getElementById('topology-inspector-empty').style.display = '';
+    document.getElementById('topology-inspector-body').style.display = 'none';
+  }
+  function renderInspector(ref, incoming, outgoing){
+    document.getElementById('topology-inspector-empty').style.display = 'none';
+    const body = document.getElementById('topology-inspector-body');
+    body.style.display = '';
+    const labelEntries = Object.entries(ref.labels || {});
+    const attrEntries = Object.entries(ref.attributes || {});
+    function kvList(entries){
+      if (entries.length === 0) return '<div class="muted" style="font-size: var(--fs-xs);">(none)</div>';
+      return '<div style="display:grid; grid-template-columns: max-content 1fr; gap: 4px 10px; font-size: var(--fs-xs);">' +
+        entries.map(([k,v])=>`<div class="muted" style="font-weight:600;">${esc(k)}</div><div style="font-family: 'JetBrains Mono', ui-monospace, monospace; word-break: break-all;">${esc(String(v))}</div>`).join('') +
+        '</div>';
+    }
+    function neighbourList(edges, dir){
+      if (edges.length === 0) return '<div class="muted" style="font-size: var(--fs-xs);">(none)</div>';
+      return '<ul style="margin:0; padding-left: 0; list-style: none; display:flex; flex-direction:column; gap:4px;">' +
+        edges.map(e=>{
+          const otherId = dir === 'in' ? e.from : e.to;
+          const other = idx.byId.get(otherId);
+          const otherKind = other ? other.kind : '?';
+          const otherName = other ? other.name : otherId;
+          const c = topoKindColor(otherKind);
+          return `<li style="display:flex; gap:6px; align-items:center; font-size: var(--fs-xs);">
+            <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${c}; flex-shrink:0;"></span>
+            <span style="color: var(--text-muted); width: 78px; flex-shrink:0;">${esc(e.relation)}</span>
+            <a href="#" data-jump="${esc(otherId)}" style="color: var(--accent, #58a6ff); text-decoration:none; word-break: break-all;">${esc(otherName)}</a>
+            <span class="muted" style="flex-shrink:0;">(${esc(otherKind)})</span>
+          </li>`;
+        }).join('') + '</ul>';
+    }
+    body.innerHTML = `
+      <div style="display:flex; align-items:flex-start; gap:8px;">
+        <span style="display:inline-block; width:12px; height:12px; border-radius:50%; background:${topoKindColor(ref.kind)}; margin-top:5px; flex-shrink:0;"></span>
+        <div style="min-width:0; flex:1;">
+          <div style="font-weight:600; font-size: var(--fs-md); color: var(--text); word-break: break-all;">${esc(ref.name)}</div>
+          <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-top: 4px;">
+            <span class="badge">${esc(ref.kind)}</span>
+            <span class="muted" style="font-size: var(--fs-xs);">source: ${esc(ref.source)}</span>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top: 10px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 10px; color: var(--text-muted); word-break: break-all;">${esc(ref.id)}</div>
+
+      <div style="margin-top: 16px;">
+        <div style="text-transform: uppercase; font-size: 10px; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 6px;">Labels</div>
+        ${kvList(labelEntries)}
+      </div>
+
+      <div style="margin-top: 16px;">
+        <div style="text-transform: uppercase; font-size: 10px; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 6px;">Attributes</div>
+        ${kvList(attrEntries.filter(([k])=>k!=='uid'))}
+      </div>
+
+      <div style="margin-top: 16px;">
+        <div style="text-transform: uppercase; font-size: 10px; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 6px;">Outgoing (${outgoing.length})</div>
+        ${neighbourList(outgoing, 'out')}
+      </div>
+
+      <div style="margin-top: 12px;">
+        <div style="text-transform: uppercase; font-size: 10px; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 6px;">Incoming (${incoming.length})</div>
+        ${neighbourList(incoming, 'in')}
+      </div>
+
+      <div style="margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--border);">
+        <div style="text-transform: uppercase; font-size: 10px; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 6px;">Linked telemetry</div>
+        <div class="muted" style="font-size: var(--fs-xs);">No metrics or logs linked to this resource. When demo workloads run inside the cluster and emit Prometheus/Loki signals under matching service labels, charts will appear here.</div>
+      </div>
+    `;
+    // Wire neighbour links to navigate inside the graph.
+    body.querySelectorAll('a[data-jump]').forEach(a=>{
+      a.addEventListener('click', (ev)=>{
+        ev.preventDefault();
+        selectResource(a.dataset.jump);
+      });
+    });
+  }
+
+  // Re-apply selection across re-renders. If the previously-selected
+  // resource still exists, keep the highlight + inspector pinned to it
+  // so a poll-driven refresh doesn't drag the user back to the empty
+  // state. If it's gone (deleted), fall back to empty.
+  if (topologySelectedId && idx.byId.has(topologySelectedId)){
+    selectResource(topologySelectedId);
+  } else {
+    topologySelectedId = null;
+    showInspectorEmpty();
+  }
+  topologyGraphState = { positions, view };
 }
 
 // --- Utils ---

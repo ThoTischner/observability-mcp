@@ -8,6 +8,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { loadConfig, saveConfig, DEFAULT_HEALTH_THRESHOLDS, DEFAULT_SETTINGS } from "./config/loader.js";
 import { ConnectorRegistry, getSupportedTypes } from "./connectors/registry.js";
+import { isTopologyProvider } from "./connectors/interface.js";
 import { defaultContext, principalContext, type RequestContext } from "./context.js";
 import {
   enforceEntitledAccess,
@@ -850,6 +851,41 @@ async function main() {
       res.json(health);
     } catch {
       res.status(500).json({ error: "Failed to get health data" });
+    }
+  });
+
+  // --- Topology API ---
+  // Returns the union of topology snapshots across all topology-capable
+  // connectors (today only "kubernetes"). One JSON document so the UI can
+  // render summary + grouped views without N round-trips.
+  app.get("/api/topology", async (_req, res) => {
+    try {
+      const sources: Array<{
+        source: string;
+        type: string;
+        revision: number;
+        resources: number;
+        edges: number;
+      }> = [];
+      const allResources = [];
+      const allEdges = [];
+      for (const c of registry.getAll()) {
+        if (!isTopologyProvider(c)) continue;
+        const snap = await c.getTopologySnapshot();
+        sources.push({
+          source: snap.source,
+          type: c.type,
+          revision: snap.revision,
+          resources: snap.resources.length,
+          edges: snap.edges.length,
+        });
+        allResources.push(...snap.resources);
+        allEdges.push(...snap.edges);
+      }
+      res.json({ sources, resources: allResources, edges: allEdges });
+    } catch (err) {
+      console.error("topology endpoint failed:", err);
+      res.status(500).json({ error: "Failed to read topology" });
     }
   });
 
