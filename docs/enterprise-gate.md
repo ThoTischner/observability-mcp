@@ -1,8 +1,8 @@
 # Enterprise access-control gate
 
 The MCP server has an **optional** seam that enforces role-based access
-control, a product catalog, and an audit log in front of the six MCP
-tools. It is **off by default** and changes nothing unless an operator
+control, a product catalog, and an audit log in front of every MCP
+tool. It is **off by default** and changes nothing unless an operator
 explicitly opts in.
 
 The seam itself (`mcp-server/src/enterprise-gate.ts`) is Apache-2.0 and
