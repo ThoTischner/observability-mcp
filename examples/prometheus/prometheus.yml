@@ -2,21 +2,29 @@ global:
   scrape_interval: 5s
   evaluation_interval: 5s
 
+# The three example services run inside the in-compose k3s. We scrape
+# them via NodePort on the `k3s` service hostname (resolvable inside the
+# observability docker network). The job/service labels stay identical
+# to the application's emitted job= label so /api/health,
+# get_service_health and detect_anomalies code paths are unchanged —
+# only the underlying transport moved from compose containers to k8s
+# pods. See examples/kubernetes/workload.yaml.
+
 scrape_configs:
   - job_name: "api-gateway"
     static_configs:
-      - targets: ["api-gateway:8080"]
+      - targets: ["k3s:30080"]
         labels:
           service: "api-gateway"
 
   - job_name: "payment-service"
     static_configs:
-      - targets: ["payment-service:8081"]
+      - targets: ["k3s:30081"]
         labels:
           service: "payment-service"
 
   - job_name: "order-service"
     static_configs:
-      - targets: ["order-service:8082"]
+      - targets: ["k3s:30082"]
         labels:
           service: "order-service"

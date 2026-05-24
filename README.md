@@ -117,15 +117,16 @@ graph TB
     end
 
     subgraph Connectors ["Pluggable Connectors"]
-        Prom["Prometheus<br/><small>PromQL</small>"]
-        Loki["Loki<br/><small>LogQL</small>"]
+        Prom["Prometheus<br/><small>PromQL — metrics</small>"]
+        Loki["Loki<br/><small>LogQL — logs</small>"]
+        K8s["Kubernetes<br/><small>watch — topology</small>"]
         Next["Your Backend<br/><small>Any query language</small>"]
     end
 
     Agent <-->|"MCP<br/>Streamable HTTP"| Tools
     Tools --- Analysis
     Tools --- UI
-    MCP --> Prom & Loki & Next
+    MCP --> Prom & Loki & K8s & Next
 
     style MCP fill:#1a1a2e,stroke:#58a6ff,color:#fff
     style Connectors fill:#0d1117,stroke:#3fb950,color:#fff
@@ -237,7 +238,9 @@ cd observability-mcp
 docker compose --profile demo up --build
 ```
 
-Boots 8 containers with health checks: 3 example microservices, Prometheus, Loki, Promtail, the MCP server, and the agent. Open `http://localhost:3000`.
+Boots a single-node **k3s** cluster, builds the three example services and runs them as Kubernetes Deployments inside k3s, plus Prometheus, Loki, Promtail, the MCP server and the agent on the docker-compose side. Open `http://localhost:3000`.
+
+The same Deployments that Prometheus scrapes and Loki receives logs from are also what the topology graph shows — so the agent can correlate a metric/log anomaly with its underlying host using `get_blast_radius`. Chaos endpoints stay on `localhost:8080/8081/8082` (mapped to the k3s NodePorts) so existing scripts and demo videos keep working unchanged.
 
 Without `--profile demo`, only `mcp-server` starts — useful when you already run Prometheus/Loki elsewhere and just want to expose them via MCP.
 
@@ -375,7 +378,7 @@ flags pass through after a literal `--`.
 | Web UI | http://localhost:3000 |
 | Health API | http://localhost:3000/api/health |
 
-In the docker-compose demo: Prometheus on `:9090`, Loki on `:3100`, services on `:8080–:8082`.
+In the docker-compose demo: Prometheus on `:9090`, Loki on `:3100`. The three example services run as Kubernetes Deployments inside the in-compose k3s and are reachable on the host via the NodePort mapping `:8080–:8082` — same URLs as before the k8s migration, so existing chaos commands keep working.
 
 **Transports:** Streamable HTTP by default (`/mcp`). For stdio-based clients/catalogs (Claude Desktop, Glama's `mcp-proxy`, etc.) run with `--stdio` (or `MCP_TRANSPORT=stdio`) — one MCP server over stdin/stdout, all logs on stderr so the protocol stream stays clean.
 

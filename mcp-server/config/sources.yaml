@@ -24,6 +24,16 @@ sources:
     url: http://loki:3100
     enabled: true
 
+  # Kubernetes topology source. Reads $KUBECONFIG which the compose file
+  # points at the in-network kubeconfig written by the k3s-init
+  # container. In a non-demo run the file is absent and the connector
+  # reports "down" cleanly. url/auth are unused — the connector reads
+  # server + credentials from kubeconfig.
+  - name: kubernetes
+    type: kubernetes
+    url: ""
+    enabled: true
+
 settings:
   checkIntervalMs: 30000
   defaultSensitivity: medium
