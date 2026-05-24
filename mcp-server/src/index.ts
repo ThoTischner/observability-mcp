@@ -43,6 +43,7 @@ import { queryMetricsHandler } from "./tools/query-metrics.js";
 import { queryLogsHandler } from "./tools/query-logs.js";
 import { getServiceHealthHandler, setHealthThresholds } from "./tools/get-service-health.js";
 import { detectAnomaliesHandler } from "./tools/detect-anomalies.js";
+import { getTopologyHandler, getBlastRadiusHandler } from "./tools/topology.js";
 import type { Config } from "./types.js";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -333,6 +334,70 @@ async function main() {
     async (args) => {
       await enforceEntitledAccess(ctx, { tool: "detect_anomalies", source: (args as any)?.source, service: (args as any)?.service });
       return withToolMetrics("detect_anomalies", () => detectAnomaliesHandler(registry, args, ctx));
+    }
+  );
+
+  mcpServer.tool(
+    "get_topology",
+    [
+      "Return the infrastructure topology graph (Resources and Edges) from every topology-capable connector.",
+      "When to use: when an agent needs to reason about which workload runs on which host, who owns whom, or which scope (namespace/project/folder) a resource belongs to. Pair with `get_blast_radius` for shared-host RCA.",
+      "Behavior: read-only, no side effects. Returns `{ sources, resources, edges, total, truncated }`. Filters compose: `source` to one connector, `kind` to one resource type (e.g. 'pod', 'node', 'deployment'), `scope` to members of a namespace/folder/project. Output is capped by `limit` (default 500, max 5000) and edges referencing dropped resources are removed.",
+      "Related: `get_blast_radius` to evaluate the impact of a host failure; `list_sources` to discover topology-capable connectors.",
+    ].join(" "),
+    {
+      source: z
+        .string()
+        .optional()
+        .describe(
+          "Optional. Restrict the graph to one topology connector by source name (see `list_sources`). Default: merge across all connectors.",
+        ),
+      kind: z
+        .string()
+        .optional()
+        .describe(
+          "Optional. Restrict to resources of one kind. Common values for Kubernetes: 'pod', 'node', 'deployment', 'replicaset', 'namespace'. Other connectors may emit different kinds (e.g. 'vm', 'hypervisor', 'volume'). Default: all kinds.",
+        ),
+      scope: z
+        .string()
+        .optional()
+        .describe(
+          "Optional. Restrict to resources contained in a scope (anything pointed to by `IN_NAMESPACE` edges). Pass the scope's resource id (e.g. 'k8s:namespace:default') or its name (e.g. 'default'). Default: no scope filter.",
+        ),
+      limit: z
+        .number()
+        .int()
+        .min(1)
+        .max(5000)
+        .optional()
+        .describe(
+          "Optional. Maximum resources to return; edges are trimmed to the kept set. Default 500, max 5000.",
+        ),
+    },
+    async (args) => {
+      await enforceEntitledAccess(ctx, { tool: "get_topology", source: (args as any)?.source });
+      return withToolMetrics("get_topology", () => getTopologyHandler(registry, args, ctx));
+    }
+  );
+
+  mcpServer.tool(
+    "get_blast_radius",
+    [
+      "Given a resource, return who else fails if its underlying host(s) fail.",
+      "When to use: cross-cutting RCA — when several services degrade together and you suspect a shared host. Works for any RUNS_ON relationship: pod→node, vm→hypervisor, container→host.",
+      "Behavior: read-only, no side effects. Resolves `resource` to a Resource (accepts canonical id, exact name, or unique substring), determines its host(s) via RUNS_ON, then lists every other resource that runs on those hosts, bucketed by ownership root (the terminal `OWNED_BY` target — e.g. the Deployment, not the ReplicaSet). If the target is itself a host, its tenants are reported. Returns a structured error if the resource is ambiguous or unknown.",
+      "Related: `get_topology` for the full graph; `get_service_health` for the per-service verdict on each co-tenant.",
+    ].join(" "),
+    {
+      resource: z
+        .string()
+        .describe(
+          "Required. Resource to evaluate. Accepts the canonical id (e.g. 'k8s:pod:default/checkout-7f89d'), the exact resource name (e.g. 'checkout-7f89d'), or a unique substring of either.",
+        ),
+    },
+    async (args) => {
+      await enforceEntitledAccess(ctx, { tool: "get_blast_radius" });
+      return withToolMetrics("get_blast_radius", () => getBlastRadiusHandler(registry, args, ctx));
     }
   );
 

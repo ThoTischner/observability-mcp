@@ -103,10 +103,10 @@ jobs:
             -H 'Accept: application/json, text/event-stream' \
             -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' -o "$body"
           echo "--- tools/list ---"; cat "$body"
-          for t in list_sources list_services query_metrics query_logs get_service_health detect_anomalies; do
+          for t in list_sources list_services query_metrics query_logs get_service_health detect_anomalies get_topology get_blast_radius; do
             grep -q "\"$t\"" "$body" || (echo "missing tool: $t"; exit 1)
           done
-          echo "all 6 tools advertised"
+          echo "all 8 tools advertised"
 
       - name: Trigger a chaos mode and verify it sticks
         run: |
