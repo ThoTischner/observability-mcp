@@ -4,69 +4,126 @@ services:
   # `docker compose up mcp-server` gives a bare server you can point at
   # your own Prometheus/Loki via the Web UI or env vars.
   # ------------------------------------------------------------
-  # DEMO PROFILE — `docker compose --profile demo up` adds the example
-  # microservices, Prometheus, Loki, Promtail, and the autonomous agent
-  # so you can see chaos detection end-to-end without external infra.
+  # DEMO PROFILE — `docker compose --profile demo up` adds:
+  #   * a single-node k3s cluster
+  #   * the three chaos-able example services as Kubernetes Deployments
+  #     inside that cluster
+  #   * Prometheus + Loki + Promtail (running on the docker-compose side)
+  #     scraping the cluster's NodePorts and pod logs
+  #   * the autonomous agent
+  #
+  # The example services live in k3s on purpose: it is the same demo
+  # workload that emits metrics and logs and that shows up in the
+  # topology graph — that is what lets the agent correlate a metric or
+  # log anomaly with its underlying host via `get_blast_radius`.
   # ============================================================
 
-  # --- Example Microservices (demo) ---
-  api-gateway:
+  # --- k3s (demo) ---
+  # Single-node Kubernetes for the topology connector + workloads.
+  # NodePorts 30080/30081/30082 (the example services) are mapped to
+  # the host as 8080/8081/8082 so the documented chaos URLs
+  # (`curl localhost:8081/chaos/error-spike`) keep working unchanged
+  # after the move from compose to k8s.
+  k3s:
     profiles: ["demo"]
-    build:
-      context: ./examples/example-services
+    image: rancher/k3s:v1.31.3-k3s1
+    command:
+      - server
+      - --tls-san=k3s
+      - --disable=traefik
+      - --disable=metrics-server
+      - --disable=servicelb
+    privileged: true
+    tmpfs:
+      - /run
+      - /var/run
     environment:
-      - SERVICE_NAME=api-gateway
-      - PORT=8080
+      - K3S_KUBECONFIG_OUTPUT=/output/kubeconfig.yaml
+      - K3S_KUBECONFIG_MODE=666
+    volumes:
+      - k3s-server:/var/lib/rancher/k3s
+      - k3s-kubeconfig:/output
+      # Pod logs are written to /var/log/pods inside the k3s container.
+      # We expose them as a named volume so the promtail container can
+      # tail them from outside k3s.
+      - k3s-pod-logs:/var/log/pods
     ports:
-      - "8080:8080"
-    labels:
-      logging: "promtail"
+      - "8080:30080"
+      - "8081:30081"
+      - "8082:30082"
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
+      test: ["CMD-SHELL", "kubectl get --raw=/healthz | grep -q ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
     restart: unless-stopped
     networks:
       - observability
 
-  payment-service:
+  # --- image-loader (demo) ---
+  # One-shot. Builds the `example-service:demo` image from the source in
+  # examples/example-services, then pipes the OCI tarball into k3s'
+  # embedded containerd (k8s.io namespace) via `ctr images import`.
+  # This avoids needing a local image registry — the kubelet finds the
+  # image in containerd directly. Manifests pin `imagePullPolicy: Never`
+  # so the demo stays airgap-clean (no Docker-Hub round-trip).
+  image-loader:
     profiles: ["demo"]
-    build:
-      context: ./examples/example-services
-    environment:
-      - SERVICE_NAME=payment-service
-      - PORT=8081
-    ports:
-      - "8081:8081"
-    labels:
-      logging: "promtail"
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8081/health"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-    restart: unless-stopped
+    image: docker:27-cli
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        echo "building example-service:demo ..."
+        docker build -t example-service:demo /src/example-services
+        echo "waiting for the k3s sibling container ..."
+        until k3s_id=$$(docker ps -q --filter "label=com.docker.compose.service=k3s") && [ -n "$$k3s_id" ]; do sleep 2; done
+        echo "k3s container: $$k3s_id"
+        until docker exec "$$k3s_id" kubectl get --raw=/healthz 2>/dev/null | grep -q ok; do sleep 2; done
+        echo "importing example-service:demo into k3s containerd (namespace k8s.io) ..."
+        docker save example-service:demo | docker exec -i "$$k3s_id" ctr -a /run/k3s/containerd/containerd.sock -n k8s.io images import -
+        echo "image-loader done"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./examples:/src:ro
+    depends_on:
+      k3s:
+        condition: service_healthy
     networks:
       - observability
 
-  order-service:
+  # k3s-init: rewrite kubeconfig for in-network use (k3s' default points
+  # at 127.0.0.1), then apply the demo workload and wait for rollouts.
+  # Splits cleanly from image-loader so the dependency graph is obvious:
+  # image must be in containerd before kubectl-apply runs.
+  k3s-init:
     profiles: ["demo"]
-    build:
-      context: ./examples/example-services
-    environment:
-      - SERVICE_NAME=order-service
-      - PORT=8082
-    ports:
-      - "8082:8082"
-    labels:
-      logging: "promtail"
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8082/health"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-    restart: unless-stopped
+    image: rancher/k3s:v1.31.3-k3s1
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        until [ -f /output/kubeconfig.yaml ]; do sleep 1; done
+        sed 's|https://127.0.0.1:6443|https://k3s:6443|g' /output/kubeconfig.yaml > /output/kubeconfig-internal.yaml
+        export KUBECONFIG=/output/kubeconfig-internal.yaml
+        until kubectl get nodes 2>/dev/null | grep -qE '\sReady\s'; do
+          echo "waiting for node Ready..."
+          sleep 2
+        done
+        kubectl apply -f /workload/workload.yaml
+        for d in api-gateway payment-service order-service; do
+          kubectl -n omcp-demo rollout status deployment/$$d --timeout=180s
+        done
+        echo "k3s demo workload ready"
+    volumes:
+      - k3s-kubeconfig:/output
+      - ./examples/kubernetes:/workload:ro
+    depends_on:
+      k3s:
+        condition: service_healthy
+      image-loader:
+        condition: service_completed_successfully
     networks:
       - observability
 
@@ -87,12 +144,8 @@ services:
     networks:
       - observability
     depends_on:
-      api-gateway:
-        condition: service_healthy
-      payment-service:
-        condition: service_healthy
-      order-service:
-        condition: service_healthy
+      k3s-init:
+        condition: service_completed_successfully
 
   loki:
     profiles: ["demo"]
@@ -113,12 +166,16 @@ services:
     networks:
       - observability
 
+  # Promtail tails the k3s pod log directory (shared via the k3s-pod-logs
+  # named volume). Container/namespace/pod labels are extracted from the
+  # file path by the pipeline in examples/promtail/promtail-config.yml —
+  # no docker socket needed.
   promtail:
     profiles: ["demo"]
     image: grafana/promtail:3.1.0
     volumes:
       - ./examples/promtail/promtail-config.yml:/etc/promtail/config.yml:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - k3s-pod-logs:/var/log/pods:ro
     command: -config.file=/etc/promtail/config.yml
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:9080/ready"]
@@ -131,6 +188,8 @@ services:
     depends_on:
       loki:
         condition: service_healthy
+      k3s-init:
+        condition: service_completed_successfully
 
   # --- MCP Server ---
   mcp-server:
@@ -141,6 +200,12 @@ services:
     environment:
       - PROMETHEUS_URL=http://prometheus:9090
       - LOKI_URL=http://loki:3100
+      # The kubernetes source in config/sources.yaml reads this. In a
+      # non-demo run the file is absent and the source reports "down"
+      # without blocking startup.
+      - KUBECONFIG=/k3s-kubeconfig/kubeconfig-internal.yaml
+    volumes:
+      - k3s-kubeconfig:/k3s-kubeconfig:ro
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/sources"]
       interval: 10s
@@ -149,9 +214,14 @@ services:
     restart: unless-stopped
     networks:
       - observability
-    # No depends_on prometheus/loki — they live in the demo profile and
-    # mcp-server must be able to start standalone (pointing at external
-    # backends or with sources added later via the Web UI).
+    # depends_on entries here all belong to the demo profile. When demo
+    # is not active, compose silently drops them — mcp-server still
+    # starts standalone (pointing at external backends or with sources
+    # added later via the Web UI).
+    depends_on:
+      k3s-init:
+        condition: service_completed_successfully
+        required: false
 
   # --- AI Agent (demo) ---
   agent:
@@ -174,6 +244,9 @@ services:
 
 volumes:
   loki-data:
+  k3s-server:
+  k3s-kubeconfig:
+  k3s-pod-logs:
 
 networks:
   observability:

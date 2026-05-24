@@ -1,0 +1,202 @@
+---
+# Demo workload applied to the in-compose k3s by the k3s-init container.
+#
+# All three chaos-able example services live here as real Kubernetes
+# Deployments + NodePort Services. Prometheus and Loki (running in
+# docker-compose) scrape them via the NodePort exposed on the `k3s`
+# service hostname, so the *same* services that emit metrics/logs now
+# appear in the topology graph — exactly the cross-source story the
+# observability-mcp demo is meant to tell.
+#
+# Image: `example-service:demo` is built once by the `image-loader`
+# compose service, saved to /image-cache/example-service.tar, and
+# imported into k3s by k3s-init via `ctr images import`. With
+# imagePullPolicy: Never the kubelet never tries to fetch it from a
+# remote registry — keeps the demo airgap-clean.
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: omcp-demo
+  labels:
+    app.kubernetes.io/part-of: observability-mcp-demo
+---
+# ---------------- api-gateway ----------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+  namespace: omcp-demo
+  labels:
+    app: api-gateway
+    tier: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api-gateway
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+        tier: frontend
+    spec:
+      containers:
+        - name: app
+          image: example-service:demo
+          imagePullPolicy: Never
+          env:
+            - name: SERVICE_NAME
+              value: api-gateway
+            - name: PORT
+              value: "8080"
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-gateway
+  namespace: omcp-demo
+  labels:
+    app: api-gateway
+spec:
+  type: NodePort
+  selector:
+    app: api-gateway
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      nodePort: 30080
+---
+# ---------------- payment-service ----------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-service
+  namespace: omcp-demo
+  labels:
+    app: payment-service
+    tier: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payment-service
+  template:
+    metadata:
+      labels:
+        app: payment-service
+        tier: backend
+    spec:
+      containers:
+        - name: app
+          image: example-service:demo
+          imagePullPolicy: Never
+          env:
+            - name: SERVICE_NAME
+              value: payment-service
+            - name: PORT
+              value: "8081"
+          ports:
+            - name: http
+              containerPort: 8081
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-service
+  namespace: omcp-demo
+  labels:
+    app: payment-service
+spec:
+  type: NodePort
+  selector:
+    app: payment-service
+  ports:
+    - name: http
+      port: 8081
+      targetPort: 8081
+      nodePort: 30081
+---
+# ---------------- order-service ----------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-service
+  namespace: omcp-demo
+  labels:
+    app: order-service
+    tier: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: order-service
+  template:
+    metadata:
+      labels:
+        app: order-service
+        tier: backend
+    spec:
+      containers:
+        - name: app
+          image: example-service:demo
+          imagePullPolicy: Never
+          env:
+            - name: SERVICE_NAME
+              value: order-service
+            - name: PORT
+              value: "8082"
+          ports:
+            - name: http
+              containerPort: 8082
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8082
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-service
+  namespace: omcp-demo
+  labels:
+    app: order-service
+spec:
+  type: NodePort
+  selector:
+    app: order-service
+  ports:
+    - name: http
+      port: 8082
+      targetPort: 8082
+      nodePort: 30082

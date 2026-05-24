@@ -8,21 +8,38 @@ positions:
 clients:
   - url: http://loki:3100/loki/api/v1/push
 
+# k3s writes pod logs to /var/log/pods/<namespace>_<pod>_<uid>/<container>/<n>.log
+# The compose file mounts the k3s container's /var/log/pods as a shared
+# volume into promtail. We file-tail those logs and extract namespace /
+# pod / container as labels from the path, then apply a JSON pipeline so
+# the application's `level` and `service` fields still surface as Loki
+# labels the same way the previous docker-shipped streams did.
 scrape_configs:
-  - job_name: docker
-    docker_sd_configs:
-      - host: unix:///var/run/docker.sock
-        refresh_interval: 5s
-        filters:
-          - name: label
-            values: ["logging=promtail"]
-    relabel_configs:
-      - source_labels: ["__meta_docker_container_name"]
-        regex: "/(.*)"
-        target_label: "container"
-      - source_labels: ["__meta_docker_container_label_com_docker_compose_service"]
-        target_label: "service"
+  - job_name: k3s-pods
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: k3s-pods
+          __path__: /var/log/pods/*/*/*.log
     pipeline_stages:
+      # k3s (and any CRI runtime) writes pod logs in the CRI format:
+      #   <RFC3339Nano> <stdout|stderr> <P|F> <message>
+      # Strip the prefix so the downstream JSON stage sees the
+      # application payload directly. `cri` also surfaces the
+      # stream/flag as labels for free.
+      - cri: {}
+      # Path looks like: /var/log/pods/omcp-demo_payment-service-7fd_<uid>/app/0.log
+      - regex:
+          source: filename
+          expression: '^/var/log/pods/(?P<namespace>[^_]+)_(?P<pod>[^_]+)_[^/]+/(?P<container>[^/]+)/[0-9]+\.log$'
+      - labels:
+          namespace:
+          pod:
+          container:
+      # The example services emit a `service` field; surface it as a
+      # label so existing service-keyed queries (`{service="…"}`) work
+      # exactly like with the previous docker_sd setup.
       - json:
           expressions:
             level: level
