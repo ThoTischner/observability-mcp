@@ -168,9 +168,13 @@ async function runOne(toolDefs) {
 }
 
 function scoreCorrectness(text) {
-  const t = (text || "").toLowerCase();
-  const namedTarget = t.includes(CHAOS_TARGET_SERVICE.toLowerCase());
-  const namedSignal = /(error[ -]?spike|error rate|5xx|errors?\b|http 5)/i.test(t);
+  // Normalize both sides so "Payment Service", "payment_service",
+  // "payment-service" all count as naming the same target. Substring
+  // matching is intentionally simple-minded — see the methodology doc.
+  const norm = (s) => (s || "").toLowerCase().replace(/[-_]/g, " ").replace(/\s+/g, " ").trim();
+  const t = norm(text);
+  const namedTarget = t.includes(norm(CHAOS_TARGET_SERVICE));
+  const namedSignal = /(error[ -]?spike|error rate|5xx|errors?\b|http 5)/i.test(text || "");
   return namedTarget && namedSignal;
 }
 

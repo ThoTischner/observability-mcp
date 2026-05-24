@@ -60,3 +60,14 @@ test("scoreCorrectness — handles empty / null answers", () => {
   assert.equal(scoreCorrectness(null), false);
   assert.equal(scoreCorrectness(undefined), false);
 });
+
+test("scoreCorrectness — accepts spaces or underscores in place of dashes (Payment Service ≡ payment-service)", () => {
+  assert.equal(
+    scoreCorrectness("Root cause: Payment Service is throwing 5xx errors after the deploy."),
+    true,
+  );
+  assert.equal(
+    scoreCorrectness("payment_service has an error spike."),
+    true,
+  );
+});
