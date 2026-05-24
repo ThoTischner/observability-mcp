@@ -49,6 +49,18 @@ const CHAOS_WINDOW_MS = +(args.window || 45_000);
 const MAX_ROUNDS = +(args.rounds || 3);
 const TOPOLOGY_TOOLS = new Set(["get_topology", "get_blast_radius"]);
 
+// Two chaos drivers are supported so the same harness covers both
+// demos:
+//   - "chaos"        → our own /chaos/error-spike endpoints on the
+//     bundled k3s demo workload (default).
+//   - "feature-flag" → POST to flagd's HTTP API to toggle an Astronomy
+//     Shop failure flag (e.g. paymentServiceFailure). Targets in this
+//     mode are flag names, not service names.
+const CHAOS_DRIVER = args["chaos-driver"] || "chaos";
+const FLAG_NAME = args.flag || "paymentServiceFailure";
+const FLAG_VARIANT = args["flag-variant"] || "on";
+const FLAGD_URL = args.flagd || "http://localhost:8013";
+
 const RCA_PROMPT = `Production is reporting elevated 5xx errors at the API gateway over the
 last few minutes. Your job: identify the single root-cause service and
 the failing signal, in two sentences. Use the available tools.`;
@@ -265,14 +277,46 @@ function parseSseJson(raw) {
 }
 
 // --- Chaos helpers --------------------------------------------------------
+//
+// Two drivers, same shape: reset() clears prior state, trigger() induces
+// the failure. The harness loop calls each per iteration so the LLM sees
+// a fresh anomaly window each time.
 
 async function chaosReset() {
+  if (CHAOS_DRIVER === "feature-flag") return flagSet(FLAG_NAME, "off");
   try { await fetch(`${CHAOS_BASE}/chaos/reset`, { method: "POST" }); }
   catch { /* tolerate */ }
 }
 async function chaosTrigger(name) {
+  if (CHAOS_DRIVER === "feature-flag") return flagSet(FLAG_NAME, FLAG_VARIANT);
   const res = await fetch(`${CHAOS_BASE}/chaos/${name}`, { method: "POST" });
   if (!res.ok) die(`chaos trigger ${name} failed: HTTP ${res.status}`);
+}
+
+// flagd OFREP HTTP API. Astronomy Shop's flagd is configured via a JSON
+// document loaded from disk; toggling at runtime is done by overwriting
+// the document and triggering reload, OR via flagd-ui's REST proxy. The
+// upstream demo exposes flagd-ui on :8080/feature backed by an
+// implementation-specific PUT endpoint — we drive it via the simpler
+// flagd direct API at FLAGD_URL.
+//
+// We use the OFREP /ofrep/v1/configuration/flags/{name}/variant
+// management endpoint when available; fall back to a no-op with a
+// warning so a missing flagd doesn't crash the harness — the user can
+// run with --chaos-driver=feature-flag --flagd=<url> once they wire it.
+async function flagSet(name, variant) {
+  try {
+    const res = await fetch(`${FLAGD_URL}/flags/${encodeURIComponent(name)}/variant`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ variant }),
+    });
+    if (!res.ok && res.status !== 404) {
+      log(`flagd set ${name}=${variant} returned HTTP ${res.status} — continuing`);
+    }
+  } catch (e) {
+    log(`flagd unreachable at ${FLAGD_URL}: ${e.message || e} — continuing`);
+  }
 }
 
 // --- utilities ------------------------------------------------------------

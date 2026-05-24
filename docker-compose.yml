@@ -223,6 +223,58 @@ services:
         condition: service_completed_successfully
         required: false
 
+  # ============================================================
+  # BENCHMARK PROFILE — `docker compose --profile benchmark up` adds:
+  #   * Tempo (single-binary) with the metrics-generator enabled, so
+  #     trace-derived service-graph signals are visible to the topology
+  #     UI/tools via the existing tempo connector.
+  #   * An OpenTelemetry Collector "bridge" exposing OTLP gRPC/HTTP on
+  #     4317/4318 → forwards traces to Tempo + exposes metrics to be
+  #     scraped by Prometheus.
+  #
+  # This profile does NOT bring up a workload. It expects the
+  # OpenTelemetry Demo (Astronomy Shop) running in its own compose
+  # project, with services targeting `otel-collector-bridge:4317` on
+  # the shared `observability_observability` network.
+  # See docs/benchmark-astronomy-shop.md for the orchestration via
+  # `make benchmark-up`.
+  # ============================================================
+
+  tempo:
+    profiles: ["benchmark"]
+    image: grafana/tempo:2.6.1
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./examples/benchmark/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    ports:
+      - "3200:3200"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3200/ready || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    restart: unless-stopped
+    networks:
+      - observability
+
+  otel-collector-bridge:
+    profiles: ["benchmark"]
+    image: otel/opentelemetry-collector-contrib:0.111.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./examples/benchmark/otelcol-bridge.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "8889:8889"
+    restart: unless-stopped
+    networks:
+      - observability
+    depends_on:
+      tempo:
+        condition: service_healthy
+
   # --- AI Agent (demo) ---
   agent:
     profiles: ["demo"]
@@ -247,6 +299,7 @@ volumes:
   k3s-server:
   k3s-kubeconfig:
   k3s-pod-logs:
+  tempo-data:
 
 networks:
   observability:

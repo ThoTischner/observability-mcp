@@ -1,0 +1,30 @@
+# MCP sources configuration for the benchmark profile.
+#
+# Loaded by mcp-server when CONFIG_FILE points at this file. The
+# `make benchmark-up` target mounts this in place of the default
+# config so the running server points at the Astronomy Shop's
+# observability backends instead of the demo's own.
+#
+# Two assumptions:
+# 1. The OpenTelemetry Demo (Astronomy Shop) is running with its
+#    own compose stack — its built-in Prometheus is reachable on
+#    the shared network as `prometheus:9090`.
+# 2. Our `tempo` service from the benchmark profile is up — receives
+#    traces routed via the otel-collector-bridge.
+#
+# Loki is intentionally omitted: Astronomy Shop ships OpenSearch
+# for logs, not Loki, and we don't (yet) have an OpenSearch
+# connector. Logs queries will report "no logs backend configured"
+# during this profile until that ships.
+
+sources:
+  - name: prom-otel-demo
+    type: prometheus
+    url: http://prometheus:9090
+  - name: tempo
+    type: tempo
+    url: http://tempo:3200
+    config:
+      # Sample a larger window for the e-commerce flow — most paths
+      # touch 5+ services so 100 traces typically covers every edge.
+      traceSample: 100
