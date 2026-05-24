@@ -17,5 +17,6 @@
   },
   "compat": {
     "serverVersion": ">=1.7.0"
-  }
+  },
+  "integrity": "sha256-p43JS48KOAU5wrfvNuCeTsYYO5ArpR3xwvMf+LEQQLw="
 }
