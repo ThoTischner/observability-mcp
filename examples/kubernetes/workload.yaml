@@ -1,0 +1,73 @@
+---
+# Demo workload applied to the in-compose k3s by the k3s-init container.
+# Two deployments with multiple replicas so the topology graph has an
+# interesting RUNS_ON pattern (multiple pods sharing the single node).
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: omcp-demo
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: omcp-demo-echo
+  namespace: omcp-demo
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: omcp-demo-echo
+  template:
+    metadata:
+      labels:
+        app: omcp-demo-echo
+        tier: backend
+    spec:
+      containers:
+        - name: echo
+          image: ealen/echo-server:0.9.2
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 1
+            periodSeconds: 2
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: omcp-demo-frontend
+  namespace: omcp-demo
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: omcp-demo-frontend
+  template:
+    metadata:
+      labels:
+        app: omcp-demo-frontend
+        tier: frontend
+    spec:
+      containers:
+        - name: echo
+          image: ealen/echo-server:0.9.2
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 1
+            periodSeconds: 2
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi

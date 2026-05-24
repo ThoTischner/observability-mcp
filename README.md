@@ -375,7 +375,7 @@ flags pass through after a literal `--`.
 | Web UI | http://localhost:3000 |
 | Health API | http://localhost:3000/api/health |
 
-In the docker-compose demo: Prometheus on `:9090`, Loki on `:3100`, services on `:8080–:8082`.
+In the docker-compose demo: Prometheus on `:9090`, Loki on `:3100`, services on `:8080–:8082`, and a single-node k3s on the internal network (no host port) running a small demo workload (`omcp-demo` namespace, 5 pods across 2 deployments) so the Kubernetes topology connector has something to graph.
 
 **Transports:** Streamable HTTP by default (`/mcp`). For stdio-based clients/catalogs (Claude Desktop, Glama's `mcp-proxy`, etc.) run with `--stdio` (or `MCP_TRANSPORT=stdio`) — one MCP server over stdin/stdout, all logs on stderr so the protocol stream stays clean.
 

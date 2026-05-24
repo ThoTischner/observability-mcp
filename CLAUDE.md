@@ -56,6 +56,7 @@ Chaos modes are correlated: error-spike also increases CPU + latency + error log
 | Payment Service | http://localhost:8081 | Example service (chaos target) |
 | Order Service | http://localhost:8082 | Example service |
 | Ollama | host.docker.internal:11434 | LLM on Windows host |
+| k3s (demo only) | https://k3s:6443 (in-network) | Single-node Kubernetes for the topology connector. Demo workload in namespace `omcp-demo`. Kubeconfig in the `k3s-kubeconfig` named volume; mcp-server reads it via `KUBECONFIG=/k3s-kubeconfig/kubeconfig-internal.yaml`. |
 
 ## Project Structure
 

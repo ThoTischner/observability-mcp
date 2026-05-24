@@ -132,6 +132,70 @@ services:
       loki:
         condition: service_healthy
 
+  # --- k3s (demo) ---
+  # Single-node Kubernetes for the topology connector demo. Lives on the
+  # observability network so mcp-server can reach the API at https://k3s:6443.
+  # k3s writes its kubeconfig to /output/kubeconfig.yaml; k3s-init rewrites
+  # 127.0.0.1 → k3s and applies the demo workload.
+  k3s:
+    profiles: ["demo"]
+    image: rancher/k3s:v1.31.3-k3s1
+    command:
+      - server
+      - --tls-san=k3s
+      - --disable=traefik
+      - --disable=metrics-server
+      - --disable=servicelb
+    privileged: true
+    tmpfs:
+      - /run
+      - /var/run
+    environment:
+      - K3S_KUBECONFIG_OUTPUT=/output/kubeconfig.yaml
+      - K3S_KUBECONFIG_MODE=666
+    volumes:
+      - k3s-server:/var/lib/rancher/k3s
+      - k3s-kubeconfig:/output
+    healthcheck:
+      test: ["CMD-SHELL", "kubectl get --raw=/healthz | grep -q ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - observability
+
+  # Rewrites the k3s kubeconfig so the server URL is reachable inside the
+  # docker network, then waits for node-Ready and applies the demo workload.
+  # One-shot — mcp-server depends on it completing successfully.
+  k3s-init:
+    profiles: ["demo"]
+    image: rancher/k3s:v1.31.3-k3s1
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        until [ -f /output/kubeconfig.yaml ]; do sleep 1; done
+        sed 's|https://127.0.0.1:6443|https://k3s:6443|g' /output/kubeconfig.yaml > /output/kubeconfig-internal.yaml
+        export KUBECONFIG=/output/kubeconfig-internal.yaml
+        until kubectl get nodes 2>/dev/null | grep -qE '\sReady\s'; do
+          echo "waiting for node Ready..."
+          sleep 2
+        done
+        kubectl apply -f /workload/workload.yaml
+        kubectl -n omcp-demo rollout status deployment/omcp-demo-echo --timeout=120s
+        kubectl -n omcp-demo rollout status deployment/omcp-demo-frontend --timeout=120s
+        echo "k3s demo workload ready"
+    volumes:
+      - k3s-kubeconfig:/output
+      - ./examples/kubernetes:/workload:ro
+    depends_on:
+      k3s:
+        condition: service_healthy
+    networks:
+      - observability
+
   # --- MCP Server ---
   mcp-server:
     build:
@@ -141,6 +205,12 @@ services:
     environment:
       - PROMETHEUS_URL=http://prometheus:9090
       - LOKI_URL=http://loki:3100
+      # The kubernetes source in config/sources.yaml reads this. In
+      # non-demo runs the file simply isn't present and the source
+      # reports "down" — connector failures don't block startup.
+      - KUBECONFIG=/k3s-kubeconfig/kubeconfig-internal.yaml
+    volumes:
+      - k3s-kubeconfig:/k3s-kubeconfig:ro
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/sources"]
       interval: 10s
@@ -149,9 +219,14 @@ services:
     restart: unless-stopped
     networks:
       - observability
-    # No depends_on prometheus/loki — they live in the demo profile and
-    # mcp-server must be able to start standalone (pointing at external
-    # backends or with sources added later via the Web UI).
+    # depends_on entries here all belong to the demo profile. When demo
+    # is not active, compose silently drops them — mcp-server still
+    # starts standalone (pointing at external backends or with sources
+    # added later via the Web UI).
+    depends_on:
+      k3s-init:
+        condition: service_completed_successfully
+        required: false
 
   # --- AI Agent (demo) ---
   agent:
@@ -174,6 +249,8 @@ services:
 
 volumes:
   loki-data:
+  k3s-server:
+  k3s-kubeconfig:
 
 networks:
   observability:
