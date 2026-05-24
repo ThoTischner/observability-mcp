@@ -370,6 +370,8 @@ flags pass through after a literal `--`.
 - [Troubleshooting](docs/troubleshooting.md) — common pitfalls and fixes
 - [Security](docs/security.md) — automation pipeline, vulnerability reporting, built-in protections
 - [Airgapped deployment](docs/airgapped-deployment.md) — mirroring images, private plugins, GitOps-friendly config
+- [Topology vocabulary](docs/topology-vocabulary.md) — the canonical `kind` / `relation` contract every topology-capable connector emits, plus the warn-only validator
+- [RCA benchmark](docs/benchmark-astronomy-shop.md) — reproducible A/B harness measuring whether `get_topology` + `get_blast_radius` reduce token spend and improve correctness on a fixed RCA prompt
 - [Enterprise access-control gate](docs/enterprise-gate.md) — optional RBAC / catalog / audit behind a signed entitlement token (off by default)
 - [Connector Hub](https://thotischner.github.io/observability-mcp/hub/) — browse versioned, signed connectors (catalog: [`hub/`](hub/README.md))
 - [Use cases](USECASES.md) — five scenarios with the prompts that drive them
