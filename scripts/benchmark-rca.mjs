@@ -61,9 +61,20 @@ const FLAG_NAME = args.flag || "paymentServiceFailure";
 const FLAG_VARIANT = args["flag-variant"] || "on";
 const FLAGD_URL = args.flagd || "http://localhost:8013";
 
-const RCA_PROMPT = `Production is reporting elevated 5xx errors at the API gateway over the
-last few minutes. Your job: identify the single root-cause service and
-the failing signal, in two sentences. Use the available tools.`;
+const RCA_PROMPT = args.prompt || `Customers are reporting that checkout is failing intermittently.
+Identify the single underlying root-cause service (NOT the symptom
+service) and the failing signal in two sentences. Use the available
+tools.`;
+
+// Optional: override scoring rule. Pass `--correct-substrings=a,b,c`
+// and an answer must contain ALL of (a,b,c) — substring match,
+// case-insensitive, dashes/underscores/spaces are interchangeable
+// (same normalization the default scorer uses). When omitted, the
+// default {target,signal} rule applies.
+const CORRECT_SUBSTRINGS = args["correct-substrings"]
+  ? args["correct-substrings"].split(",").map((s) => s.trim()).filter(Boolean)
+  : null;
+const SKIP_CHAOS = args["skip-chaos"] === "true";
 
 if (!["baseline", "topology"].includes(MODE)) {
   die(`--mode must be "baseline" or "topology" (got ${MODE})`);
@@ -81,10 +92,12 @@ if (IS_MAIN) (async () => {
   const results = [];
   for (let i = 1; i <= ITERATIONS; i++) {
     log(`--- iteration ${i}/${ITERATIONS} ---`);
-    await chaosReset();
-    await chaosTrigger("error-spike");
-    log(`waiting ${CHAOS_WINDOW_MS}ms for anomaly to manifest...`);
-    await sleep(CHAOS_WINDOW_MS);
+    if (!SKIP_CHAOS) {
+      await chaosReset();
+      await chaosTrigger("error-spike");
+      log(`waiting ${CHAOS_WINDOW_MS}ms for anomaly to manifest...`);
+      await sleep(CHAOS_WINDOW_MS);
+    }
     const r = await runOne(filtered);
     log(`  tokens=${r.tokens} rounds=${r.rounds} correct=${r.correct} duration=${r.durationMs}ms`);
     results.push(r);
@@ -122,8 +135,18 @@ async function runOne(toolDefs) {
       parameters: t.inputSchema || { type: "object", properties: {} },
     },
   }));
+  const toolNames = toolDefs.map((t) => t.name).join(", ");
   const messages = [
-    { role: "system", content: "You are an SRE diagnosing a live production incident. Be terse and use tools before guessing." },
+    {
+      role: "system",
+      content:
+        "You are an SRE diagnosing a live production incident. " +
+        "You MUST gather evidence by invoking the diagnostic tools through the function-calling API. " +
+        "Do NOT describe in text what tool you would call — actually invoke it. " +
+        "If you write tool calls as text/JSON in your message content instead of using the tool-call mechanism, the call is wasted. " +
+        `Tools available: ${toolNames}. ` +
+        "Workflow: call detect_anomalies first to see what's abnormal, then use targeted tools (query_metrics, query_logs, get_service_health) to confirm before answering.",
+    },
     { role: "user", content: RCA_PROMPT },
   ];
   const started = Date.now();
@@ -173,13 +196,30 @@ function scoreCorrectness(text) {
   // matching is intentionally simple-minded — see the methodology doc.
   const norm = (s) => (s || "").toLowerCase().replace(/[-_]/g, " ").replace(/\s+/g, " ").trim();
   const t = norm(text);
+  // If the operator supplied a custom substring list, ALL of them
+  // must appear (normalized) in the answer. Used by the blast-radius
+  // scenario where the right answer is a *set* of services.
+  if (CORRECT_SUBSTRINGS) {
+    return CORRECT_SUBSTRINGS.every((s) => t.includes(norm(s)));
+  }
   const namedTarget = t.includes(norm(CHAOS_TARGET_SERVICE));
-  const namedSignal = /(error[ -]?spike|error rate|5xx|errors?\b|http 5)/i.test(text || "");
+  // Underscore-form ("error_rate") is normalized to "error rate" via
+  // the same map above, so the signal regex sees it as the
+  // word-bounded "error rate".
+  const namedSignal = /(error[ -]?spike|error rate|5xx|errors?\b|http 5)/i.test(t);
   return namedTarget && namedSignal;
 }
 
 async function ollamaChat(messages, tools) {
-  const body = { model: MODEL, messages, stream: false };
+  // temperature=0 makes the model deterministic — important so the
+  // benchmark is reproducible across runs of the same arm. options.
+  // num_ctx large enough for tool defs + multi-round transcripts.
+  const body = {
+    model: MODEL,
+    messages,
+    stream: false,
+    options: { temperature: 0, num_ctx: 8192 },
+  };
   if (tools.length > 0) body.tools = tools;
   let res;
   try {
