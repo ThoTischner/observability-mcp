@@ -1,0 +1,93 @@
+{
+  "mode": "baseline",
+  "model": "llama3.1:8b",
+  "iterations": 10,
+  "tools": [
+    "list_sources",
+    "list_services",
+    "query_metrics",
+    "query_logs",
+    "get_service_health",
+    "detect_anomalies"
+  ],
+  "totals": {
+    "tokens": 29840,
+    "meanTokensPerIteration": 2984,
+    "correctIterations": 0,
+    "accuracy": 0,
+    "meanRounds": 2,
+    "meanDurationMs": 2436
+  },
+  "iterations_detail": [
+    {
+      "tokens": 2984,
+      "rounds": 2,
+      "correct": false,
+      "durationMs": 5745,
+      "finalAnswer": "The pods that would also go offline are:\n\nprometheus\nloki\nkubernetes"
+    },
+    {
+      "tokens": 2984,
+      "rounds": 2,
+      "correct": false,
+      "durationMs": 2326,
+      "finalAnswer": "The pods that would also go offline are:\n\nprometheus\nloki\nkubernetes"
+    },
+    {
+      "tokens": 2984,
+      "rounds": 2,
+      "correct": false,
+      "durationMs": 2324,
+      "finalAnswer": "The pods that would also go offline are:\n\nprometheus\nloki\nkubernetes"
+    },
+    {
+      "tokens": 2984,
+      "rounds": 2,
+      "correct": false,
+      "durationMs": 2448,
+      "finalAnswer": "The pods that would also go offline are:\n\nprometheus\nloki\nkubernetes"
+    },
+    {
+      "tokens": 2984,
+      "rounds": 2,
+      "correct": false,
+      "durationMs": 2351,
+      "finalAnswer": "The pods that would also go offline are:\n\nprometheus\nloki\nkubernetes"
+    },
+    {
+      "tokens": 2984,
+      "rounds": 2,
+      "correct": false,
+      "durationMs": 2421,
+      "finalAnswer": "The pods that would also go offline are:\n\nprometheus\nloki\nkubernetes"
+    },
+    {
+      "tokens": 2984,
+      "rounds": 2,
+      "correct": false,
+      "durationMs": 2338,
+      "finalAnswer": "The pods that would also go offline are:\n\nprometheus\nloki\nkubernetes"
+    },
+    {
+      "tokens": 2984,
+      "rounds": 2,
+      "correct": false,
+      "durationMs": -181,
+      "finalAnswer": "The pods that would also go offline are:\n\nprometheus\nloki\nkubernetes"
+    },
+    {
+      "tokens": 2984,
+      "rounds": 2,
+      "correct": false,
+      "durationMs": 2262,
+      "finalAnswer": "The pods that would also go offline are:\n\nprometheus\nloki\nkubernetes"
+    },
+    {
+      "tokens": 2984,
+      "rounds": 2,
+      "correct": false,
+      "durationMs": 2328,
+      "finalAnswer": "The pods that would also go offline are:\n\nprometheus\nloki\nkubernetes"
+    }
+  ]
+}
