@@ -5,8 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Observability MCP Gateway</title>
   <script>
-    // Resolve the theme BEFORE first paint to avoid a flash. Explicit
-    // user choice (localStorage) wins; otherwise follow the OS setting.
+    // Resolve the theme + density BEFORE first paint to avoid a flash.
+    // Explicit user choice (localStorage) wins; otherwise follow the OS
+    // setting for theme and default to comfortable density.
     (function(){
       try {
         var t = localStorage.getItem('omcp-theme');
@@ -15,6 +16,10 @@
         }
         document.documentElement.setAttribute('data-theme', t);
       } catch (e) { document.documentElement.setAttribute('data-theme','dark'); }
+      try {
+        var d = localStorage.getItem('omcp-density');
+        document.documentElement.setAttribute('data-density', d === 'compact' ? 'compact' : 'comfortable');
+      } catch (e) { document.documentElement.setAttribute('data-density','comfortable'); }
     })();
   </script>
   <link rel="preconnect" href="https://rsms.me/">
@@ -968,6 +973,54 @@
     }
 
     .is-hidden { display: none; }
+
+    /* ===== Density variants =====
+       `data-density="compact"` on <html> shrinks row + cell padding
+       across lists, tables and cards so dense operator workloads fit
+       on smaller screens. Toggleable from the masthead. */
+    :root[data-density="compact"] .source-row,
+    :root[data-density="compact"] .service-row { padding-top: 4px; padding-bottom: 4px; }
+    :root[data-density="compact"] .dtable th,
+    :root[data-density="compact"] .dtable td { padding: 4px 8px; }
+    :root[data-density="compact"] .metric-table th,
+    :root[data-density="compact"] .metric-table td { padding: 4px 8px; }
+    :root[data-density="compact"] .health-card { padding: var(--sp-3); }
+    :root[data-density="compact"] .health-card .hc-header { margin-bottom: var(--sp-2); }
+    :root[data-density="compact"] .hc-metric { padding: 4px 8px; }
+
+    /* ===== Sortable table column headers ===== */
+    .dtable th.sortable, .metric-table th.sortable {
+      cursor: pointer; user-select: none;
+      transition: color var(--t-fast) var(--ease);
+    }
+    .dtable th.sortable:hover, .metric-table th.sortable:hover { color: var(--text); }
+    .dtable th.sortable .sort-ind, .metric-table th.sortable .sort-ind {
+      display: inline-block; width: 10px; opacity: 0.35;
+      margin-left: 4px; font-size: 9px;
+    }
+    .dtable th.sortable.sort-asc .sort-ind::before,
+    .metric-table th.sortable.sort-asc .sort-ind::before { content: '▲'; opacity: 1; }
+    .dtable th.sortable.sort-desc .sort-ind::before,
+    .metric-table th.sortable.sort-desc .sort-ind::before { content: '▼'; opacity: 1; }
+
+    /* ===== List filter input ===== */
+    .list-filter {
+      display: flex; align-items: center; gap: var(--sp-3);
+      margin-bottom: var(--sp-3);
+    }
+    .list-filter input[type="search"] {
+      flex: 1; min-width: 0; max-width: 360px;
+      background: var(--surface-2); border: 1px solid var(--border);
+      color: var(--text); padding: 6px 10px;
+      border-radius: var(--radius-sm); font-size: var(--fs-sm);
+      transition: border-color var(--t-fast) var(--ease);
+    }
+    .list-filter input[type="search"]:focus {
+      outline: none; border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-ring);
+    }
+    .list-filter input[type="search"]::placeholder { color: var(--text-dim); }
+    .list-filter .count { color: var(--text-muted); font-size: var(--fs-xs); white-space: nowrap; }
   </style>
 </head>
 <body>
@@ -1036,6 +1089,7 @@
         <div id="notif-list"><div class="notif-empty">No notifications</div></div>
       </div>
     </div>
+    <button class="theme-toggle" id="density-toggle" title="Toggle row density" aria-label="Toggle density" onclick="toggleDensity()">≡</button>
     <button class="theme-toggle" id="theme-toggle" title="Toggle light / dark" aria-label="Toggle theme" onclick="toggleTheme()">◐</button>
     <button class="btn btn-ghost btn-sm" onclick="refresh()">Refresh</button>
   </header>
@@ -1648,6 +1702,14 @@ function toggleTheme(){
   document.documentElement.setAttribute('data-theme',next);
   try{ localStorage.setItem('omcp-theme',next); }catch(e){}
   syncThemeToggle();
+}
+
+// --- Row density toggle (comfortable / compact), persisted ---
+function toggleDensity(){
+  const cur=document.documentElement.getAttribute('data-density')==='compact'?'compact':'comfortable';
+  const next=cur==='compact'?'comfortable':'compact';
+  document.documentElement.setAttribute('data-density',next);
+  try{ localStorage.setItem('omcp-density',next); }catch(e){}
 }
 
 // --- Navigation groups (collapsible, persisted) ---
@@ -2412,6 +2474,53 @@ function renderHealthPanels(svcs){
 // --- Render Sources ---
 function srcView(){ try{ return localStorage.getItem('omcp-src-view')==='table'?'table':'list'; }catch(e){ return 'list'; } }
 function setSrcView(v){ try{ localStorage.setItem('omcp-src-view',v); }catch(e){} renderSources(); }
+
+// --- Sources / Services filter + sort state (filter in-memory, sort persisted) ---
+let srcFilter = '';
+let svcFilter = '';
+function loadSrcSort(){
+  try{ const s = JSON.parse(localStorage.getItem('omcp-src-sort')||''); if (s && s.key) return s; }catch(e){}
+  return { key: 'name', dir: 'asc' };
+}
+let srcSort = loadSrcSort();
+function setSrcSort(key){
+  if (srcSort.key === key) srcSort.dir = srcSort.dir === 'asc' ? 'desc' : 'asc';
+  else { srcSort.key = key; srcSort.dir = 'asc'; }
+  try{ localStorage.setItem('omcp-src-sort', JSON.stringify(srcSort)); }catch(e){}
+  renderSources();
+}
+function setSrcFilter(v){ srcFilter = String(v||'').trim().toLowerCase(); renderSources(); }
+function setSvcFilter(v){ svcFilter = String(v||'').trim().toLowerCase(); renderServices(); }
+function compareSrc(a, b){
+  const dir = srcSort.dir === 'desc' ? -1 : 1;
+  let av, bv;
+  switch (srcSort.key) {
+    case 'type':    av = a.type;            bv = b.type;            break;
+    case 'signal':  av = a.signalType||'';  bv = b.signalType||'';  break;
+    case 'url':     av = a.url;             bv = b.url;             break;
+    case 'status':  av = !a.enabled?'disabled':a.status; bv = !b.enabled?'disabled':b.status; break;
+    case 'latency': return dir * ((a.latencyMs||0) - (b.latencyMs||0));
+    case 'name':
+    default:        av = a.name;            bv = b.name;
+  }
+  av = String(av).toLowerCase(); bv = String(bv).toLowerCase();
+  if (av < bv) return -1 * dir;
+  if (av > bv) return  1 * dir;
+  return 0;
+}
+function filterSrcRow(s){
+  if (!srcFilter) return true;
+  return [s.name, s.type, s.signalType||'', s.url].join(' ').toLowerCase().includes(srcFilter);
+}
+function filterSvcRow(s){
+  if (!svcFilter) return true;
+  return [s.name, (s.sources||[]).join(' '), (s.signalTypes||[]).join(' ')]
+    .join(' ').toLowerCase().includes(svcFilter);
+}
+function sortIndClass(key){
+  return key === srcSort.key ? (srcSort.dir === 'asc' ? 'sort-asc' : 'sort-desc') : '';
+}
+
 function srcRow(s){
   const sc=!s.enabled?'dot-disabled':s.status==='up'?'dot-up':'dot-down';
   return `<div class="source-row" data-src="${esc(s.name)}"><div class="dot ${sc}"></div><div class="source-info"><div class="name">${esc(s.name)}<span class="tag tag-type">${esc(s.type)}</span>${s.signalType?`<span class="tag tag-${s.signalType}">${s.signalType}</span>`:''}</div><div class="url">${esc(s.url)}</div></div>${s.latencyMs?`<span class="tag-latency">${s.latencyMs}ms</span>`:''}<div class="source-actions" onclick="event.stopPropagation()"><label class="toggle"><input type="checkbox" ${s.enabled?'checked':''} onchange="toggleSource('${esc(s.name)}')"><span class="slider"></span></label><button class="btn-icon" onclick="openEditModal('${esc(s.name)}')">&#9998;</button><button class="btn-icon" onclick="openDeleteConfirm('source','${esc(s.name)}')">&#128465;</button></div></div>`;
@@ -2422,18 +2531,35 @@ function renderSources() {
   const box=document.getElementById('sources-list'); if(!box) return;
   if(sourcesData.length===0){ box.innerHTML='<div class="empty">No sources configured.</div>'; return; }
   const view=srcView();
-  const bar=`<div class="dp-bar"><span style="color:var(--text-muted);font-size:12px">${sourcesData.length} source${sourcesData.length===1?'':'s'} · click for detail</span>
-    <span class="view-toggle" style="margin-left:auto"><button class="${view==='list'?'active':''}" onclick="setSrcView('list')">List</button><button class="${view==='table'?'active':''}" onclick="setSrcView('table')">Table</button></span></div>`;
+  // Apply filter + sort. Keep `sourcesData` immutable; render from a copy.
+  const visible = sourcesData.filter(filterSrcRow).slice().sort(compareSrc);
+  const filterBar=`<div class="list-filter">
+    <input id="src-filter" type="search" placeholder="Filter sources by name, type or URL…" value="${esc(srcFilter)}" oninput="setSrcFilter(this.value)" aria-label="Filter sources">
+    <span class="count">${visible.length} of ${sourcesData.length}</span>
+    <span class="view-toggle" style="margin-left:auto"><button class="${view==='list'?'active':''}" onclick="setSrcView('list')">List</button><button class="${view==='table'?'active':''}" onclick="setSrcView('table')">Table</button></span>
+  </div>`;
   let body;
   if(view==='table'){
-    body=`<table class="dtable"><thead><tr><th>Name</th><th>Type</th><th>Signal</th><th>URL</th><th>Status</th><th>Latency</th></tr></thead><tbody>`+
-      sourcesData.map(s=>`<tr data-src="${esc(s.name)}"><td class="mono">${esc(s.name)}</td><td>${esc(s.type)}</td><td>${s.signalType?esc(s.signalType):'—'}</td><td class="mono" style="color:var(--text-muted)">${esc(s.url)}</td><td>${!s.enabled?'disabled':s.status==='up'?'<span class="pill-yes">up</span>':'<span class="pill-no">down</span>'}</td><td class="mono">${s.latencyMs?s.latencyMs+'ms':'—'}</td></tr>`).join('')+
+    const h = (key, label) => `<th class="sortable ${sortIndClass(key)}" data-sort-key="${key}" onclick="setSrcSort('${key}')">${label}<span class="sort-ind"></span></th>`;
+    body=`<table class="dtable"><thead><tr>${h('name','Name')}${h('type','Type')}${h('signal','Signal')}${h('url','URL')}${h('status','Status')}${h('latency','Latency')}</tr></thead><tbody>`+
+      visible.map(s=>`<tr data-src="${esc(s.name)}"><td class="mono">${esc(s.name)}</td><td>${esc(s.type)}</td><td>${s.signalType?esc(s.signalType):'—'}</td><td class="mono t-muted">${esc(s.url)}</td><td>${!s.enabled?'disabled':s.status==='up'?'<span class="pill-yes">up</span>':'<span class="pill-no">down</span>'}</td><td class="mono">${s.latencyMs?s.latencyMs+'ms':'—'}</td></tr>`).join('')+
       `</tbody></table>`;
   } else {
-    body=sourcesData.map(srcRow).join('');
+    body = visible.length === 0
+      ? `<div class="empty">No sources match "${esc(srcFilter)}".</div>`
+      : visible.map(srcRow).join('');
   }
-  box.innerHTML=bar+body;
-  box.querySelectorAll('[data-src]').forEach(el=>el.addEventListener('click',()=>srcDetail(el.getAttribute('data-src'))));
+  box.innerHTML=filterBar+body;
+  // Re-focus the filter input so typing doesn't lose focus across renders.
+  if (srcFilter) {
+    const inp = document.getElementById('src-filter');
+    if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+  }
+  box.querySelectorAll('tr[data-src], .source-row[data-src]').forEach(el=>el.addEventListener('click',(ev)=>{
+    // Don't trigger detail when clicking sortable column headers or actions.
+    if (ev.target.closest('.source-actions, th.sortable')) return;
+    srcDetail(el.getAttribute('data-src'));
+  }));
 }
 function srcDetail(name){
   const s=sourcesData.find(x=>x.name===name);
@@ -2453,10 +2579,31 @@ function srcDetail(name){
   openDrawer(name, html);
 }
 function renderServices() {
-  const html = servicesData.length===0 ? '<div class="empty">No services discovered.</div>' : servicesData.map(s=>`<div class="service-row" data-svc="${esc(s.name)}"><div><span class="name">${esc(s.name)}</span>${s.signalTypes.map(t=>`<span class="tag tag-${t}">${t}</span>`).join('')}</div><span style="color:var(--text2);font-size:12px">${s.sources.join(', ')}</span></div>`).join('');
-  const sl=document.getElementById('services-list'); sl.innerHTML=html;
-  sl.querySelectorAll('[data-svc]').forEach(el=>el.addEventListener('click',()=>svcDetail(el.getAttribute('data-svc'))));
-  document.getElementById('dash-services').innerHTML=html;
+  const sl = document.getElementById('services-list');
+  const dash = document.getElementById('dash-services');
+  if(servicesData.length === 0){
+    const empty = '<div class="empty">No services discovered.</div>';
+    if (sl) sl.innerHTML = empty;
+    if (dash) dash.innerHTML = empty;
+    return;
+  }
+  const visible = servicesData.filter(filterSvcRow);
+  const rowsHtml = visible.length === 0
+    ? `<div class="empty">No services match "${esc(svcFilter)}".</div>`
+    : visible.map(s=>`<div class="service-row" data-svc="${esc(s.name)}"><div><span class="name">${esc(s.name)}</span>${s.signalTypes.map(t=>`<span class="tag tag-${t}">${t}</span>`).join('')}</div><span class="t-muted t-sm">${s.sources.join(', ')}</span></div>`).join('');
+  if (sl) {
+    const filterBar = `<div class="list-filter">
+      <input id="svc-filter" type="search" placeholder="Filter services by name or source…" value="${esc(svcFilter)}" oninput="setSvcFilter(this.value)" aria-label="Filter services">
+      <span class="count">${visible.length} of ${servicesData.length}</span>
+    </div>`;
+    sl.innerHTML = filterBar + rowsHtml;
+    if (svcFilter) {
+      const inp = document.getElementById('svc-filter');
+      if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+    }
+    sl.querySelectorAll('[data-svc]').forEach(el=>el.addEventListener('click',()=>svcDetail(el.getAttribute('data-svc'))));
+  }
+  if (dash) dash.innerHTML = rowsHtml;
 }
 async function svcDetail(name){
   let v=healthMap[name];
