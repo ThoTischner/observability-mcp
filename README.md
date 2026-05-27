@@ -423,6 +423,7 @@ flags pass through after a literal `--`.
 - [Airgapped deployment](docs/airgapped-deployment.md) — mirroring images, private plugins, GitOps-friendly config
 - [Topology vocabulary](docs/topology-vocabulary.md) — the canonical `kind` / `relation` contract every topology-capable connector emits, plus the warn-only validator
 - [RCA benchmark](docs/benchmark-astronomy-shop.md) — reproducible A/B harness; on a cross-namespace blast-radius question (llama3.1:8b, n=10) the baseline tool set scores 0/10 and hallucinates the wrong entity type, the same model with topology tools scores 10/10 deterministically — see the three-scenarios table for the full honest picture
+- [How this compares to adjacent tools](docs/comparison.md) — source-cited table vs. Datadog Bits AI, HolmesGPT, Robusta — what each is best at and where this fits
 - [Governance access-control gate](docs/enterprise-gate.md) — optional RBAC / catalog / audit behind a signed entitlement token (off by default)
 - [Connector Hub](https://thotischner.github.io/observability-mcp/hub/) — browse versioned, signed connectors (catalog: [`hub/`](hub/README.md))
 - [Use cases](USECASES.md) — five scenarios with the prompts that drive them
