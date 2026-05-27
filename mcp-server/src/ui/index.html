@@ -1021,6 +1021,39 @@
     }
     .list-filter input[type="search"]::placeholder { color: var(--text-dim); }
     .list-filter .count { color: var(--text-muted); font-size: var(--fs-xs); white-space: nowrap; }
+
+    /* ===== Rich empty / loading states =====
+       `.state` is the inviting empty-state block: icon + title + body
+       + CTA. Use richEmpty() / loadingBlock() helpers instead of the
+       bare `.empty` for any container where the user has a meaningful
+       next action — adding a source, navigating to settings, etc. */
+    .state {
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; text-align: center;
+      padding: var(--sp-8) var(--sp-4);
+      color: var(--text-dim); font-size: var(--fs-md);
+      line-height: 1.6; gap: var(--sp-3);
+      min-height: 180px;
+    }
+    .state-ico {
+      width: 44px; height: 44px;
+      display: inline-flex; align-items: center; justify-content: center;
+      color: var(--text-muted);
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: var(--radius);
+    }
+    .state-ico svg { width: 22px; height: 22px; }
+    .state-title { color: var(--text); font-size: var(--fs-lg); font-weight: 600; letter-spacing: -0.01em; }
+    .state-desc  { color: var(--text-muted); font-size: var(--fs-sm); max-width: 420px; }
+    .state-cta   { margin-top: var(--sp-2); display: flex; gap: var(--sp-2); }
+    .state.is-loading .state-ico { color: var(--accent); border-color: var(--accent-soft); }
+    .state.is-loading .state-ico .spin {
+      transform-origin: center;
+      animation: spin 0.9s linear infinite;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .state.is-loading .state-ico .spin { animation: none; }
+    }
   </style>
 </head>
 <body>
@@ -2526,10 +2559,26 @@ function srcRow(s){
   return `<div class="source-row" data-src="${esc(s.name)}"><div class="dot ${sc}"></div><div class="source-info"><div class="name">${esc(s.name)}<span class="tag tag-type">${esc(s.type)}</span>${s.signalType?`<span class="tag tag-${s.signalType}">${s.signalType}</span>`:''}</div><div class="url">${esc(s.url)}</div></div>${s.latencyMs?`<span class="tag-latency">${s.latencyMs}ms</span>`:''}<div class="source-actions" onclick="event.stopPropagation()"><label class="toggle"><input type="checkbox" ${s.enabled?'checked':''} onchange="toggleSource('${esc(s.name)}')"><span class="slider"></span></label><button class="btn-icon" onclick="openEditModal('${esc(s.name)}')">&#9998;</button><button class="btn-icon" onclick="openDeleteConfirm('source','${esc(s.name)}')">&#128465;</button></div></div>`;
 }
 function renderSources() {
-  const dashHtml = sourcesData.length===0 ? '<div class="empty">No sources configured.</div>' : sourcesData.map(srcRow).join('');
+  const emptyDash = richEmpty({
+    icon: 'plug',
+    title: 'No sources yet',
+    desc: 'Connect Prometheus, Loki or a Kubernetes cluster to start observing services.',
+    ctaLabel: 'Add a source',
+    ctaOnClick: "showPage('sources');openAddModal()",
+  });
+  const dashHtml = sourcesData.length===0 ? emptyDash : sourcesData.map(srcRow).join('');
   document.getElementById('dash-sources').innerHTML=dashHtml;
   const box=document.getElementById('sources-list'); if(!box) return;
-  if(sourcesData.length===0){ box.innerHTML='<div class="empty">No sources configured.</div>'; return; }
+  if(sourcesData.length===0){
+    box.innerHTML = richEmpty({
+      icon: 'plug',
+      title: 'No sources configured',
+      desc: 'Add a Prometheus, Loki or Kubernetes endpoint. Sources are auto-discovered for services and feed health, anomaly and topology tools.',
+      ctaLabel: 'Add a source',
+      ctaOnClick: 'openAddModal()',
+    });
+    return;
+  }
   const view=srcView();
   // Apply filter + sort. Keep `sourcesData` immutable; render from a copy.
   const visible = sourcesData.filter(filterSrcRow).slice().sort(compareSrc);
@@ -2582,7 +2631,22 @@ function renderServices() {
   const sl = document.getElementById('services-list');
   const dash = document.getElementById('dash-services');
   if(servicesData.length === 0){
-    const empty = '<div class="empty">No services discovered.</div>';
+    // Two flavors: if no sources are connected, point at the Sources tab;
+    // otherwise it's a transient discovery gap, so just say "no services yet".
+    const hasSources = (sourcesData||[]).some(s => s.enabled && s.status === 'up');
+    const empty = hasSources
+      ? richEmpty({
+          icon: 'service',
+          title: 'No services discovered',
+          desc: 'Sources are connected but no service-level signals are flowing yet. Health and anomaly tools will activate as soon as services start emitting metrics or logs.',
+        })
+      : richEmpty({
+          icon: 'service',
+          title: 'No services to show',
+          desc: 'Connect at least one source — services are auto-discovered from the metrics or logs they emit.',
+          ctaLabel: 'Go to Sources',
+          ctaOnClick: "showPage('sources')",
+        });
     if (sl) sl.innerHTML = empty;
     if (dash) dash.innerHTML = empty;
     return;
@@ -2982,8 +3046,13 @@ async function loadTopology(){
   } catch(e) {
     topologyData = null;
     topologyLastRevHash = '';
-    document.getElementById('topology-summary').innerHTML =
-      '<div class="empty">No topology data available. Add a topology-capable source (e.g. <code>kubernetes</code>) under Sources.</div>';
+    document.getElementById('topology-summary').innerHTML = richEmpty({
+      icon: 'graph',
+      title: 'No topology data',
+      desc: 'Add a topology-capable source (currently: kubernetes) under Sources to populate the resource graph used by get_blast_radius and get_topology.',
+      ctaLabel: 'Go to Sources',
+      ctaOnClick: "showPage('sources')",
+    });
     const bh = document.getElementById('topology-by-host'); if (bh) bh.innerHTML = '';
   }
   if(!topologyInterval) topologyInterval = setInterval(()=>{
@@ -3022,7 +3091,13 @@ function renderTopology(){
   // --- Summary tab ---
   const summary = document.getElementById('topology-summary');
   if (d.sources.length === 0) {
-    summary.innerHTML = '<div class="empty">No topology-capable sources connected. Add a topology source (e.g. <b>kubernetes</b>) under Sources.</div>';
+    summary.innerHTML = richEmpty({
+      icon: 'graph',
+      title: 'No topology-capable sources',
+      desc: 'Add a topology source (currently: kubernetes) under Sources. The graph powers the blast-radius and dependency tools used by the agent.',
+      ctaLabel: 'Add a source',
+      ctaOnClick: "showPage('sources');openAddModal()",
+    });
     const bh = document.getElementById('topology-by-host'); if (bh) bh.innerHTML = '';
     renderTopologyGraph(); // shows empty-state legend too
     return;
@@ -3681,6 +3756,36 @@ function renderTopologyGraph(){
 
 // --- Utils ---
 function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
+
+// --- Empty / loading state helpers ----------------------------------------
+// Inline SVGs so the markup is self-contained and styleable via currentColor.
+const STATE_ICONS = {
+  spinner: '<svg class="spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3a9 9 0 1 1-6.36 2.64" /></svg>',
+  inbox:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13l3-8h12l3 8"/><path d="M3 13h6l1 3h4l1-3h6"/><path d="M3 13v6h18v-6"/></svg>',
+  plug:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v6"/><path d="M15 3v6"/><path d="M6 9h12v4a6 6 0 0 1-12 0z"/><path d="M12 19v3"/></svg>',
+  graph:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M7.5 7.6l3 7.4"/><path d="M16.5 7.6l-3 7.4"/></svg>',
+  service: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/><circle cx="7" cy="7" r="1"/><circle cx="7" cy="17" r="1"/></svg>',
+};
+// richEmpty({icon, title, desc, ctaLabel, ctaOnClick, secondaryLabel, secondaryOnClick})
+// SECURITY: title / desc / ctaLabel / secondaryLabel are HTML-escaped before
+// insertion. ctaOnClick / secondaryOnClick are inlined verbatim into the
+// onclick attribute — only ever pass trusted static literals here, never
+// strings containing user input or backend data.
+function richEmpty(opts) {
+  const o = opts || {};
+  const icon = STATE_ICONS[o.icon || 'inbox'] || STATE_ICONS.inbox;
+  const cta = o.ctaLabel
+    ? `<div class="state-cta"><button class="btn btn-primary btn-sm" onclick="${o.ctaOnClick||''}">${esc(o.ctaLabel)}</button>${
+        o.secondaryLabel ? `<button class="btn btn-ghost btn-sm" onclick="${o.secondaryOnClick||''}">${esc(o.secondaryLabel)}</button>` : ''
+      }</div>`
+    : '';
+  return `<div class="state"><div class="state-ico">${icon}</div><div class="state-title">${esc(o.title||'Nothing here yet')}</div>${
+    o.desc ? `<div class="state-desc">${esc(o.desc)}</div>` : ''
+  }${cta}</div>`;
+}
+function loadingBlock(label) {
+  return `<div class="state is-loading" role="status" aria-live="polite"><div class="state-ico">${STATE_ICONS.spinner}</div><div class="state-title">${esc(label||'Loading…')}</div></div>`;
+}
 async function refresh(){await Promise.all([loadSources(),loadServices()]);}
 
 async function loadInfo(){
