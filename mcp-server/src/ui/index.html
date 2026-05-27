@@ -480,6 +480,11 @@
     .tab-btn:hover { color: var(--text); }
     .tab-btn.active { color: var(--text); border-bottom-color: var(--accent); }
     .tab-content { display: none; } .tab-content.active { display: block; }
+    /* `.tab-pad` opts a .tab-content panel into the standard 20px inset.
+       Settings, connectors-tab and similar use this; the topology subtab
+       panels deliberately render edge-to-edge so the inner cards control
+       their own padding. */
+    .tab-content.tab-pad { padding: var(--sp-5); }
     /* Threshold cards */
     .threshold-group { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); margin-bottom: var(--sp-5); }
     .threshold-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--sp-4); }
@@ -914,6 +919,55 @@
     .pill-yes { color: var(--success); } .pill-no { color: var(--danger); }
     .chip { display: inline-block; padding: 1px 8px; border-radius: var(--radius-pill); font-size: var(--fs-xs); background: var(--surface-3); color: var(--text-muted); border: 1px solid var(--border); margin: 1px 3px 1px 0; }
     @media (max-width: 980px) { .ent-grid { grid-template-columns: 1fr; } }
+
+    /* ===== Utilities — composable classes used across the page to keep
+       repeated layout/spacing/typography rules out of inline `style="…"`.
+       Tokens stay sourced from the existing CSS variable system. ===== */
+    .mt-1 { margin-top: var(--sp-1); }
+    .mt-2 { margin-top: var(--sp-2); }
+    .mt-3 { margin-top: var(--sp-3); }
+    .mt-4 { margin-top: var(--sp-4); }
+    .mt-5 { margin-top: var(--sp-5); }
+    .mt-6 { margin-top: var(--sp-6); }
+    .mb-1 { margin-bottom: var(--sp-1); }
+    .mb-2 { margin-bottom: var(--sp-2); }
+    .mb-3 { margin-bottom: var(--sp-3); }
+    .mb-4 { margin-bottom: var(--sp-4); }
+    .mb-5 { margin-bottom: var(--sp-5); }
+    .mb-6 { margin-bottom: var(--sp-6); }
+    .m-0 { margin: 0; }
+    .p-0 { padding: 0; }
+    .p-5 { padding: var(--sp-5); }
+    .gap-2 { gap: var(--sp-2); }
+    .gap-3 { gap: var(--sp-3); }
+
+    .row { display: flex; align-items: center; gap: var(--sp-3); }
+    .row-end { display: flex; justify-content: flex-end; gap: var(--sp-2); }
+    .row-between { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
+    .row-inline { display: inline-flex; align-items: center; gap: var(--sp-1); }
+    .col { display: flex; flex-direction: column; gap: var(--sp-2); }
+
+    .t-muted { color: var(--text-muted); }
+    /* `.muted` is used in templates throughout the page but was previously
+       not defined in CSS — it relied on inline font-size declarations and
+       inherited color. Define it as muted text color so the markup renders
+       with the styling the original author clearly intended. */
+    .muted { color: var(--text-muted); }
+    .t-dim { color: var(--text-dim); }
+    .t-accent { color: var(--accent); }
+    .t-xs { font-size: var(--fs-xs); }
+    .t-sm { font-size: var(--fs-sm); }
+    .t-md { font-size: var(--fs-md); }
+    .t-lg { font-size: var(--fs-lg); }
+    .t-mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+    .t-break { word-break: break-all; }
+    .t-nowrap { white-space: nowrap; }
+    .t-label {
+      text-transform: uppercase; font-size: 10px; letter-spacing: 0.08em;
+      color: var(--text-muted); margin-bottom: 6px; font-weight: 600;
+    }
+
+    .is-hidden { display: none; }
   </style>
 </head>
 <body>
@@ -1103,20 +1157,20 @@
         </div>
 
         <!-- Installed Tab -->
-        <div class="tab-content active" id="tab-installed" style="padding:20px;">
+        <div class="tab-content tab-pad active" id="tab-installed">
           <div class="card-header" style="margin-bottom:12px"><h2>Installed connectors</h2><button class="btn btn-ghost btn-sm" onclick="loadConnectors()">Refresh</button></div>
           <div id="conn-installed"><div class="empty">Loading...</div></div>
         </div>
 
         <!-- Connector Hub Tab -->
-        <div class="tab-content" id="tab-hub" style="padding:20px;">
+        <div class="tab-content tab-pad" id="tab-hub">
           <div class="card-header" style="margin-bottom:12px"><h2>Available from the Connector Hub</h2>
             <a class="btn btn-ghost btn-sm" href="https://thotischner.github.io/observability-mcp/hub/" target="_blank" rel="noopener">Open Hub ↗</a></div>
           <div id="conn-hub"><div class="empty">Loading...</div></div>
         </div>
 
         <!-- Upload bundle Tab -->
-        <div class="tab-content" id="tab-upload" style="padding:20px;">
+        <div class="tab-content tab-pad" id="tab-upload">
           <div class="card-header" style="margin-bottom:12px"><h2>Upload a connector bundle</h2></div>
           <p class="empty" style="margin:0 0 12px">Install a signed connector <code>.tgz</code> directly — handy for air-gapped environments. The bundle is always verified against the configured trust root before it is loaded.</p>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -1174,7 +1228,7 @@
                 <option value="">All</option>
               </select>
             </label>
-            <span class="muted" style="font-size: var(--fs-xs);">Scope = any resource pointed to by an <code>IN_NAMESPACE</code> edge (e.g. k8s namespaces, future: vCenter folders).</span>
+            <span class="muted t-xs">Scope = any resource pointed to by an <code>IN_NAMESPACE</code> edge (e.g. k8s namespaces, future: vCenter folders).</span>
           </div>
           <div id="topology-by-host" class="empty" style="padding: 0 16px 16px;">Loading...</div>
         </div>
@@ -1183,7 +1237,7 @@
         <div class="card">
           <div class="card-header">
             <h2>Layered graph</h2>
-            <span class="muted" style="font-size: var(--fs-xs);">click a resource to inspect · drag to reposition · wheel to zoom · drag the background to pan</span>
+            <span class="muted t-xs">click a resource to inspect · drag to reposition · wheel to zoom · drag the background to pan</span>
           </div>
           <div style="display:grid; grid-template-columns: 1fr 340px; gap: 0; border-top: 1px solid var(--border); height: 660px;">
             <div id="topology-graph-host" style="position:relative; overflow:hidden; background: var(--surface-2); border-right: 1px solid var(--border);">
@@ -1215,7 +1269,7 @@
         </div>
 
         <!-- General Tab -->
-        <div class="tab-content active" id="tab-general" style="padding:20px;">
+        <div class="tab-content tab-pad active" id="tab-general">
           <div class="form-row">
             <div class="form-group">
               <label>Check Interval (ms)</label>
@@ -1238,7 +1292,7 @@
         </div>
 
         <!-- Health Scoring Tab -->
-        <div class="tab-content" id="tab-health" style="padding:20px;">
+        <div class="tab-content tab-pad" id="tab-health">
           <p style="font-size:13px; color:var(--text2); margin-bottom:16px;">Configure how service health scores are calculated. Weights must sum to 1.0.</p>
           <h3 style="font-size:14px; margin-bottom:12px;">Weights</h3>
           <div class="form-row" style="margin-bottom:20px;">
@@ -1294,7 +1348,7 @@
         </div>
 
         <!-- Source Metrics Tab -->
-        <div class="tab-content" id="tab-metrics" style="padding:20px;">
+        <div class="tab-content tab-pad" id="tab-metrics">
           <p style="font-size:13px; color:var(--text2); margin-bottom:16px;">Each data source has its own metric definitions with backend-specific queries (PromQL, LogQL, etc.). Use <code style="background:var(--bg);padding:1px 5px;border-radius:3px;">{{service}}</code> as placeholder for the service/job name.</p>
           <div style="display:flex; align-items:center; gap:12px; margin-bottom:16px;">
             <label style="font-size:13px; color:var(--text2); white-space:nowrap;">Source:</label>
@@ -1771,15 +1825,15 @@ function audDetail(seq){
   const tone=ev.allow?'ok':'bad';
   const reqRows=Object.keys(req).map(k=>`<tr><td>${escHtml(k)}</td><td class="mono">${escHtml(typeof req[k]==='object'?JSON.stringify(req[k]):String(req[k]))}</td></tr>`).join('')||'<tr><td colspan=2 style="color:var(--text-dim)">no request fields</td></tr>';
   const html=
-    dwSec('Decision', `<span class="stchip ${tone}">${ev.allow?'allow':'deny'}</span> <span style="color:var(--text-muted);font-size:var(--fs-sm)">sequence #${escHtml(String(e.seq))}</span>`)+
+    dwSec('Decision', `<span class="stchip ${tone}">${ev.allow?'allow':'deny'}</span> <span class="muted t-sm">sequence #${escHtml(String(e.seq))}</span>`)+
     dwSec('Principal & reason', `<table class="dtable"><tbody>
       <tr><td>Principal</td><td class="mono">${escHtml(ev.principalId||'—')}</td></tr>
       <tr><td>Timestamp</td><td class="mono">${escHtml(ev.ts||e.ts||'—')}</td></tr>
       <tr><td>Reason</td><td>${escHtml(ev.reason||'—')}</td></tr></tbody></table>`)+
     dwSec('Request', `<table class="dtable"><tbody>${reqRows}</tbody></table>`)+
     dwSec('Chain integrity', `<table class="dtable"><tbody>
-      <tr><td>Entry hash</td><td class="mono" style="word-break:break-all">${escHtml(e.hash||'—')}</td></tr>
-      <tr><td>Prev hash</td><td class="mono" style="word-break:break-all">${escHtml(e.prevHash||'—')}</td></tr></tbody></table>`);
+      <tr><td>Entry hash</td><td class="mono t-break">${escHtml(e.hash||'—')}</td></tr>
+      <tr><td>Prev hash</td><td class="mono t-break">${escHtml(e.prevHash||'—')}</td></tr></tbody></table>`);
   openDrawer('Decision #'+seq, html);
 }
 function dpView(){ try{ return localStorage.getItem('omcp-dp-view')==='table'?'table':'cards'; }catch(e){ return 'cards'; } }
@@ -1837,7 +1891,7 @@ function dpDetail(name){
     dwSec('Sources', dwChips(p.sources))+
     dwSec('Services', dwChips(p.services))+
     dwSec('Tools', dwChips(p.tools))+
-    dwSec('Granted to ('+grantedTo.length+')', grantedTo.length?grantedTo.map(x=>`<span class="chip">${escHtml(x)}</span>`).join(''):'<span style="color:var(--text-dim);font-size:var(--fs-sm)">No principals granted this product.</span>')+
+    dwSec('Granted to ('+grantedTo.length+')', grantedTo.length?grantedTo.map(x=>`<span class="chip">${escHtml(x)}</span>`).join(''):'<span class="t-dim t-sm">No principals granted this product.</span>')+
     `<div class="codeblock collapsed" style="margin-top:14px"><div class="codeblock-hd" onclick="toggleCode(this)"><span class="cb-chev">▾</span><span class="cb-title">API · grant this product</span><button class="codeblock-cp" onclick="event.stopPropagation();copyCode(this)">Copy</button></div><pre>${ex}</pre></div>`;
   openDrawer(name, html);
 }
@@ -2387,13 +2441,13 @@ function srcDetail(name){
   const tone=!s.enabled?'warn':s.status==='up'?'ok':'bad';
   const svc=(servicesData||[]).filter(x=>(x.sources||[]).includes(s.name)).map(x=>x.name);
   const html=
-    dwSec('Status', `<span class="stchip ${tone}">${!s.enabled?'disabled':s.status==='up'?'up':'down'}</span>${s.latencyMs?` <span style="color:var(--text-muted);font-size:var(--fs-sm)">${s.latencyMs}ms</span>`:''}`)+
+    dwSec('Status', `<span class="stchip ${tone}">${!s.enabled?'disabled':s.status==='up'?'up':'down'}</span>${s.latencyMs?` <span class="muted t-sm">${s.latencyMs}ms</span>`:''}`)+
     dwSec('Configuration', `<table class="dtable"><tbody>
       <tr><td>Type</td><td class="mono">${escHtml(s.type)}</td></tr>
       <tr><td>Signal type</td><td class="mono">${escHtml(s.signalType||'—')}</td></tr>
-      <tr><td>URL</td><td class="mono" style="word-break:break-all">${escHtml(s.url)}</td></tr>
+      <tr><td>URL</td><td class="mono t-break">${escHtml(s.url)}</td></tr>
       <tr><td>Enabled</td><td>${s.enabled?'yes':'no'}</td></tr></tbody></table>`)+
-    dwSec('Services from this source', svc.length?svc.map(n=>`<span class="chip">${escHtml(n)}</span>`).join(' '):'<span style="color:var(--text-dim);font-size:var(--fs-sm)">none discovered</span>')+
+    dwSec('Services from this source', svc.length?svc.map(n=>`<span class="chip">${escHtml(n)}</span>`).join(' '):'<span class="t-dim t-sm">none discovered</span>')+
     `<div style="display:flex;gap:8px;margin-top:14px"><button class="btn btn-sm" onclick="closeDrawer();openEditModal('${esc(s.name)}')">Edit source</button><button class="btn btn-ghost btn-sm" onclick="closeDrawer();openDeleteConfirm('source','${esc(s.name)}')">Delete</button></div>`+
     `<div class="codeblock collapsed" style="margin-top:12px"><div class="codeblock-hd" onclick="toggleCode(this)"><span class="cb-chev">▾</span><span class="cb-title">API · all sources</span><button class="codeblock-cp" onclick="event.stopPropagation();copyCode(this)">Copy</button></div><pre>curl -s http://localhost:3000/api/sources</pre></div>`;
   openDrawer(name, html);
@@ -2412,15 +2466,15 @@ async function svcDetail(name){
   const m=(v.signals&&v.signals.metrics)||{};
   const fmtN=x=>x==null?'—':(Math.round(Number(x)*100)/100);
   const html=
-    dwSec('Status', `<span class="stchip ${tone}">${escHtml(v.status)}</span> <span style="color:var(--text-muted);font-size:var(--fs-sm)">health score ${escHtml(v.score)}</span>`)+
+    dwSec('Status', `<span class="stchip ${tone}">${escHtml(v.status)}</span> <span class="muted t-sm">health score ${escHtml(v.score)}</span>`)+
     dwSec('Signals', `<table class="dtable"><tbody>
       <tr><td>CPU</td><td class="mono">${fmtN(m.cpu)}</td></tr>
       <tr><td>Memory (MB)</td><td class="mono">${fmtN(m.memory)}</td></tr>
       <tr><td>Error rate</td><td class="mono">${fmtN(m.errorRate)}</td></tr>
       <tr><td>Latency p99 (s)</td><td class="mono">${fmtN(m.latencyP99)}</td></tr>
       <tr><td>Log errors (5m)</td><td class="mono">${fmtN(v.signals&&v.signals.logs&&v.signals.logs.errorRate)}</td></tr></tbody></table>`)+
-    dwSec('Anomalies', (v.anomalies&&v.anomalies.length)?v.anomalies.map(a=>`<div class="feed-row"><span class="stchip ${a.severity==='high'?'bad':'warn'}">${escHtml(a.metric)}</span><div class="fr-main"><div class="fr-sub">${escHtml(a.description||'')}</div></div></div>`).join(''):'<span style="color:var(--text-dim);font-size:var(--fs-sm)">None detected.</span>')+
-    dwSec('Correlations', (v.correlations&&v.correlations.length)?v.correlations.map(c=>`<div class="fr-sub" style="margin-bottom:4px">• ${escHtml(c)}</div>`).join(''):'<span style="color:var(--text-dim);font-size:var(--fs-sm)">None.</span>')+
+    dwSec('Anomalies', (v.anomalies&&v.anomalies.length)?v.anomalies.map(a=>`<div class="feed-row"><span class="stchip ${a.severity==='high'?'bad':'warn'}">${escHtml(a.metric)}</span><div class="fr-main"><div class="fr-sub">${escHtml(a.description||'')}</div></div></div>`).join(''):'<span class="t-dim t-sm">None detected.</span>')+
+    dwSec('Correlations', (v.correlations&&v.correlations.length)?v.correlations.map(c=>`<div class="fr-sub" style="margin-bottom:4px">• ${escHtml(c)}</div>`).join(''):'<span class="t-dim t-sm">None.</span>')+
     `<div class="codeblock collapsed" style="margin-top:6px"><div class="codeblock-hd" onclick="toggleCode(this)"><span class="cb-chev">▾</span><span class="cb-title">API · this service's health</span><button class="codeblock-cp" onclick="event.stopPropagation();copyCode(this)">Copy</button></div><pre>curl -s http://localhost:3000/api/health/${escHtml(name)}</pre></div>`;
   openDrawer(name, html);
 }
@@ -3396,13 +3450,13 @@ function renderTopologyGraph(){
     const labelEntries = Object.entries(ref.labels || {});
     const attrEntries = Object.entries(ref.attributes || {});
     function kvList(entries){
-      if (entries.length === 0) return '<div class="muted" style="font-size: var(--fs-xs);">(none)</div>';
+      if (entries.length === 0) return '<div class="muted t-xs">(none)</div>';
       return '<div style="display:grid; grid-template-columns: max-content 1fr; gap: 4px 10px; font-size: var(--fs-xs);">' +
         entries.map(([k,v])=>`<div class="muted" style="font-weight:600;">${esc(k)}</div><div style="font-family: 'JetBrains Mono', ui-monospace, monospace; word-break: break-all;">${esc(String(v))}</div>`).join('') +
         '</div>';
     }
     function neighbourList(edges, dir){
-      if (edges.length === 0) return '<div class="muted" style="font-size: var(--fs-xs);">(none)</div>';
+      if (edges.length === 0) return '<div class="muted t-xs">(none)</div>';
       return '<ul style="margin:0; padding-left: 0; list-style: none; display:flex; flex-direction:column; gap:4px;">' +
         edges.map(e=>{
           const otherId = dir === 'in' ? e.from : e.to;
@@ -3425,35 +3479,35 @@ function renderTopologyGraph(){
           <div style="font-weight:600; font-size: var(--fs-md); color: var(--text); word-break: break-all;">${esc(ref.name)}</div>
           <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-top: 4px;">
             <span class="badge">${esc(ref.kind)}</span>
-            <span class="muted" style="font-size: var(--fs-xs);">source: ${esc(ref.source)}</span>
+            <span class="muted t-xs">source: ${esc(ref.source)}</span>
           </div>
         </div>
       </div>
       <div style="margin-top: 10px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 10px; color: var(--text-muted); word-break: break-all;">${esc(ref.id)}</div>
 
       <div style="margin-top: 16px;">
-        <div style="text-transform: uppercase; font-size: 10px; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 6px;">Labels</div>
+        <div class="t-label">Labels</div>
         ${kvList(labelEntries)}
       </div>
 
       <div style="margin-top: 16px;">
-        <div style="text-transform: uppercase; font-size: 10px; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 6px;">Attributes</div>
+        <div class="t-label">Attributes</div>
         ${kvList(attrEntries.filter(([k])=>k!=='uid'))}
       </div>
 
       <div style="margin-top: 16px;">
-        <div style="text-transform: uppercase; font-size: 10px; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 6px;">Outgoing (${outgoing.length})</div>
+        <div class="t-label">Outgoing (${outgoing.length})</div>
         ${neighbourList(outgoing, 'out')}
       </div>
 
       <div style="margin-top: 12px;">
-        <div style="text-transform: uppercase; font-size: 10px; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 6px;">Incoming (${incoming.length})</div>
+        <div class="t-label">Incoming (${incoming.length})</div>
         ${neighbourList(incoming, 'in')}
       </div>
 
       <div style="margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--border);">
-        <div style="text-transform: uppercase; font-size: 10px; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 6px;">Linked telemetry</div>
-        <div class="muted" style="font-size: var(--fs-xs);">No metrics or logs linked to this resource. When demo workloads run inside the cluster and emit Prometheus/Loki signals under matching service labels, charts will appear here.</div>
+        <div class="t-label">Linked telemetry</div>
+        <div class="muted t-xs">No metrics or logs linked to this resource. When demo workloads run inside the cluster and emit Prometheus/Loki signals under matching service labels, charts will appear here.</div>
       </div>
     `;
     // Wire neighbour links to navigate inside the graph.
