@@ -11,6 +11,7 @@ RUN npm install --no-audit --no-fund --silent
 COPY playwright.config.mjs ./playwright.config.mjs
 COPY smoke.spec.mjs        ./smoke.spec.mjs
 COPY tables-filters-density.spec.mjs ./tables-filters-density.spec.mjs
+COPY topology.spec.mjs ./topology.spec.mjs
 
 # When run with --network=host (Linux) OMCP_UI_BASE defaults to localhost.
 # In a compose network pass OMCP_UI_BASE=http://mcp-server:3000 explicitly.
