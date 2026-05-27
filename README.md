@@ -78,6 +78,11 @@ claude mcp add observability --transport http http://localhost:3000/mcp
 
 The server starts with **zero sources**. Add Prometheus/Loki via the Web UI or `PROMETHEUS_URL` / `LOKI_URL` env vars.
 
+> If you'd rather have the snippets above printed by a Make target — including
+> custom-host / custom-port substitution — use `make connect-claude-code` or
+> `make connect-cursor`. `make doctor` round-trips a real MCP handshake against
+> a running server and tells you what to fix if it can't.
+
 Want the full chaos-engineering demo (Prometheus + Loki + 3 example services + the autonomous agent)? Clone and run:
 
 ```bash
