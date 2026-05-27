@@ -15,12 +15,29 @@
   },
   "keywords": [
     "mcp",
+    "model-context-protocol",
     "observability",
     "prometheus",
     "loki",
-    "model-context-protocol",
-    "anomaly-detection"
+    "kubernetes",
+    "tempo",
+    "topology",
+    "blast-radius",
+    "anomaly-detection",
+    "incident-response",
+    "root-cause-analysis",
+    "sre",
+    "platform-engineering",
+    "agent",
+    "ai-agent",
+    "llm-tools",
+    "claude",
+    "ollama"
   ],
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/ThoTischner"
+  },
   "bin": {
     "observability-mcp": "./dist/index.js",
     "omcp": "./dist/cli/index.js"

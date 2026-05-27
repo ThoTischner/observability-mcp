@@ -66,3 +66,55 @@ The server is built with the following defaults:
 
 If you operate the server on the public internet, set `MCP_AUTH_TOKEN` and
 front it with a reverse proxy that terminates TLS.
+
+## Verifying releases
+
+Every release artifact ships with build attestations so operators can verify
+it came from this repository's CI before installing it.
+
+### npm package — provenance attestation
+
+```bash
+# Verify the package was built by the published GitHub Actions workflow
+npm view @thotischner/observability-mcp dist-tags
+npm audit signatures @thotischner/observability-mcp
+```
+
+Provenance is also visible on the
+[npm package page](https://www.npmjs.com/package/@thotischner/observability-mcp)
+under the "Provenance" tab.
+
+### Container image — GHCR + scanned
+
+```bash
+# Pull and inspect the source-commit label
+docker pull ghcr.io/thotischner/observability-mcp:latest
+docker image inspect ghcr.io/thotischner/observability-mcp:latest \
+  --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}'
+```
+
+CI scans every image with Trivy before publishing; high-severity CVEs block
+the release.
+
+### Helm chart — GPG-signed
+
+The Helm chart is GPG-signed; the public key is committed at
+[`docs/helm-signing.pub.asc`](docs/helm-signing.pub.asc) and the fingerprint
+is advertised on ArtifactHub via the `artifacthub.io/signKey` annotation.
+
+```bash
+# Add the signing key to your keyring
+curl -sS https://raw.githubusercontent.com/ThoTischner/observability-mcp/main/docs/helm-signing.pub.asc \
+  | gpg --import
+
+# Verify the .tgz + .prov pair before installing
+helm verify ./observability-mcp-<version>.tgz
+```
+
+### MCP tool surface — `tools/list` is the contract
+
+The server only advertises tools it actually implements. The integration
+smoke test asserts the exact set of advertised tools on every PR (see
+[`.github/workflows/integration.yml`](.github/workflows/integration.yml)).
+If `tools/list` claims a tool, calling it does what the docs say. If a tool
+name is missing from `tools/list`, it does not exist in that build.
