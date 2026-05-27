@@ -1,0 +1,13 @@
+{
+  "name": "observability-mcp-ui-smoke",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Headless-browser UI smoke suite for observability-mcp. Run via Docker; not published.",
+  "scripts": {
+    "test": "playwright test --config=playwright.config.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.49.1"
+  }
+}

@@ -1,0 +1,68 @@
+name: UI smoke (Playwright)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ui-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Build & start the demo stack
+        run: docker compose --profile demo up -d --build --wait --wait-timeout 300
+
+      - name: Wait for MCP server /api/sources to converge
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 60); do
+            body=$(curl -fsS http://localhost:3000/api/sources || true)
+            if [ -n "$body" ] && [ "$(echo "$body" | jq 'type')" = '"array"' ]; then
+              total=$(echo "$body" | jq 'length')
+              ok=$(echo "$body" | jq '[.[] | select(.status == "up")] | length')
+              if [ "$total" -gt 0 ] && [ "$total" = "$ok" ]; then
+                echo "all $total sources connected"
+                exit 0
+              fi
+            fi
+            sleep 5
+          done
+          echo "MCP server did not become healthy in time"
+          curl -s http://localhost:3000/api/sources | jq . || true
+          exit 1
+
+      - name: Build Playwright runner image
+        run: docker build -t omcp-ui-smoke:ci mcp-server/playwright
+
+      - name: Run UI smoke against http://localhost:3000
+        run: |
+          docker run --rm \
+            --network=host \
+            -e OMCP_UI_BASE=http://localhost:3000 \
+            -v "${{ github.workspace }}/mcp-server/playwright/test-results:/work/test-results" \
+            omcp-ui-smoke:ci
+
+      - name: Upload Playwright artifacts
+        if: failure()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4
+        with:
+          name: playwright-traces
+          path: mcp-server/playwright/test-results
+          retention-days: 7
+
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          docker compose logs --no-color --tail=200 mcp-server || true
+
+      - name: Tear down
+        if: always()
+        run: docker compose --profile demo down -v

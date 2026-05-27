@@ -62,6 +62,17 @@ smoke: demo ## Run the local smoke probe against the demo stack
 	done; \
 	echo "sources never converged"; exit 1
 
+# Headless-browser UI smoke against the running demo stack. Runs the same
+# Playwright suite that CI executes (`.github/workflows/ui-smoke.yml`).
+# Assumes `make demo` (or `make smoke`) has the stack up. Docker-only —
+# no host node/playwright install required.
+ui-smoke: ## Build and run the Playwright UI smoke suite against the demo stack
+	docker build -t omcp-ui-smoke:local mcp-server/playwright
+	docker run --rm \
+	  --network=host \
+	  -e OMCP_UI_BASE=http://localhost:3000 \
+	  omcp-ui-smoke:local
+
 ##@ Release
 
 release-dryrun: ## Print what the auto-release workflow would publish
