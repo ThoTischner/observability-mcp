@@ -1133,6 +1133,38 @@
       pointer-events: none; opacity: 0.85;
       z-index: 2;
     }
+    /* Form validation primitives — used by the Add Source modal and
+       any future form. `.is-invalid` highlights the field, `.form-error`
+       renders a small red explanation below it, `.form-banner` is a
+       full-width error/success block at the top of a form body. */
+    .form-group input.is-invalid,
+    .form-group select.is-invalid,
+    .form-group textarea.is-invalid {
+      border-color: var(--danger);
+      box-shadow: 0 0 0 3px rgba(239, 91, 110, 0.18);
+    }
+    .form-error {
+      color: var(--danger); font-size: var(--fs-xs);
+      margin-top: 4px; line-height: 1.4;
+    }
+    .form-banner {
+      padding: 10px 12px; border-radius: var(--radius-sm);
+      font-size: var(--fs-sm); line-height: 1.4;
+      margin-bottom: var(--sp-3);
+      border: 1px solid transparent;
+      display: none;
+    }
+    .form-banner.show { display: block; }
+    .form-banner.error {
+      background: var(--danger-soft); color: var(--danger);
+      border-color: rgba(239, 91, 110, 0.35);
+    }
+    .form-banner.success {
+      background: var(--success-soft); color: var(--success);
+      border-color: rgba(74, 222, 128, 0.25);
+    }
+    .btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+
     /* Graph node focus ring: the <g data-id> is focusable; the inner
        circle gets a wider stroke when its parent has :focus-visible. */
     #topology-graph-svg:focus { outline: none; }
@@ -1468,7 +1500,7 @@
           </div>
           <div style="display:flex; gap:8px; justify-content:flex-end;">
             <button class="btn btn-ghost btn-sm" onclick="resetSettings()">Reset to Defaults</button>
-            <button class="btn btn-primary btn-sm" onclick="saveSettings()">Save Settings</button>
+            <button class="btn btn-primary btn-sm" id="btn-save-settings" onclick="saveSettings()" disabled>Save Settings</button>
           </div>
         </div>
 
@@ -1524,7 +1556,7 @@
           </div>
           <div style="display:flex; gap:8px; justify-content:flex-end;">
             <button class="btn btn-ghost btn-sm" onclick="resetHealth()">Reset to Defaults</button>
-            <button class="btn btn-primary btn-sm" onclick="saveHealth()">Save Thresholds</button>
+            <button class="btn btn-primary btn-sm" id="btn-save-health" onclick="saveHealth()" disabled>Save Thresholds</button>
           </div>
         </div>
 
@@ -1730,9 +1762,19 @@ curl -s http://localhost:3000/api/enterprise/status</pre>
       <div class="modal-header"><h3 id="modal-title">Add Source</h3><button class="btn-icon" onclick="closeModal('source-modal')">&times;</button></div>
       <div class="modal-body">
         <input type="hidden" id="modal-mode" value="add"><input type="hidden" id="modal-original-name" value="">
-        <div class="form-group"><label>Name</label><input type="text" id="src-name" placeholder="e.g. prometheus-prod"><div class="form-hint">Unique identifier</div></div>
+        <div id="src-form-banner" class="form-banner"></div>
+        <div class="form-group">
+          <label>Name</label>
+          <input type="text" id="src-name" placeholder="e.g. prometheus-prod" oninput="validateSrcName()" onblur="validateSrcName()">
+          <div class="form-hint">Unique identifier</div>
+          <div class="form-error" id="src-name-err" hidden></div>
+        </div>
         <div class="form-group"><label>Type</label><select id="src-type"></select></div>
-        <div class="form-group"><label>URL</label><input type="text" id="src-url" placeholder="e.g. http://prometheus:9090"></div>
+        <div class="form-group">
+          <label>URL</label>
+          <input type="text" id="src-url" placeholder="e.g. http://prometheus:9090" oninput="validateSrcUrl()" onblur="validateSrcUrl()">
+          <div class="form-error" id="src-url-err" hidden></div>
+        </div>
         <div class="form-group"><label>Authentication</label><select id="src-auth-type" onchange="toggleAuthFields()"><option value="none">None</option><option value="basic">Basic Auth</option><option value="bearer">Bearer Token</option></select></div>
         <div id="auth-basic-fields" style="display:none">
           <div class="form-group"><label>Username</label><input type="text" id="src-auth-username" placeholder="username"></div>
@@ -1799,7 +1841,14 @@ let deleteTarget=null, deleteType=null;
 // Per-source metrics state
 let selectedMetricsSource='', sourceMetrics=[], sourceMetricDefaults=[];
 
-function toast(msg) { const t=document.getElementById('toast-el'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2000); }
+function toast(msg, kind) {
+  const t=document.getElementById('toast-el');
+  t.textContent=msg;
+  t.classList.remove('toast-error');
+  if (kind === 'error') t.classList.add('toast-error');
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2000);
+}
 
 // --- Nav ---
 function showPage(name) {
@@ -2860,6 +2909,7 @@ function openAddModal() {
   document.getElementById('src-url').value=''; document.getElementById('src-enabled').checked=true;
   resetTlsFields();
   document.getElementById('src-name').disabled=false; resetAuthFields(); hideTestResult();
+  setFieldError('src-name','src-name-err',null); setFieldError('src-url','src-url-err',null); clearSrcBanner();
   const sel=document.getElementById('src-type'); sel.innerHTML=supportedTypes.map(t=>`<option value="${t}">${t}</option>`).join('');
   document.getElementById('source-modal').classList.add('open');
 }
@@ -2869,19 +2919,76 @@ function openEditModal(name) {
   document.getElementById('modal-original-name').value=name; document.getElementById('src-name').value=s.name;
   document.getElementById('src-name').disabled=true; document.getElementById('src-url').value=s.url;
   document.getElementById('src-enabled').checked=s.enabled; setTlsInForm(s.tls); setAuthInForm(s.auth); hideTestResult();
+  setFieldError('src-name','src-name-err',null); setFieldError('src-url','src-url-err',null); clearSrcBanner();
   const sel=document.getElementById('src-type'); sel.innerHTML=supportedTypes.map(t=>`<option value="${t}" ${t===s.type?'selected':''}>${t}</option>`).join('');
   document.getElementById('source-modal').classList.add('open');
 }
+// --- Source modal form validation + banner ------------------------------
+function setFieldError(inputId, errId, msg) {
+  const inp = document.getElementById(inputId);
+  const err = document.getElementById(errId);
+  if (msg) {
+    if (inp) inp.classList.add('is-invalid');
+    if (err) { err.textContent = msg; err.hidden = false; }
+  } else {
+    if (inp) inp.classList.remove('is-invalid');
+    if (err) { err.textContent = ''; err.hidden = true; }
+  }
+}
+function showSrcBanner(kind, msg) {
+  const b = document.getElementById('src-form-banner');
+  if (!b) return;
+  b.className = 'form-banner show ' + (kind || '');
+  b.textContent = msg || '';
+}
+function clearSrcBanner() {
+  const b = document.getElementById('src-form-banner');
+  if (b) { b.className = 'form-banner'; b.textContent = ''; }
+}
+function validateSrcName() {
+  const v = (document.getElementById('src-name').value || '').trim();
+  if (!v) { setFieldError('src-name', 'src-name-err', 'Name is required'); return false; }
+  if (!/^[a-z0-9][a-z0-9-]{0,62}$/i.test(v)) {
+    setFieldError('src-name', 'src-name-err',
+      'Use letters, digits and dashes (1–63 chars; must start with a letter or digit).');
+    return false;
+  }
+  setFieldError('src-name', 'src-name-err', null);
+  return true;
+}
+function validateSrcUrl() {
+  const v = (document.getElementById('src-url').value || '').trim();
+  if (!v) { setFieldError('src-url', 'src-url-err', 'URL is required'); return false; }
+  try {
+    const u = new URL(v);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+      setFieldError('src-url', 'src-url-err', 'URL must start with http:// or https://');
+      return false;
+    }
+  } catch (e) {
+    setFieldError('src-url', 'src-url-err', 'Not a valid URL');
+    return false;
+  }
+  setFieldError('src-url', 'src-url-err', null);
+  return true;
+}
+
 async function saveSource() {
+  clearSrcBanner();
+  const okName = validateSrcName();
+  const okUrl  = validateSrcUrl();
+  if (!okName || !okUrl) { showSrcBanner('error', 'Fix the highlighted fields and try again.'); return; }
   const mode=document.getElementById('modal-mode').value;
   const src={name:document.getElementById('src-name').value.trim(),type:document.getElementById('src-type').value,url:document.getElementById('src-url').value.trim(),enabled:document.getElementById('src-enabled').checked,auth:getAuthFromForm(),tls:getTlsFromForm()};
-  if(!src.name||!src.url){alert('Name and URL are required');return;}
   const btn=document.getElementById('save-btn'); btn.disabled=true; btn.textContent='Saving...';
   try {
     let res; if(mode==='add') res=await fetch('/api/sources',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(src)});
     else res=await fetch('/api/sources/'+encodeURIComponent(document.getElementById('modal-original-name').value),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(src)});
-    const d=await res.json(); if(!res.ok){alert(d.error);return;} closeModal('source-modal'); toast('Source saved'); await refresh();
-  } catch(e){alert(e);} finally{btn.disabled=false;btn.textContent='Save';}
+    const d=await res.json();
+    if(!res.ok){ showSrcBanner('error', d.error || ('HTTP '+res.status)); return; }
+    closeModal('source-modal'); toast('Source saved'); await refresh();
+  } catch(e){ showSrcBanner('error', String(e && e.message || e)); }
+  finally{btn.disabled=false;btn.textContent='Save';}
 }
 async function testConnection() {
   const btn=document.getElementById('test-btn'),r=document.getElementById('test-result');
@@ -2905,15 +3012,55 @@ async function confirmDelete(){
   deleteTarget=null;deleteType=null;
 }
 
+// --- Dirty-state tracking for forms with a Save button -----------------
+// Snapshots input values inside a root element on mount/populate; toggles
+// the save button between disabled (clean) and enabled (any input changed
+// from baseline). Reset on successful save resets the baseline.
+function bindDirtyState(rootId, btnId) {
+  const root = document.getElementById(rootId);
+  const btn  = document.getElementById(btnId);
+  if (!root || !btn) return;
+  function snapshot() {
+    const out = {};
+    root.querySelectorAll('input,select,textarea').forEach(el => {
+      if (!el.id) return;
+      out[el.id] = el.type === 'checkbox' ? !!el.checked : (el.value ?? '');
+    });
+    return out;
+  }
+  const baseline = snapshot();
+  function isDirty() {
+    const cur = snapshot();
+    for (const k of Object.keys(baseline)) {
+      if (cur[k] !== baseline[k]) return true;
+    }
+    return false;
+  }
+  function update() { btn.disabled = !isDirty(); }
+  root._omcpDirty = { baseline, update, reset(){ Object.assign(baseline, snapshot()); update(); } };
+  root.removeEventListener('input', update);
+  root.removeEventListener('change', update);
+  root.addEventListener('input', update);
+  root.addEventListener('change', update);
+  update();
+}
+function resetDirtyState(rootId) {
+  const root = document.getElementById(rootId);
+  if (root && root._omcpDirty) root._omcpDirty.reset();
+}
+
 // --- Settings: General ---
 function populateSettingsForm() {
   document.getElementById('set-interval').value=settings.checkIntervalMs||30000;
   document.getElementById('set-sensitivity').value=settings.defaultSensitivity||'medium';
+  bindDirtyState('tab-general', 'btn-save-settings');
 }
 async function saveSettings() {
   const body={checkIntervalMs:parseInt(document.getElementById('set-interval').value),defaultSensitivity:document.getElementById('set-sensitivity').value};
-  await fetch('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const res = await fetch('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if (!res.ok) { toast('Failed to save settings'); return; }
   toast('Settings saved');
+  resetDirtyState('tab-general');
 }
 async function resetSettings() { settings=defaults.settings; populateSettingsForm(); toast('Reset to defaults (save to persist)'); }
 
@@ -2929,6 +3076,7 @@ function populateHealthForm() {
   document.getElementById('ht-lat-good').value=h.latencyP99.good; document.getElementById('ht-lat-warn').value=h.latencyP99.warn; document.getElementById('ht-lat-crit').value=h.latencyP99.crit;
   document.getElementById('ht-log-good').value=h.logErrors.good; document.getElementById('ht-log-warn').value=h.logErrors.warn; document.getElementById('ht-log-crit').value=h.logErrors.crit;
   document.getElementById('ht-bound-healthy').value=h.statusBoundaries.healthy; document.getElementById('ht-bound-degraded').value=h.statusBoundaries.degraded;
+  bindDirtyState('tab-health', 'btn-save-health');
 }
 async function saveHealth() {
   const body={
@@ -2940,9 +3088,11 @@ async function saveHealth() {
     statusBoundaries:{healthy:parseFloat(document.getElementById('ht-bound-healthy').value),degraded:parseFloat(document.getElementById('ht-bound-degraded').value)}
   };
   const ws=body.weights; const sum=ws.errorRate+ws.latency+ws.cpu+ws.logErrors;
-  if(Math.abs(sum-1)>0.01){alert(`Weights must sum to 1.0 (currently ${sum.toFixed(2)})`);return;}
-  await fetch('/api/health-thresholds',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(Math.abs(sum-1)>0.01){toast(`Weights must sum to 1.0 (currently ${sum.toFixed(2)})`, 'error');return;}
+  const res = await fetch('/api/health-thresholds',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if (!res.ok) { toast('Failed to save thresholds'); return; }
   healthThresholds=body; toast('Health thresholds saved');
+  resetDirtyState('tab-health');
 }
 async function resetHealth() { healthThresholds=defaults.healthThresholds; populateHealthForm(); toast('Reset to defaults (save to persist)'); }
 
