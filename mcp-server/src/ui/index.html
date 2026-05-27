@@ -20,6 +20,15 @@
         var d = localStorage.getItem('omcp-density');
         document.documentElement.setAttribute('data-density', d === 'compact' ? 'compact' : 'comfortable');
       } catch (e) { document.documentElement.setAttribute('data-density','comfortable'); }
+      try {
+        var r = localStorage.getItem('omcp-rail');
+        if (r !== 'collapsed' && r !== 'expanded') {
+          // No explicit choice yet: collapse by default on narrow viewports.
+          r = (typeof window !== 'undefined' && window.innerWidth && window.innerWidth < 1100)
+            ? 'collapsed' : 'expanded';
+        }
+        document.documentElement.setAttribute('data-rail', r);
+      } catch (e) { document.documentElement.setAttribute('data-rail','expanded'); }
     })();
   </script>
   <link rel="preconnect" href="https://rsms.me/">
@@ -600,8 +609,15 @@
 
     @media (max-width: 768px) { .stats { grid-template-columns: repeat(2, 1fr); } .threshold-group { grid-template-columns: 1fr; } .form-row, .form-row-3 { grid-template-columns: 1fr; } }
 
-    /* ===== Enterprise console shell: side rail + masthead ===== */
+    /* ===== Console shell: side rail + masthead =====
+       The rail collapses to an icon-only strip when
+       :root[data-rail="collapsed"] is set (via the brand-area toggle
+       or the auto-collapse threshold at <1100px). The narrower
+       --rail-w cascades through the fixed siderail + the body's
+       padding-left so the workspace reclaims the recovered pixels
+       without a layout jump. */
     :root { --rail-w: 236px; }
+    :root[data-rail="collapsed"] { --rail-w: 60px; }
     body { padding-left: var(--rail-w); }
     .siderail {
       position: fixed; left: 0; top: 0; bottom: 0; width: var(--rail-w);
@@ -681,6 +697,43 @@
       border-left-color: var(--accent); background: var(--chrome-active);
     }
     .rail-foot { margin-top: auto; padding: var(--sp-4) var(--sp-5); border-top: 1px solid var(--chrome-border); font-size: var(--fs-xs); color: var(--chrome-text-muted); }
+
+    /* Rail-collapse affordance: a small toggle docked at the top of the
+       rail. When the rail is collapsed everything but the brand icon and
+       primary nav-icons is hidden; native browser tooltips on each
+       nav-btn keep the destinations discoverable. */
+    .rail-collapse-btn {
+      background: none; border: 1px solid transparent;
+      color: var(--chrome-text-muted); cursor: pointer;
+      margin-left: auto;
+      width: 26px; height: 26px;
+      display: inline-flex; align-items: center; justify-content: center;
+      border-radius: var(--radius-sm);
+      transition: color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
+    }
+    .rail-collapse-btn:hover { color: var(--chrome-text); border-color: var(--chrome-border); }
+    :root[data-rail="collapsed"] .rail-collapse-btn .rc-ico { transform: scaleX(-1); }
+
+    :root[data-rail="collapsed"] .siderail .rail-title,
+    :root[data-rail="collapsed"] .siderail .rail-grp-hd,
+    :root[data-rail="collapsed"] .siderail .rail-item .sub-chev,
+    :root[data-rail="collapsed"] .siderail .rail-sub,
+    :root[data-rail="collapsed"] .siderail .rail-foot,
+    :root[data-rail="collapsed"] .siderail .nav-label,
+    :root[data-rail="collapsed"] .siderail .nav-btn > *:not(.nav-ico) { display: none; }
+    :root[data-rail="collapsed"] .rail-brand {
+      justify-content: center;
+      padding: var(--sp-4) 0 var(--sp-3);
+    }
+    :root[data-rail="collapsed"] .rail-collapse-btn { margin: 0; }
+    :root[data-rail="collapsed"] .rail-nav .nav-btn {
+      justify-content: center;
+      padding: 10px 0;
+    }
+    :root[data-rail="collapsed"] .rail-nav .nav-btn .nav-ico {
+      width: 100%;
+      font-size: 16px;
+    }
     .masthead {
       position: sticky; top: 0; z-index: 20;
       display: flex; align-items: center; gap: var(--sp-3);
@@ -698,7 +751,7 @@
       transition: color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
     }
     .theme-toggle:hover { color: var(--chrome-text); border-color: var(--chrome-text-muted); }
-    /* Header notification feed (ref: enterprise events / bell) */
+    /* Header notification feed (bell icon + dropdown panel) */
     .notif-wrap { position: relative; }
     .notif-btn {
       position: relative; background: none; border: 1px solid var(--chrome-border);
@@ -841,7 +894,7 @@
     .gate-failclosed { color: var(--danger);  background: var(--danger-soft);  border-color: rgba(239,91,110,0.35); }
     .gate-unknown    { color: var(--warning); background: var(--warning-soft); border-color: rgba(245,179,65,0.30); }
 
-    /* Enterprise page primitives */
+    /* Governance / catalog page primitives */
     .ent-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); }
     /* Dashboard feed + ranked bars (ref: events / top-consumers) */
     .feed-row { display: flex; align-items: center; gap: var(--sp-3); padding: 9px var(--sp-2); border-bottom: 1px solid var(--border); }
@@ -862,7 +915,7 @@
     .rank-row .rk-fill.warn { background: var(--warning); }
     .rank-row .rk-fill.bad { background: var(--danger); }
     .rank-row .rk-val { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-muted); }
-    /* Data Products — toggleable cards / table (ref: enterprise catalogs) */
+    /* Data Products — toggleable cards / table for catalog views */
     .dp-bar { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-4); }
     .dp-bar .dp-count { font-size: var(--fs-sm); color: var(--text-muted); }
     .dp-bar .dp-search { flex: 1; max-width: 320px; }
@@ -1095,36 +1148,37 @@
     <div class="rail-brand">
       <span class="rail-mark"></span>
       <div class="rail-title">Observability<br><span>MCP Console</span></div>
+      <button class="rail-collapse-btn" id="rail-collapse-btn" title="Collapse navigation" aria-label="Collapse navigation" onclick="toggleRail()"><span class="rc-ico">‹</span></button>
     </div>
     <nav class="rail-nav">
       <div class="rail-grp" data-grp="observability">
         <button class="rail-grp-hd" onclick="toggleNavGroup('observability')">Observability<span class="chev">▾</span></button>
         <div class="rail-grp-body">
-          <button class="nav-btn active" data-page="dashboard" onclick="showPage('dashboard')"><span class="nav-ico">▦</span>Dashboard</button>
-          <button class="nav-btn" data-page="sources" onclick="showPage('sources')"><span class="nav-ico">⊟</span>Sources</button>
-          <button class="nav-btn" data-page="services" onclick="showPage('services')"><span class="nav-ico">⊞</span>Services</button>
-          <button class="nav-btn" data-page="health" onclick="showPage('health')"><span class="nav-ico">✚</span>Health</button>
-          <button class="nav-btn" data-page="topology" onclick="showPage('topology')"><span class="nav-ico">◇</span>Topology</button>
+          <button class="nav-btn active" data-page="dashboard" title="Dashboard" onclick="showPage('dashboard')"><span class="nav-ico">▦</span><span class="nav-label">Dashboard</span></button>
+          <button class="nav-btn" data-page="sources" title="Sources" onclick="showPage('sources')"><span class="nav-ico">⊟</span><span class="nav-label">Sources</span></button>
+          <button class="nav-btn" data-page="services" title="Services" onclick="showPage('services')"><span class="nav-ico">⊞</span><span class="nav-label">Services</span></button>
+          <button class="nav-btn" data-page="health" title="Health" onclick="showPage('health')"><span class="nav-ico">✚</span><span class="nav-label">Health</span></button>
+          <button class="nav-btn" data-page="topology" title="Topology" onclick="showPage('topology')"><span class="nav-ico">◇</span><span class="nav-label">Topology</span></button>
         </div>
       </div>
       <div class="rail-grp" data-grp="catalog">
         <button class="rail-grp-hd" onclick="toggleNavGroup('catalog')">Catalog<span class="chev">▾</span></button>
         <div class="rail-grp-body">
-          <button class="nav-btn" data-page="products" onclick="showPage('products')"><span class="nav-ico">◫</span>Products</button>
+          <button class="nav-btn" data-page="products" title="Products" onclick="showPage('products')"><span class="nav-ico">◫</span><span class="nav-label">Products</span></button>
         </div>
       </div>
       <div class="rail-grp" data-grp="governance">
         <button class="rail-grp-hd" onclick="toggleNavGroup('governance')">Governance<span class="chev">▾</span></button>
         <div class="rail-grp-body">
-          <button class="nav-btn" data-page="access" onclick="showPage('access')"><span class="nav-ico">⛨</span>Access Control</button>
-          <button class="nav-btn" data-page="audit" onclick="showPage('audit')"><span class="nav-ico">❒</span>Audit Log</button>
+          <button class="nav-btn" data-page="access" title="Access Control" onclick="showPage('access')"><span class="nav-ico">⛨</span><span class="nav-label">Access Control</span></button>
+          <button class="nav-btn" data-page="audit" title="Audit Log" onclick="showPage('audit')"><span class="nav-ico">❒</span><span class="nav-label">Audit Log</span></button>
         </div>
       </div>
       <div class="rail-grp" data-grp="system">
         <button class="rail-grp-hd" onclick="toggleNavGroup('system')">System<span class="chev">▾</span></button>
         <div class="rail-grp-body">
           <div class="rail-item" data-nav="connectors">
-            <button class="nav-btn nav-parent" onclick="navToggle('connectors')"><span class="nav-ico">⇄</span>Connectors<span class="sub-chev">▾</span></button>
+            <button class="nav-btn nav-parent" title="Connectors" onclick="navToggle('connectors')"><span class="nav-ico">⇄</span><span class="nav-label">Connectors</span><span class="sub-chev">▾</span></button>
             <div class="rail-sub">
               <button class="nav-sub" data-sub="installed" onclick="goTab('connectors','installed')">Installed</button>
               <button class="nav-sub" data-sub="hub" onclick="goTab('connectors','hub')">Connector Hub</button>
@@ -1132,14 +1186,14 @@
             </div>
           </div>
           <div class="rail-item" data-nav="settings">
-            <button class="nav-btn nav-parent" onclick="navToggle('settings')"><span class="nav-ico">⚙</span>Settings<span class="sub-chev">▾</span></button>
+            <button class="nav-btn nav-parent" title="Settings" onclick="navToggle('settings')"><span class="nav-ico">⚙</span><span class="nav-label">Settings</span><span class="sub-chev">▾</span></button>
             <div class="rail-sub">
               <button class="nav-sub" data-sub="general" onclick="goTab('settings','general')">General</button>
               <button class="nav-sub" data-sub="health" onclick="goTab('settings','health')">Health Scoring</button>
               <button class="nav-sub" data-sub="metrics" onclick="goTab('settings','metrics')">Custom Metrics</button>
             </div>
           </div>
-          <button class="nav-btn" data-page="entitlement" onclick="showPage('entitlement')"><span class="nav-ico">⛁</span>Entitlement</button>
+          <button class="nav-btn" data-page="entitlement" title="Entitlement" onclick="showPage('entitlement')"><span class="nav-ico">⛁</span><span class="nav-label">Entitlement</span></button>
         </div>
       </div>
     </nav>
@@ -1775,6 +1829,17 @@ function toggleTheme(){
   document.documentElement.setAttribute('data-theme',next);
   try{ localStorage.setItem('omcp-theme',next); }catch(e){}
   syncThemeToggle();
+}
+
+// --- Rail collapse toggle (icon-only mode) ---
+function toggleRail(){
+  const cur = document.documentElement.getAttribute('data-rail') === 'collapsed' ? 'collapsed' : 'expanded';
+  const next = cur === 'collapsed' ? 'expanded' : 'collapsed';
+  document.documentElement.setAttribute('data-rail', next);
+  try { localStorage.setItem('omcp-rail', next); } catch(e){}
+  // Update the toggle button's tooltip so it reflects the action it will take.
+  const btn = document.getElementById('rail-collapse-btn');
+  if (btn) btn.title = next === 'collapsed' ? 'Expand navigation' : 'Collapse navigation';
 }
 
 // --- Topology graph viewport controls (driven by the +/-/reset toolbar) ---
