@@ -30,11 +30,50 @@ question instead of juggling N vendor servers and their query languages.*
 
 ---
 
+## Why it matters — measured, not asserted
+
+On a real Kubernetes-platform-team question ("which other pods share a node with
+`payment-service` so we know what else falls over if that node goes down?"), the same
+local model produces wildly different answers depending on the tools you hand it:
+
+| Tools available to the agent (llama3.1:8b, n=10) | Cross-namespace blast-radius accuracy |
+|---|:---:|
+| Generic metric + log + service tools | **0 / 10** &nbsp;— hallucinates the wrong entity type (`prometheus`, `loki`, `kubernetes`) |
+| Same model + `get_topology` + `get_blast_radius` | **10 / 10** &nbsp;— exact correct co-tenant list, every iteration |
+
+Raw JSON for both arms, plus three more scenarios (single-service RCA, in-namespace
+blast radius, scenarios where topology does *not* help), live in
+[docs/benchmark-astronomy-shop.md](docs/benchmark-astronomy-shop.md). The harness is in
+[`scripts/benchmark-rca.mjs`](scripts/benchmark-rca.mjs); re-run with `make benchmark-up && make benchmark-run`.
+
+We don't claim universal speedup — the doc spells out exactly where the topology tools
+help (graph-shaped questions) and where they don't (pure single-metric drill-downs).
+
+---
+
 ## Try it in 10 seconds
 
 ```bash
 npx @thotischner/observability-mcp
 # then open http://localhost:3000
+```
+
+Wire it into Claude Code with one CLI call:
+
+```bash
+claude mcp add observability --transport http http://localhost:3000/mcp
+```
+
+…or commit it to your repo as `.mcp.json` (works the same in Claude Desktop / Cursor):
+
+```json
+{
+  "mcpServers": {
+    "observability": {
+      "transport": { "type": "http", "url": "http://localhost:3000/mcp" }
+    }
+  }
+}
 ```
 
 The server starts with **zero sources**. Add Prometheus/Loki via the Web UI or `PROMETHEUS_URL` / `LOKI_URL` env vars.
@@ -384,7 +423,7 @@ flags pass through after a literal `--`.
 - [Airgapped deployment](docs/airgapped-deployment.md) — mirroring images, private plugins, GitOps-friendly config
 - [Topology vocabulary](docs/topology-vocabulary.md) — the canonical `kind` / `relation` contract every topology-capable connector emits, plus the warn-only validator
 - [RCA benchmark](docs/benchmark-astronomy-shop.md) — reproducible A/B harness; on a cross-namespace blast-radius question (llama3.1:8b, n=10) the baseline tool set scores 0/10 and hallucinates the wrong entity type, the same model with topology tools scores 10/10 deterministically — see the three-scenarios table for the full honest picture
-- [Enterprise access-control gate](docs/enterprise-gate.md) — optional RBAC / catalog / audit behind a signed entitlement token (off by default)
+- [Governance access-control gate](docs/enterprise-gate.md) — optional RBAC / catalog / audit behind a signed entitlement token (off by default)
 - [Connector Hub](https://thotischner.github.io/observability-mcp/hub/) — browse versioned, signed connectors (catalog: [`hub/`](hub/README.md))
 - [Use cases](USECASES.md) — five scenarios with the prompts that drive them
 
