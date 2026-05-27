@@ -1,4 +1,4 @@
-.PHONY: help build up demo down logs test lint smoke clean release-dryrun benchmark-up benchmark-down benchmark-run benchmark-deps
+.PHONY: help build up demo down logs test lint smoke ui-smoke clean release-dryrun benchmark-up benchmark-down benchmark-run benchmark-deps connect-claude-code connect-cursor doctor
 
 # Print every target with its leading-comment description.
 help: ## Show this help
@@ -26,6 +26,61 @@ down: ## Stop everything and remove volumes
 
 logs: ## Tail mcp-server logs
 	docker compose logs -f mcp-server
+
+##@ Connect from your agent
+
+# Host + port the running mcp-server is reachable at. Override with
+#   OMCP_HOST=mcp.internal OMCP_PORT=4444 make connect-claude-code
+# if you've remapped the compose service or are running it behind a proxy.
+OMCP_HOST ?= localhost
+OMCP_PORT ?= 3000
+
+connect-claude-code: ## Print the .mcp.json snippet for Claude Code / Claude Desktop
+	@echo "# Paste into the 'mcpServers' object of your Claude config"
+	@echo "# (Claude Code: claude mcp add observability --transport http http://$(OMCP_HOST):$(OMCP_PORT)/mcp)"
+	@echo "# (Claude Desktop: ~/.config/Claude/claude_desktop_config.json on Linux,"
+	@echo "#  ~/Library/Application Support/Claude/claude_desktop_config.json on macOS)"
+	@echo ""
+	@echo '{'
+	@echo '  "mcpServers": {'
+	@echo '    "observability": {'
+	@echo '      "transport": { "type": "http", "url": "http://$(OMCP_HOST):$(OMCP_PORT)/mcp" }'
+	@echo '    }'
+	@echo '  }'
+	@echo '}'
+
+connect-cursor: ## Print the MCP config snippet for Cursor
+	@echo "# Drop into ~/.cursor/mcp.json (create the file if it doesn't exist)"
+	@echo ""
+	@echo '{'
+	@echo '  "mcpServers": {'
+	@echo '    "observability": {'
+	@echo '      "url": "http://$(OMCP_HOST):$(OMCP_PORT)/mcp"'
+	@echo '    }'
+	@echo '  }'
+	@echo '}'
+
+doctor: ## Quick health check — is the mcp-server reachable on $$OMCP_HOST:$$OMCP_PORT?
+	@printf "Probing http://$(OMCP_HOST):$(OMCP_PORT)/healthz ... "
+	@if curl -fsS --max-time 3 "http://$(OMCP_HOST):$(OMCP_PORT)/healthz" >/dev/null; then \
+	  echo "ok"; \
+	else \
+	  echo "FAIL — is the stack up? Try: make demo"; exit 1; \
+	fi
+	@printf "Probing MCP handshake on /mcp ... "
+	@if curl -fsS --max-time 5 -X POST "http://$(OMCP_HOST):$(OMCP_PORT)/mcp" \
+	  -H "Content-Type: application/json" \
+	  -H "Accept: application/json, text/event-stream" \
+	  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"omcp-doctor","version":"1.0"}}}' \
+	  | grep -q '"serverInfo"'; then \
+	  echo "ok"; \
+	else \
+	  echo "FAIL — server is up but MCP handshake did not return serverInfo"; exit 1; \
+	fi
+	@echo
+	@echo "All good. Wire your agent up with:"
+	@echo "  make connect-claude-code   # Claude Code / Claude Desktop"
+	@echo "  make connect-cursor        # Cursor"
 
 ##@ Verification
 
