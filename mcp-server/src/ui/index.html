@@ -1054,6 +1054,40 @@
     @media (prefers-reduced-motion: reduce) {
       .state.is-loading .state-ico .spin { animation: none; }
     }
+
+    /* ===== Topology graph affordances =====
+       Zoom controls + keyboard-hint badge live inside #topology-graph-host
+       (already position:relative). Both kept compact so they don't crowd
+       the small graph viewport. Edge labels (rendered as SVG text) get
+       a halo via paint-order so they're legible against bands / wires. */
+    .topo-controls {
+      position: absolute; top: 10px; right: 10px;
+      display: flex; gap: 4px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); padding: 3px;
+      z-index: 2;
+    }
+    .topo-controls .btn-icon {
+      width: 26px; height: 26px;
+      font-size: var(--fs-md); line-height: 1;
+      border-radius: var(--radius-sm);
+    }
+    .topo-hint {
+      position: absolute; top: 10px; left: 10px;
+      font-size: var(--fs-xs); color: var(--text-muted);
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); padding: 4px 8px;
+      pointer-events: none; opacity: 0.85;
+      z-index: 2;
+    }
+    /* Graph node focus ring: the <g data-id> is focusable; the inner
+       circle gets a wider stroke when its parent has :focus-visible. */
+    #topology-graph-svg:focus { outline: none; }
+    #topology-graph-svg g[data-id]:focus { outline: none; }
+    #topology-graph-svg g[data-id]:focus-visible circle {
+      stroke: var(--accent); stroke-width: 3;
+      filter: drop-shadow(0 0 4px var(--accent-soft));
+    }
   </style>
 </head>
 <body>
@@ -1328,7 +1362,13 @@
           </div>
           <div style="display:grid; grid-template-columns: 1fr 340px; gap: 0; border-top: 1px solid var(--border); height: 660px;">
             <div id="topology-graph-host" style="position:relative; overflow:hidden; background: var(--surface-2); border-right: 1px solid var(--border);">
-              <svg id="topology-graph-svg" style="position:absolute; inset:0; width:100%; height:100%; cursor: grab;"></svg>
+              <svg id="topology-graph-svg" style="position:absolute; inset:0; width:100%; height:100%; cursor: grab;" tabindex="0" role="application" aria-label="Topology graph — Tab through resources, Enter to inspect, Esc to clear"></svg>
+              <div class="topo-controls" role="toolbar" aria-label="Graph zoom">
+                <button class="btn-icon" title="Zoom in (or wheel up)" aria-label="Zoom in" onclick="topoZoom(1.2)">+</button>
+                <button class="btn-icon" title="Zoom out (or wheel down)" aria-label="Zoom out" onclick="topoZoom(1/1.2)">−</button>
+                <button class="btn-icon" title="Reset view" aria-label="Reset view" onclick="topoResetView()">⤾</button>
+              </div>
+              <div class="topo-hint" id="topo-hint">Tab to focus · Enter to inspect · arrows to move focus · Esc to clear</div>
               <div id="topology-graph-legend" style="position:absolute; bottom:10px; left:10px; font-size: var(--fs-xs); padding:8px 10px; background: var(--surface); border:1px solid var(--border); border-radius: 6px; max-width: 75%;"></div>
             </div>
             <aside id="topology-inspector" style="background: var(--surface); padding: 16px; overflow-y: auto; font-size: var(--fs-sm);">
@@ -1736,6 +1776,10 @@ function toggleTheme(){
   try{ localStorage.setItem('omcp-theme',next); }catch(e){}
   syncThemeToggle();
 }
+
+// --- Topology graph viewport controls (driven by the +/-/reset toolbar) ---
+function topoZoom(k){ const v = window.__topoViewport; if (v) v.zoom(k); }
+function topoResetView(){ const v = window.__topoViewport; if (v) v.reset(); }
 
 // --- Row density toggle (comfortable / compact), persisted ---
 function toggleDensity(){
@@ -3420,6 +3464,18 @@ function renderTopologyGraph(){
   function applyView(){ g.setAttribute('transform', `translate(${view.tx} ${view.ty}) scale(${view.scale})`); }
   applyView();
   svg.appendChild(g);
+  // Expose view + setters so the zoom toolbar buttons and the keyboard
+  // handler can drive the same `view` object that wheel-zoom mutates.
+  window.__topoViewport = {
+    zoom(k){
+      const cx = W/2, cy = H/2;
+      view.tx = cx - (cx - view.tx) * k;
+      view.ty = cy - (cy - view.ty) * k;
+      view.scale *= k;
+      applyView();
+    },
+    reset(){ view.tx = 0; view.ty = 0; view.scale = 1; applyView(); },
+  };
 
   // Alternating tier background bands + tier labels in the left gutter.
   for (let i = 0; i < tierIndices.length; i++){
@@ -3484,6 +3540,7 @@ function renderTopologyGraph(){
     const cy = (a.y + b.y) / 2;
     return `M ${a.x} ${a.y} C ${a.x} ${cy}, ${b.x} ${cy}, ${b.x} ${b.y}`;
   }
+  const edgeLabelEls = new Map(); // "<from> <to>" → text element, for repaint on drag
   for (const e of drawEdges){
     const a = positions.get(e.from), b = positions.get(e.to);
     const s = topoRelStyle(e.relation);
@@ -3496,6 +3553,22 @@ function renderTopologyGraph(){
     path.setAttribute('opacity', '0.85');
     path.dataset.from = e.from; path.dataset.to = e.to;
     g.appendChild(path);
+    // Edge label at midpoint, with a halo so it remains readable
+    // against tier bands and crossing wires in both themes.
+    const lbl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    lbl.setAttribute('x', String((a.x + b.x) / 2));
+    lbl.setAttribute('y', String((a.y + b.y) / 2));
+    lbl.setAttribute('font-size', '9');
+    lbl.setAttribute('text-anchor', 'middle');
+    lbl.setAttribute('dominant-baseline', 'middle');
+    lbl.setAttribute('fill', 'var(--text-muted)');
+    lbl.setAttribute('stroke', 'var(--surface-2)');
+    lbl.setAttribute('stroke-width', '3');
+    lbl.setAttribute('paint-order', 'stroke');
+    lbl.setAttribute('style', 'pointer-events: none; letter-spacing: 0.04em;');
+    lbl.textContent = e.relation;
+    g.appendChild(lbl);
+    edgeLabelEls.set(e.from + ' ' + e.to, lbl);
   }
 
   // Nodes
@@ -3519,12 +3592,18 @@ function renderTopologyGraph(){
   }
 
   const nodeEls = new Map();
+  const focusOrder = []; // resource ids in deterministic visual order for arrow nav
   for (const r of drawables){
     const p = positions.get(r.id); if (!p) continue;
     const grp = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     grp.setAttribute('transform', `translate(${p.x} ${p.y})`);
     grp.style.cursor = 'grab';
     grp.dataset.id = r.id;
+    // a11y: keyboard-focusable, screen-reader announces "<name>, <kind>".
+    grp.setAttribute('tabindex', '0');
+    grp.setAttribute('role', 'button');
+    grp.setAttribute('aria-label', `${r.name}, ${r.kind}`);
+    focusOrder.push(r.id);
     const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
     // Hosts a touch bigger to read as anchors of the layout.
     const radius = incomingRunsOn.has(r.id) ? 9 : 6.5;
@@ -3569,7 +3648,14 @@ function renderTopologyGraph(){
       if (pth.dataset.from === id || pth.dataset.to === id){
         const a = positions.get(pth.dataset.from);
         const b = positions.get(pth.dataset.to);
-        if (a && b) pth.setAttribute('d', bezierPath(a, b));
+        if (a && b){
+          pth.setAttribute('d', bezierPath(a, b));
+          const lbl = edgeLabelEls.get(pth.dataset.from + ' ' + pth.dataset.to);
+          if (lbl){
+            lbl.setAttribute('x', String((a.x + b.x) / 2));
+            lbl.setAttribute('y', String((a.y + b.y) / 2));
+          }
+        }
       }
     });
   }
@@ -3660,6 +3746,65 @@ function renderTopologyGraph(){
     }
     selectResource(el.dataset.id);
   };
+
+  // Keyboard navigation: Tab cycles natively (every <g data-id> is
+  // tabindex=0); Enter / Space inspects the focused node; Esc clears
+  // selection; arrows move focus to the nearest neighbour by 2-D distance.
+  function focusedId(){
+    const el = document.activeElement;
+    if (el && el.closest && el.closest('#topology-graph-svg')){
+      const g2 = el.closest('g[data-id]');
+      if (g2) return g2.dataset.id;
+    }
+    return null;
+  }
+  function moveFocusDir(dx, dy){
+    const cur = focusedId() || topologySelectedId || focusOrder[0];
+    if (!cur) return;
+    const p = positions.get(cur); if (!p) return;
+    let best = null, bestScore = Infinity;
+    for (const id of focusOrder){
+      if (id === cur) continue;
+      const q = positions.get(id); if (!q) continue;
+      const ex = q.x - p.x, ey = q.y - p.y;
+      const align = ex*dx + ey*dy;          // positive = same direction
+      if (align <= 0) continue;
+      const perp = Math.abs(ex*dy - ey*dx); // distance off-axis
+      const score = perp - align * 0.25;
+      if (score < bestScore){ bestScore = score; best = id; }
+    }
+    if (best){
+      const el = nodeEls.get(best);
+      if (el && el.grp.focus) el.grp.focus();
+    }
+  }
+  svg.addEventListener('focus', ()=>{
+    // First focus on the svg shell: forward to the previously-selected node
+    // or the first node so the user gets immediate context.
+    if (document.activeElement === svg){
+      const target = topologySelectedId || focusOrder[0];
+      const el = target ? nodeEls.get(target) : null;
+      if (el && el.grp.focus) el.grp.focus();
+    }
+  });
+  svg.addEventListener('keydown', (ev)=>{
+    if (ev.key === 'Escape'){
+      topologySelectedId = null;
+      clearHighlight();
+      showInspectorEmpty();
+      ev.preventDefault();
+      return;
+    }
+    if (ev.key === 'Enter' || ev.key === ' '){
+      const id = focusedId();
+      if (id){ selectResource(id); ev.preventDefault(); }
+      return;
+    }
+    if (ev.key === 'ArrowLeft')  { moveFocusDir(-1, 0); ev.preventDefault(); return; }
+    if (ev.key === 'ArrowRight') { moveFocusDir( 1, 0); ev.preventDefault(); return; }
+    if (ev.key === 'ArrowUp')    { moveFocusDir( 0,-1); ev.preventDefault(); return; }
+    if (ev.key === 'ArrowDown')  { moveFocusDir( 0, 1); ev.preventDefault(); return; }
+  });
 
   function showInspectorEmpty(){
     document.getElementById('topology-inspector-empty').style.display = '';
