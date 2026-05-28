@@ -2304,7 +2304,25 @@ async function loadGatePill(){
   }catch{ el.className='gate-pill gate-unknown'; el.textContent='Gate: n/a'; }
 }
 function entKV(o){return '<dl class="kv">'+Object.entries(o).map(([k,v])=>`<dt>${escHtml(k)}</dt><dd class="mono">${escHtml(v)}</dd>`).join('')+'</dl>';}
+// Self-refresh the audit + governance feeds while the user is on
+// page-audit, page-access, page-products or page-entitlement. Gated on
+// document.activeElement and the page's .active class so it doesn't
+// burn cycles when the tab is hidden or backgrounded. Reuses the same
+// loadEnterprise() the page switch fires.
+let _omcpGovInterval = null;
+function ensureGovAutoRefresh(){
+  if (_omcpGovInterval) return;
+  _omcpGovInterval = setInterval(() => {
+    if (typeof document === 'undefined') return;
+    if (document.hidden) return;
+    const onGovPage = ['page-audit','page-access','page-products','page-entitlement']
+      .some(id => { const el = document.getElementById(id); return el && el.classList.contains('active'); });
+    if (onGovPage) loadEnterprise();
+  }, 15000);
+}
+
 async function loadEnterprise(){
+  ensureGovAutoRefresh();
   // Status + entitlement claims
   try{
     const s=await(await fetch('/api/enterprise/status')).json();
