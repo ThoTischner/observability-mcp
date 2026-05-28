@@ -60,6 +60,43 @@ plus stricter redaction by default.
 - **`make doctor`** gained a third probe — `/api/me` reports the
   active auth mode + authenticated state alongside the existing
   `/healthz` + MCP-handshake checks. #255
+- **`/api/info` governance block** — booleans-only public posture
+  snapshot (`authMode`, `authSecretEphemeral`, `auditPersisted`,
+  `catalogConfigured`, `redaction`, `trustProxy`, `toolRatePerMin`)
+  for external dashboards to alert on "production silently reverted
+  to anonymous mode" without holding a session cookie. #257
+- **Access-control runbook gets a TOC + Posture-discovery section** so
+  the 280-line doc is one-screen navigable and the new `/api/info`
+  governance block has a documented schema. #258
+- **`MAX_REDACT_DEPTH=64`** on the redactValue walker — defensive
+  stack-overflow cap for pathologically deep JSON. #259
+- **Catalog enrichment in the Web UI** — owner / tier / on-call chips
+  inline on each Services row, plus a full Catalog section in the
+  service detail drawer (description, SLO, data classification,
+  runbooks, tags) when `OMCP_SERVICE_CATALOG_FILE` is configured.
+  #260, #262
+- **README quickstart points at `docs/access-control.md`** so multi-user
+  teams reach the runbook without scrolling to the deep Docs index.
+  #261
+- **Luhn-checked credit-card redaction pattern** added to the
+  `query_logs` redactor — order IDs / timestamps stay intact because
+  the redactor only fires on numbers that actually pass Luhn. #263
+- **Login modal remembers the last-used username** via localStorage and
+  jumps focus straight to the password field on next sign-in. Password
+  never persists. #264
+- **Helm fragment fix in the access-control runbook** — the snippet
+  showed `env:` (a map) where the chart's actual key is `extraEnv:`
+  (a `[{name,value}]` list). Operators copying the snippet to
+  production would have hit a Helm validation error. #265
+- **Colour-coded `resource:action` column** in the Management changes
+  audit table — write rows draw the eye in accent-blue, delete rows
+  in danger-red, read rows recede in muted grey. #266
+- **Anonymous audit entries render in muted italic** so a deployment
+  that silently lost its auth is obvious in the feed. #267
+- **Ephemeral-session-secret banner** at the top of the UI — fires
+  when `OMCP_AUTH=basic` is set but `OMCP_SESSION_SECRET` is not, so
+  the operator learns that sessions will die on restart before the
+  first incident teaches them the hard way. #268
 
 ## [1.8.0] — 2026-05-28
 
