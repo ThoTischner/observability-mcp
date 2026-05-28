@@ -150,10 +150,29 @@ export class AuditLog {
 
 /** Stable hash of an entry-without-hash, against `prevHash` already present. */
 export function chainHash(entryWithoutHash: Omit<AuditEntry, "hash">): string {
-  // Canonical JSON: sort keys alphabetically so the digest is reproducible
-  // independent of insertion order.
-  const canonical = JSON.stringify(entryWithoutHash, Object.keys(entryWithoutHash).sort());
-  return createHash("sha256").update(canonical).digest("hex");
+  // Canonical JSON: recursively sort keys so the digest is reproducible
+  // independent of insertion order. Cannot use JSON.stringify's
+  // string-array replacer here — that one filters at every level, which
+  // would strip nested properties (e.g. actor.sub) and collapse two
+  // distinct entries to the same canonical form.
+  return createHash("sha256").update(canonicalJson(entryWithoutHash)).digest("hex");
+}
+
+/** Deterministic JSON for hashing — keys sorted at every depth.
+ * Mirrors JSON.stringify's "drop undefined values" rule so a freshly-
+ * recorded entry and a round-tripped JSON.parse() of the same entry
+ * (which silently drops undefineds) hash identically. */
+function canonicalJson(v: unknown): string {
+  if (v === undefined) return ""; // caller must filter at the parent level
+  if (v === null || typeof v !== "object") return JSON.stringify(v);
+  if (Array.isArray(v)) return "[" + v.map((x) => canonicalJson(x ?? null)).join(",") + "]";
+  const o = v as Record<string, unknown>;
+  const keys = Object.keys(o).filter((k) => o[k] !== undefined).sort();
+  return "{" +
+    keys
+      .map((k) => JSON.stringify(k) + ":" + canonicalJson(o[k]))
+      .join(",") +
+    "}";
 }
 
 /** Walk a JSONL file end-to-end and confirm every entry's hash matches
