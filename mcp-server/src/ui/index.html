@@ -2404,8 +2404,15 @@ async function loadEnterprise(){
     if(entries.length===0){
       box.innerHTML='<div class="empty">No management changes recorded yet.</div>';
     } else {
+      const statusPill = (status) => {
+        const cls = status >= 500 ? 'pill-no'
+                  : status >= 400 ? 'pill-no'
+                  : status >= 200 && status < 300 ? 'pill-yes'
+                  : '';
+        return `<span class="mono ${cls}">${status}</span>`;
+      };
       const rows=entries.map(e=>
-        `<tr><td class="mono">${e.seq}</td><td class="mono t-sm">${escHtml(e.ts)}</td><td>${escHtml(e.actor.name||e.actor.sub)}</td><td><span class="chip">${escHtml(e.method)}</span> <span class="mono t-sm">${escHtml(e.path)}</span></td><td>${escHtml(e.resource)}:${escHtml(e.action)}</td><td class="mono">${e.status}</td></tr>`
+        `<tr><td class="mono">${e.seq}</td><td class="mono t-sm">${escHtml(e.ts)}</td><td>${escHtml(e.actor.name||e.actor.sub)}</td><td><span class="chip">${escHtml(e.method)}</span> <span class="mono t-sm">${escHtml(e.path)}</span></td><td>${escHtml(e.resource)}:${escHtml(e.action)}</td><td>${statusPill(e.status)}</td></tr>`
       ).join('');
       const note=a.persisted?'':' · in-memory only — set OMCP_MGMT_AUDIT_FILE for persistence';
       const showMore = entries.length === limit
