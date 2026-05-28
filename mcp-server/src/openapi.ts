@@ -189,6 +189,81 @@ export function buildOpenApiSpec(version: string): OpenAPIV3_1.Document {
           responses: { "200": { description: "OpenAPI 3.1 document." } },
         },
       },
+      "/api/info": {
+        get: {
+          tags: ["self"],
+          summary: "Server identity, build info, plugin list and governance posture.",
+          description:
+            "Anonymous-readable snapshot for external dashboards and discovery probes. " +
+            "The `governance` block surfaces the active management-plane configuration " +
+            "as booleans / rate-limit number only — no file paths, no session secret, " +
+            "no user counts. Useful for alerting on \"this deployment silently reverted " +
+            "to anonymous mode\" or \"redaction is off in prod\".",
+          responses: {
+            "200": {
+              description: "Server info + governance posture.",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      name: { type: "string" },
+                      version: { type: "string" },
+                      mcpProtocolVersion: { type: "string" },
+                      build: {
+                        type: "object",
+                        properties: {
+                          commit: { type: ["string", "null"] },
+                          date: { type: ["string", "null"] },
+                        },
+                      },
+                      runtime: {
+                        type: "object",
+                        properties: {
+                          node: { type: "string" },
+                          platform: { type: "string" },
+                          arch: { type: "string" },
+                        },
+                      },
+                      governance: {
+                        type: "object",
+                        description: "Active management-plane posture; booleans + rate-limit number only.",
+                        properties: {
+                          authMode: { type: "string", enum: ["anonymous", "basic"] },
+                          authSecretEphemeral: {
+                            type: "boolean",
+                            description: "True when OMCP_SESSION_SECRET is unset and the server minted an in-memory secret at boot. Sessions don't survive a restart.",
+                          },
+                          auditPersisted: {
+                            type: "boolean",
+                            description: "True when OMCP_MGMT_AUDIT_FILE is set; false means the audit log is the in-memory 500-entry ring.",
+                          },
+                          catalogConfigured: { type: "boolean" },
+                          redaction: { type: "boolean" },
+                          trustProxy: { type: "boolean" },
+                          toolRatePerMin: { type: "integer" },
+                        },
+                      },
+                      plugins: {
+                        type: "array",
+                        items: {
+                          type: "object",
+                          properties: {
+                            name: { type: "string" },
+                            source: { type: "string" },
+                            version: { type: ["string", "null"] },
+                            signalTypes: { type: ["array", "null"], items: { type: "string" } },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
       "/api/me": {
         get: {
           tags: ["auth"],
