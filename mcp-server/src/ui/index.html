@@ -1746,6 +1746,15 @@ curl -X PUT http://localhost:3000/api/enterprise/catalog \
         </h2></div>
         <div id="ent-audit"><div class="empty">Loading…</div></div>
       </div>
+      <div class="card mt-4">
+        <div class="card-header"><h2>Management changes
+          <button class="info" aria-label="About management audit"
+            data-title="Management audit"
+            data-info="Append-only hash-chained log of every mutating /api/* request (source / setting / health-threshold / connector changes). When OMCP_MGMT_AUDIT_FILE is set the log persists across restarts; otherwise it is an in-memory ring of the last 500 entries."
+            onclick="infoPop(this)">?</button>
+        </h2></div>
+        <div id="mgmt-audit"><div class="empty">Loading…</div></div>
+      </div>
     </div>
 
     <!-- ===== Governance: Entitlement ===== -->
@@ -2349,6 +2358,27 @@ async function loadEnterprise(){
       box.querySelectorAll('[data-aud]').forEach(el=>el.addEventListener('click',()=>audDetail(el.getAttribute('data-aud'))));
     }
   }catch{ document.getElementById('ent-audit').innerHTML='<div class="empty">Audit unavailable.</div>'; }
+  // Management-plane audit (separate feed from the enterprise gate).
+  try{
+    const r=await fetch('/api/audit?limit=50');
+    if(!r.ok) throw new Error('http '+r.status);
+    const a=await r.json();
+    const box=document.getElementById('mgmt-audit');
+    const entries=a.entries||[];
+    if(entries.length===0){
+      box.innerHTML='<div class="empty">No management changes recorded yet.</div>';
+    } else {
+      const rows=entries.map(e=>
+        `<tr><td class="mono">${e.seq}</td><td class="mono t-sm">${escHtml(e.ts)}</td><td>${escHtml(e.actor.name||e.actor.sub)}</td><td><span class="chip">${escHtml(e.method)}</span> <span class="mono t-sm">${escHtml(e.path)}</span></td><td>${escHtml(e.resource)}:${escHtml(e.action)}</td><td class="mono">${e.status}</td></tr>`
+      ).join('');
+      const note=a.persisted?'':' · in-memory only — set OMCP_MGMT_AUDIT_FILE for persistence';
+      box.innerHTML=`<div class="t-muted t-sm mb-2">${entries.length} entries${escHtml(note)}</div>
+        <table class="dtable"><thead><tr><th>#</th><th>When</th><th>Actor</th><th>Request</th><th>Permission</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
+  }catch(e){
+    const box=document.getElementById('mgmt-audit');
+    if(box) box.innerHTML='<div class="empty">Management audit unavailable.</div>';
+  }
 }
 // ---- Minimal YAML for the flat policy/catalog schema (maps, string
 // arrays, booleans, strings). Optional alternative view to the form. ----
