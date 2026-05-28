@@ -3055,8 +3055,27 @@ async function svcDetail(name){
   const tone=v.status==='critical'?'bad':v.status!=='healthy'?'warn':'ok';
   const m=(v.signals&&v.signals.metrics)||{};
   const fmtN=x=>x==null?'—':(Math.round(Number(x)*100)/100);
+  // Catalog enrichment may live on either the health payload or on the
+  // service row in servicesData (whichever was fetched first).
+  const cat = v.catalog || ((servicesData||[]).find(s => s.name === name) || {}).catalog;
+  const catalogSection = cat ? dwSec('Catalog', `<table class="dtable"><tbody>${
+    [
+      ['Owner', cat.owner],
+      ['Tier', cat.tier],
+      ['Data classification', cat.dataClassification],
+      ['SLO', cat.slo],
+      ['On-call', cat.onCall ? `<a href="${escHtml(cat.onCall)}" target="_blank" rel="noopener" class="mono">${escHtml(cat.onCall)} ↗</a>` : null],
+      ['Tags', (cat.tags && cat.tags.length) ? cat.tags.map(t => `<span class="chip">${escHtml(t)}</span>`).join(' ') : null],
+      ['Runbooks', (cat.runbooks && cat.runbooks.length) ? cat.runbooks.map(u => `<a href="${escHtml(u)}" target="_blank" rel="noopener" class="mono t-sm">${escHtml(u)} ↗</a>`).join('<br>') : null],
+      ['Description', cat.description],
+    ]
+      .filter(([, val]) => val != null && val !== '')
+      .map(([k, val]) => `<tr><td>${k}</td><td>${val}</td></tr>`)
+      .join('')
+  }</tbody></table>`) : '';
   const html=
     dwSec('Status', `<span class="stchip ${tone}">${escHtml(v.status)}</span> <span class="muted t-sm">health score ${escHtml(v.score)}</span>`)+
+    catalogSection+
     dwSec('Signals', `<table class="dtable"><tbody>
       <tr><td>CPU</td><td class="mono">${fmtN(m.cpu)}</td></tr>
       <tr><td>Memory (MB)</td><td class="mono">${fmtN(m.memory)}</td></tr>
