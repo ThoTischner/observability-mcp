@@ -23,7 +23,8 @@ export type RedactionCategory =
   | "aws-key"
   | "slack-token"
   | "private-key"
-  | "gh-pat";
+  | "gh-pat"
+  | "credit-card";
 
 export interface RedactionResult {
   text: string;
@@ -66,7 +67,27 @@ function emptyCounts(): Record<RedactionCategory, number> {
   return {
     email: 0, ipv4: 0, ipv6: 0, bearer: 0, jwt: 0, "api-key": 0,
     "aws-key": 0, "slack-token": 0, "private-key": 0, "gh-pat": 0,
+    "credit-card": 0,
   };
+}
+
+/** Luhn check — accepts digits-only string of 13–19 chars. Used to
+ * keep the credit-card redaction from over-matching random digit
+ * strings (order IDs, timestamps, etc.). */
+function luhn(digits: string): boolean {
+  let sum = 0;
+  let alt = false;
+  for (let i = digits.length - 1; i >= 0; i--) {
+    let n = digits.charCodeAt(i) - 48;
+    if (n < 0 || n > 9) return false;
+    if (alt) {
+      n *= 2;
+      if (n > 9) n -= 9;
+    }
+    sum += n;
+    alt = !alt;
+  }
+  return sum % 10 === 0;
 }
 
 /** Run all patterns in a deterministic order; later patterns won't
@@ -81,6 +102,16 @@ export function redactText(input: string): RedactionResult {
       return `[redacted-${category}]`;
     });
   }
+  // Credit-card pass runs last so an inner-substring of a longer
+  // already-redacted token can't accidentally match. Luhn-validated
+  // so order numbers / timestamps / random digit strings stay intact.
+  text = text.replace(/\b(?:\d[ -]?){12,18}\d\b/g, (match) => {
+    const digits = match.replace(/[ -]/g, "");
+    if (digits.length < 13 || digits.length > 19) return match;
+    if (!luhn(digits)) return match;
+    matches["credit-card"] += 1;
+    return "[redacted-credit-card]";
+  });
   let total = 0;
   for (const k of Object.keys(matches) as RedactionCategory[]) total += matches[k];
   return { text, matches, totalMatches: total };

@@ -24,6 +24,7 @@ scrubbing — not a substitute for it.
 | `slack-token` | `xox[abprsu]-…` Slack tokens | `[redacted-slack-token]` |
 | `gh-pat` | `gh[opsuru]_…` and `github_pat_…` GitHub personal access tokens | `[redacted-gh-pat]` |
 | `private-key` | PEM-encoded `-----BEGIN [...] PRIVATE KEY-----` blocks (greedy across newlines) | `[redacted-private-key]` |
+| `credit-card` | 13–19 digit sequences (with optional `- ` separators) that pass a **Luhn check** so order IDs and timestamps don't get over-redacted | `[redacted-credit-card]` |
 
 The categories are non-overlapping — each redacted region is replaced by
 a category-tagged marker that no later pattern matches, so a second pass
