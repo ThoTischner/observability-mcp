@@ -32,13 +32,21 @@ test("redactText — JWTs detected by eyJ prefix + three-part shape", () => {
   assert.doesNotMatch(r.text, /eyJ/);
 });
 
-test("redactText — api-key style assignments", () => {
+test("redactText — api-key / cloud-token style assignments", () => {
+  // r1: generic prefix-based api-key match.
+  // r2: x-api-key with an opaque body — falls through to api-key.
+  // r3: token= with a Slack-shape value — the new slack-token pattern
+  //     wins because it runs before api-key; either outcome is fine,
+  //     the contract is "the secret is gone after one pass".
   const r1 = redactText('api_key="abc123def456ghi789jkl"');
   const r2 = redactText("x-api-key: sk_test_abcdefghijklmnopqrstuvwxyz");
   const r3 = redactText("token=xoxb-1234567890-abcdefghijklm");
-  assert.ok(r1.matches["api-key"] + r1.matches.bearer >= 1);
-  assert.ok(r2.matches["api-key"] + r2.matches.bearer >= 1);
-  assert.ok(r3.matches["api-key"] + r3.matches.bearer >= 1);
+  assert.ok(r1.totalMatches >= 1, "expected r1 to be redacted somewhere");
+  assert.ok(r2.totalMatches >= 1, "expected r2 to be redacted somewhere");
+  assert.ok(r3.totalMatches >= 1, "expected r3 to be redacted somewhere");
+  assert.doesNotMatch(r1.text, /abc123def456ghi789jkl/);
+  assert.doesNotMatch(r2.text, /sk_test_abcdefghijklmnopqrstuvwxyz/);
+  assert.doesNotMatch(r3.text, /xoxb-1234567890/);
 });
 
 test("redactText — leaves harmless text alone", () => {
