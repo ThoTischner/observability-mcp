@@ -28,6 +28,7 @@ export type Resource =
   | "settings"
   | "connectors"
   | "audit"
+  | "catalog"
   | "users";
 
 export interface Permission {
@@ -45,6 +46,7 @@ export const DEFAULT_POLICY: Record<string, Permission[]> = {
     { resource: "settings", action: "read" },
     { resource: "connectors", action: "read" },
     { resource: "audit", action: "read" },
+    { resource: "catalog", action: "read" },
   ],
   operator: [
     // Inherits viewer's read set + write on operational resources.
@@ -58,10 +60,11 @@ export const DEFAULT_POLICY: Record<string, Permission[]> = {
     { resource: "settings", action: "write" },
     { resource: "connectors", action: "read" },
     { resource: "audit", action: "read" },
+    { resource: "catalog", action: "read" },
   ],
   admin: [
     // Full surface — readable + writable + deletable.
-    ...(["sources", "services", "health", "topology", "settings", "connectors", "audit", "users"] as Resource[])
+    ...(["sources", "services", "health", "topology", "settings", "connectors", "audit", "catalog", "users"] as Resource[])
       .flatMap((r) =>
         (["read", "write", "delete"] as Action[]).map<Permission>((a) => ({ resource: r, action: a })),
       ),

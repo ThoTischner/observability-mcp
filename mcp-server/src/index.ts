@@ -54,6 +54,7 @@ import {
 } from "./auth/rbac.js";
 import { AuditLog } from "./audit/log.js";
 import { buildAuditMiddleware } from "./audit/middleware.js";
+import { readCatalogFile, CatalogStore } from "./catalog/loader.js";
 import { getPluginLoader } from "./connectors/loader.js";
 import {
   resolveHubCatalogUrl,
@@ -169,6 +170,45 @@ async function main() {
   // so we cannot share a single McpServer across HTTP sessions. Each new
   // session needs its own server. The factory captures the live registry
   // by reference so tool handlers always see the current configuration.
+  // Catalog enrichers for the MCP tool surface: wrap the standard
+  // tool-result shape ({content:[{text: json}]}) and inject .catalog
+  // metadata where it matches a known service name. No-op when the
+  // catalog is empty (the demo case) or when the payload doesn't
+  // parse as JSON. The HTTP `/api/services` + `/api/health` handlers
+  // call the loader.ts CatalogStore directly; this path mirrors that
+  // behaviour for MCP clients (Claude Desktop, the agent, ...).
+  // McpToolResult is whatever the wrapped handler returned — keep it
+  // untyped so we don't fight the SDK's narrow `content: [{type:"text",...}]`
+  // overload. We pass the value back unchanged when it doesn't parse,
+  // and otherwise mutate the parsed JSON before re-stringifying into a
+  // fresh wrapper that mirrors the handler's own shape.
+  function enrichToolServicesText<T extends { content: Array<{ text: string }> }>(result: T): T {
+    try {
+      const parsed = JSON.parse(result.content[0]?.text ?? "{}");
+      if (parsed && Array.isArray(parsed.services)) {
+        for (const s of parsed.services) {
+          const entry = typeof s?.name === "string" ? catalog.get(s.name) : undefined;
+          if (entry) s.catalog = entry;
+        }
+      }
+      const clone = { ...result, content: result.content.map((c, i) => i === 0 ? { ...c, text: JSON.stringify(parsed) } : c) };
+      return clone as T;
+    } catch {
+      return result;
+    }
+  }
+  function enrichToolHealthText<T extends { content: Array<{ text: string }> }>(result: T, serviceName: string): T {
+    try {
+      const parsed = JSON.parse(result.content[0]?.text ?? "{}");
+      const entry = serviceName ? catalog.get(serviceName) : undefined;
+      if (entry && parsed && typeof parsed === "object") parsed.catalog = entry;
+      const clone = { ...result, content: result.content.map((c, i) => i === 0 ? { ...c, text: JSON.stringify(parsed) } : c) };
+      return clone as T;
+    } catch {
+      return result;
+    }
+  }
+
   function createMcpServer(ctx: RequestContext): McpServer {
     const mcpServer = new McpServer({
       name: "observability-mcp",
@@ -210,7 +250,8 @@ async function main() {
     },
     async (args) => {
       await enforceEntitledAccess(ctx, { tool: "list_services" });
-      return withToolMetrics("list_services", () => listServicesHandler(registry, args, ctx));
+      const result = await withToolMetrics("list_services", () => listServicesHandler(registry, args, ctx));
+      return enrichToolServicesText(result);
     }
   );
 
@@ -327,7 +368,8 @@ async function main() {
     },
     async (args) => {
       await enforceEntitledAccess(ctx, { tool: "get_service_health", service: (args as any)?.service });
-      return withToolMetrics("get_service_health", () => getServiceHealthHandler(registry, args, ctx));
+      const result = await withToolMetrics("get_service_health", () => getServiceHealthHandler(registry, args, ctx));
+      return enrichToolHealthText(result, String((args as any)?.service ?? ""));
     }
   );
 
@@ -558,6 +600,12 @@ async function main() {
   await mgmtAudit.bootstrap();
   const audit = (resource: string, action: string) =>
     buildAuditMiddleware({ audit: mgmtAudit, resource, action });
+
+  // Service catalog: optional operator-curated ownership / criticality /
+  // on-call metadata, keyed on the service name list_services returns.
+  // No file ⇒ empty catalog, enrichment is a no-op (anonymous demos
+  // see no behaviour change).
+  const catalog = new CatalogStore(await readCatalogFile(process.env.OMCP_SERVICE_CATALOG_FILE));
   // Protected route prefixes. /api/me, /api/auth/*, /api/info,
   // /api/openapi.json deliberately don't appear here — they stay public.
   for (const prefix of [
@@ -572,6 +620,7 @@ async function main() {
     "/api/enterprise",
     "/api/hub",
     "/api/audit",
+    "/api/catalog",
   ]) {
     app.use(prefix, requireSession);
   }
@@ -1060,15 +1109,37 @@ async function main() {
   app.get("/api/services", async (_req, res) => {
     try {
       const result = await listServicesHandler(registry, {}, defaultContext());
-      res.json(parseToolResult(result));
+      const parsed = parseToolResult(result) as { services?: Array<Record<string, unknown> & { name?: string }> };
+      // Enrich each entry with the catalog metadata (no-op when empty).
+      if (parsed?.services) {
+        for (const s of parsed.services) {
+          const entry = typeof s.name === "string" ? catalog.get(s.name) : undefined;
+          if (entry) s.catalog = entry;
+        }
+      }
+      res.json(parsed);
     } catch { res.status(500).json({ error: "Failed to list services" }); }
+  });
+
+  // Read-only view of the configured catalog. Gated by the same
+  // "catalog:read" permission Phase E4 added to DEFAULT_POLICY.
+  app.get("/api/catalog", need("catalog", "read"), (_req, res) => {
+    res.json({
+      services: catalog.list(),
+      count: catalog.count(),
+      configured: !!process.env.OMCP_SERVICE_CATALOG_FILE,
+    });
   });
 
   // Health endpoint for UI dashboard
   app.get("/api/health/:service", async (req, res) => {
     try {
-      const result = await getServiceHealthHandler(registry, { service: req.params.service }, defaultContext());
-      res.json(parseToolResult(result));
+      const service = String(req.params.service);
+      const result = await getServiceHealthHandler(registry, { service }, defaultContext());
+      const parsed = parseToolResult(result) as Record<string, unknown>;
+      const entry = catalog.get(service);
+      if (entry && parsed && typeof parsed === "object") parsed.catalog = entry;
+      res.json(parsed);
     } catch {
       res.status(500).json({ error: "Failed to get service health" });
     }
@@ -1084,7 +1155,10 @@ async function main() {
       for (const svc of services) {
         try {
           const result = await getServiceHealthHandler(registry, { service: svc.name }, defaultContext());
-          health[svc.name] = parseToolResult(result);
+          const h = parseToolResult(result) as Record<string, unknown>;
+          const entry = catalog.get(svc.name);
+          if (entry && h && typeof h === "object") h.catalog = entry;
+          health[svc.name] = h;
         } catch { health[svc.name] = { error: "failed to fetch health" }; }
       }
       res.json(health);
