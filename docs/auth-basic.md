@@ -136,3 +136,9 @@ The session cookie (`omcp_session`) is:
   stored in plaintext, never committed to git.
 - [ ] If you also expose `/mcp`, set `OMCP_API_KEYS` so the MCP transport
   isn't anonymous.
+
+## See also
+
+- [access-control.md](access-control.md) — the one-stop runbook covering
+  basic-mode auth alongside RBAC, audit log, redaction, rate limits,
+  reverse-proxy setup, and the investigation playbook.
