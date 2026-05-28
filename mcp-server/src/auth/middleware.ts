@@ -1,19 +1,15 @@
 /**
  * Express middleware wiring for the management-plane auth mode.
  *
- * When `OMCP_AUTH` is unset or "anonymous" (the default), the middleware
- * is a no-op and every existing handler behaves exactly as before.
+ * Split into two pieces by design — the cookie-parsing middleware always
+ * runs (so identity-aware handlers like /api/me always see req.session),
+ * and the protected-route gate is mounted explicitly on the routes that
+ * need it. There is no `if (publicPath) next()` shortcut anywhere — the
+ * decision of "what is public" is encoded by which middleware Express
+ * registers on which route, not by a string match at request time.
  *
- * When `OMCP_AUTH=basic`, the middleware:
- *   1. Resolves the request's session cookie and attaches the payload
- *      to `req.session` (always — both for protected and unprotected
- *      paths so `/api/me` etc. can see the identity).
- *   2. Rejects any request to a protected path that lacks a valid
- *      session with HTTP 401 + a small JSON body the UI can recognise.
- *
- * "Protected path" = anything under `/api/` except the always-public
- * discovery / login endpoints (`/api/me`, `/api/auth/*`). The `/mcp`
- * transport keeps using `auth/credentials.ts` bearer tokens.
+ * When `OMCP_AUTH` is unset or "anonymous" (the default) both middlewares
+ * are no-ops and every existing handler behaves exactly as before.
  */
 
 import type { NextFunction, Request, Response } from "express";
@@ -36,54 +32,41 @@ export interface AuthedRequest extends Request {
   session?: SessionPayload;
 }
 
-/** Paths that bypass the gate in basic mode, even when no session is present. */
-const ALWAYS_PUBLIC_PREFIXES = ["/api/me", "/api/auth/", "/api/info", "/api/openapi.json"];
-
-export function isAlwaysPublic(path: string): boolean {
-  for (const p of ALWAYS_PUBLIC_PREFIXES) {
-    // Exact match, or a child path under a directory-style prefix
-    // (one ending in "/"). Avoids accidentally matching e.g.
-    // `/api/members` when `/api/me` is on the list.
-    if (path === p) return true;
-    if (p.endsWith("/") && path.startsWith(p)) return true;
-  }
-  // Health probes are also always public so the readiness gate works
-  // before any session is established and Kubernetes can still probe.
-  if (path === "/healthz" || path === "/readyz" || path === "/metrics") return true;
-  return false;
-}
-
-/** Build the Express middleware that enforces the configured auth mode. */
-export function buildAuthMiddleware(runtime: AuthRuntime) {
-  return function authMiddleware(req: AuthedRequest, res: Response, next: NextFunction): void {
+/**
+ * Best-effort cookie resolver. Attaches `req.session` when present and
+ * valid; otherwise leaves it undefined. Always calls `next()`. Mount this
+ * globally so every handler can read the identity.
+ */
+export function buildSessionAttacher(runtime: AuthRuntime) {
+  return function sessionAttacher(req: AuthedRequest, _res: Response, next: NextFunction): void {
     if (runtime.mode === "anonymous" || !runtime.session) {
       next();
       return;
     }
-
-    // Resolve the session (best-effort) for every request so identity-aware
-    // handlers like /api/me can use it without re-parsing.
     const cookieHeader = req.headers.cookie || "";
     const raw = readCookie(cookieHeader);
     const payload = raw ? verifySession(raw, runtime.session) : null;
     if (payload) req.session = payload;
+    next();
+  };
+}
 
-    // Apply the gate only to the management plane. /mcp has its own
-    // bearer-token middleware (auth/credentials.ts) and the public paths
-    // listed above are skipped here.
-    if (!req.path.startsWith("/api/")) {
+/**
+ * Gate. Rejects requests that lack a valid session with HTTP 401 + a JSON
+ * body the UI's fetch wrapper recognises. Mount this on each protected
+ * route or router, NOT globally — paths the operator wants public
+ * (login, /api/me, /api/info, /healthz, ...) simply don't register it.
+ */
+export function buildRequireSession(runtime: AuthRuntime) {
+  return function requireSession(req: AuthedRequest, res: Response, next: NextFunction): void {
+    if (runtime.mode === "anonymous" || !runtime.session) {
       next();
       return;
     }
-    if (isAlwaysPublic(req.path)) {
+    if (req.session) {
       next();
       return;
     }
-    if (payload) {
-      next();
-      return;
-    }
-
     res.status(401).json({
       error: "authentication required",
       mode: runtime.mode,

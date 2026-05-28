@@ -29,10 +29,8 @@ import {
 } from "./auth/credentials.js";
 import {
   issueSession,
-  verifySession,
   setCookieHeader,
   clearCookieHeader,
-  readCookie,
   generateSecret,
   type SessionConfig,
 } from "./auth/session.js";
@@ -42,7 +40,8 @@ import {
   type LocalUsersFile,
 } from "./auth/local-users.js";
 import {
-  buildAuthMiddleware,
+  buildSessionAttacher,
+  buildRequireSession,
   type AuthMode,
   type AuthRuntime,
   type AuthedRequest,
@@ -518,10 +517,29 @@ async function main() {
     next();
   });
 
-  // Management-plane auth gate. No-op in anonymous mode, 401 on
-  // unauthenticated /api/* writes in basic mode (read-only paths and
-  // /api/auth/* / /api/me / /api/info / /api/openapi.json stay public).
-  app.use(buildAuthMiddleware(authRuntime));
+  // Management-plane auth: attach the session payload to every request
+  // (no decision logic here — anonymous mode is a no-op). The gate is
+  // mounted explicitly on each protected route prefix further down so
+  // there is no string-match-based "is this public?" branch anywhere.
+  app.use(buildSessionAttacher(authRuntime));
+  const requireSession = buildRequireSession(authRuntime);
+  // Protected route prefixes. /api/me, /api/auth/*, /api/info,
+  // /api/openapi.json deliberately don't appear here — they stay public.
+  for (const prefix of [
+    "/api/sources",
+    "/api/source-types",
+    "/api/services",
+    "/api/health",
+    "/api/health-thresholds",
+    "/api/topology",
+    "/api/settings",
+    "/api/connectors",
+    "/api/enterprise",
+    "/api/hub",
+    "/api/audit",
+  ]) {
+    app.use(prefix, requireSession);
+  }
 
   // k8s-convention liveness/readiness probes at the root of the path
   // tree, no /api prefix. Helm chart points its probes here. Cheap
@@ -669,7 +687,9 @@ async function main() {
       user: { sub: user.username, name: user.name, roles: user.roles ?? [] },
     });
   });
-  app.post("/api/auth/logout", (req, res) => {
+  // Same per-IP cap as login — defends against logout-as-disruption
+  // (an attacker spamming logouts at a forged session for another tab).
+  app.post("/api/auth/logout", loginRateLimit, (req, res) => {
     if (authRuntime.mode !== "basic" || !sessionCfg) {
       res.status(204).end();
       return;

@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { buildAuthMiddleware, isAlwaysPublic, type AuthRuntime } from "./middleware.js";
-import { issueSession, setCookieHeader, type SessionConfig } from "./session.js";
+import { buildSessionAttacher, buildRequireSession, type AuthRuntime } from "./middleware.js";
+import { issueSession, type SessionConfig } from "./session.js";
 
 const secret = "x".repeat(48);
 const sessionCfg: SessionConfig = { secret };
@@ -24,89 +24,77 @@ function mkRes() {
   } as unknown as import("express").Response & { statusCode: number; body: unknown };
 }
 
-test("isAlwaysPublic — health probes + auth + discovery are public", () => {
-  for (const p of [
-    "/healthz", "/readyz", "/metrics",
-    "/api/me",
-    "/api/auth/login", "/api/auth/logout",
-    "/api/info", "/api/openapi.json",
-  ]) {
-    assert.equal(isAlwaysPublic(p), true, `expected ${p} public`);
-  }
+test("session attacher — anonymous passes through unchanged, no session", () => {
+  const attach = buildSessionAttacher({ mode: "anonymous" });
+  const req = mkReq() as unknown as import("./middleware.js").AuthedRequest;
+  let called = false;
+  attach(req, mkRes() as unknown as import("express").Response, () => { called = true; });
+  assert.equal(called, true);
+  assert.equal(req.session, undefined);
 });
 
-test("isAlwaysPublic — management endpoints are not public", () => {
-  for (const p of ["/api/sources", "/api/services", "/api/settings", "/api/health"]) {
-    assert.equal(isAlwaysPublic(p), false, `expected ${p} not public`);
-  }
+test("session attacher — basic mode without cookie still flows, no session attached", () => {
+  const attach = buildSessionAttacher({ mode: "basic", session: sessionCfg });
+  const req = mkReq() as unknown as import("./middleware.js").AuthedRequest;
+  let called = false;
+  attach(req, mkRes() as unknown as import("express").Response, () => { called = true; });
+  assert.equal(called, true);
+  assert.equal(req.session, undefined);
 });
 
-test("anonymous mode — passes everything through unchanged", () => {
-  const mw = buildAuthMiddleware({ mode: "anonymous" });
-  const req = mkReq();
+test("session attacher — basic mode WITH valid cookie attaches session", () => {
+  const { cookie } = issueSession({ sub: "alice", name: "Alice", roles: ["operator"] }, sessionCfg);
+  const attach = buildSessionAttacher({ mode: "basic", session: sessionCfg });
+  const req = mkReq({ cookieHeader: `omcp_session=${cookie}` }) as unknown as import("./middleware.js").AuthedRequest;
+  let called = false;
+  attach(req, mkRes() as unknown as import("express").Response, () => { called = true; });
+  assert.equal(called, true);
+  assert.ok(req.session);
+  assert.equal(req.session?.sub, "alice");
+});
+
+test("session attacher — tampered cookie leaves session undefined and still flows", () => {
+  const { cookie } = issueSession({ sub: "alice", name: "Alice" }, sessionCfg);
+  const tampered = cookie.replace(/.$/, (c) => (c === "A" ? "B" : "A"));
+  const attach = buildSessionAttacher({ mode: "basic", session: sessionCfg });
+  const req = mkReq({ cookieHeader: `omcp_session=${tampered}` }) as unknown as import("./middleware.js").AuthedRequest;
+  let called = false;
+  attach(req, mkRes() as unknown as import("express").Response, () => { called = true; });
+  assert.equal(called, true);
+  assert.equal(req.session, undefined);
+});
+
+test("require-session — anonymous always allows", () => {
+  const gate = buildRequireSession({ mode: "anonymous" });
+  const req = mkReq() as unknown as import("./middleware.js").AuthedRequest;
   const res = mkRes() as ReturnType<typeof mkRes>;
   let called = false;
-  mw(req, res as unknown as import("express").Response, () => { called = true; });
+  gate(req, res as unknown as import("express").Response, () => { called = true; });
   assert.equal(called, true);
   assert.equal(res.statusCode, 0);
 });
 
-test("basic mode — public path without session still flows", () => {
+test("require-session — basic mode without session returns 401", () => {
   const runtime: AuthRuntime = { mode: "basic", session: sessionCfg };
-  const mw = buildAuthMiddleware(runtime);
-  const req = mkReq({ path: "/api/me" });
+  const gate = buildRequireSession(runtime);
+  const req = mkReq() as unknown as import("./middleware.js").AuthedRequest;
   const res = mkRes() as ReturnType<typeof mkRes>;
   let called = false;
-  mw(req, res as unknown as import("express").Response, () => { called = true; });
-  assert.equal(called, true);
-  assert.equal(res.statusCode, 0);
-});
-
-test("basic mode — protected path without session returns 401", () => {
-  const runtime: AuthRuntime = { mode: "basic", session: sessionCfg };
-  const mw = buildAuthMiddleware(runtime);
-  const req = mkReq({ path: "/api/sources" });
-  const res = mkRes() as ReturnType<typeof mkRes>;
-  let called = false;
-  mw(req, res as unknown as import("express").Response, () => { called = true; });
+  gate(req, res as unknown as import("express").Response, () => { called = true; });
   assert.equal(called, false);
   assert.equal(res.statusCode, 401);
   const body = res.body as Record<string, unknown>;
   assert.equal(body.code, "OMCP_AUTH_REQUIRED");
 });
 
-test("basic mode — protected path WITH session attaches req.session and flows", () => {
+test("require-session — basic mode WITH attached session flows through", () => {
   const runtime: AuthRuntime = { mode: "basic", session: sessionCfg };
-  const mw = buildAuthMiddleware(runtime);
-  const { cookie } = issueSession({ sub: "alice", name: "Alice", roles: ["operator"] }, sessionCfg);
-  const cookieHeader = `omcp_session=${cookie}`;
-  const req = mkReq({ path: "/api/sources", cookieHeader }) as unknown as import("./middleware.js").AuthedRequest;
+  const gate = buildRequireSession(runtime);
+  const req = mkReq() as unknown as import("./middleware.js").AuthedRequest;
+  req.session = { sub: "alice", name: "Alice", iat: 0, exp: Date.now() / 1000 + 60 };
   const res = mkRes() as ReturnType<typeof mkRes>;
   let called = false;
-  mw(req, res as unknown as import("express").Response, () => { called = true; });
+  gate(req, res as unknown as import("express").Response, () => { called = true; });
   assert.equal(called, true);
   assert.equal(res.statusCode, 0);
-  assert.ok(req.session, "session should be attached to request");
-  assert.equal(req.session?.sub, "alice");
-});
-
-test("basic mode — tampered cookie is rejected as 401", () => {
-  const runtime: AuthRuntime = { mode: "basic", session: sessionCfg };
-  const mw = buildAuthMiddleware(runtime);
-  const { cookie } = issueSession({ sub: "alice", name: "Alice" }, sessionCfg);
-  // Flip a character in the signature portion.
-  const tampered = cookie.replace(/.$/, (c) => (c === "A" ? "B" : "A"));
-  const cookieHeader = `omcp_session=${tampered}`;
-  const req = mkReq({ path: "/api/sources", cookieHeader });
-  const res = mkRes() as ReturnType<typeof mkRes>;
-  mw(req, res as unknown as import("express").Response, () => {
-    throw new Error("should not have called next");
-  });
-  assert.equal(res.statusCode, 401);
-});
-
-test("setCookieHeader (sanity) renders the omcp_session= cookie name", () => {
-  const { cookie } = issueSession({ sub: "x", name: "x" }, sessionCfg);
-  const hdr = setCookieHeader(cookie, sessionCfg);
-  assert.ok(hdr.startsWith("omcp_session="));
 });
