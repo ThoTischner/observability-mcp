@@ -1,7 +1,30 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { IdentityRateLimiter } from "./limiter.js";
+import { IdentityRateLimiter, resolveToolRatePerMin } from "./limiter.js";
+
+test("resolveToolRatePerMin — unset / empty / non-numeric returns default 60", () => {
+  assert.equal(resolveToolRatePerMin(undefined), 60);
+  assert.equal(resolveToolRatePerMin(""), 60);
+  assert.equal(resolveToolRatePerMin("not-a-number"), 60);
+  assert.equal(resolveToolRatePerMin("NaN"), 60);
+});
+
+test("resolveToolRatePerMin — zero / negative falls back to default (limit=0 would deny every call)", () => {
+  // Footgun pin: "0" looks like "disable" but the limiter treats it as
+  // "instantly over-cap". Treat as default so operators don't lock
+  // themselves out by mistake.
+  assert.equal(resolveToolRatePerMin("0"), 60);
+  assert.equal(resolveToolRatePerMin("-1"), 60);
+  assert.equal(resolveToolRatePerMin("-1000"), 60);
+});
+
+test("resolveToolRatePerMin — positive integer passes through; decimals floored", () => {
+  assert.equal(resolveToolRatePerMin("1"), 1);
+  assert.equal(resolveToolRatePerMin("120"), 120);
+  assert.equal(resolveToolRatePerMin("240"), 240);
+  assert.equal(resolveToolRatePerMin("60.7"), 60);
+});
 
 test("allows up to the configured limit, then denies", () => {
   const lim = new IdentityRateLimiter({ limit: 3, windowMs: 60_000 });

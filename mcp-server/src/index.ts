@@ -57,7 +57,7 @@ import { AuditLog } from "./audit/log.js";
 import { buildAuditMiddleware } from "./audit/middleware.js";
 import { readCatalogFile, CatalogStore } from "./catalog/loader.js";
 import { redactValue } from "./policy/redact.js";
-import { IdentityRateLimiter } from "./quota/limiter.js";
+import { IdentityRateLimiter, resolveToolRatePerMin } from "./quota/limiter.js";
 import { getPluginLoader } from "./connectors/loader.js";
 import {
   resolveHubCatalogUrl,
@@ -770,7 +770,7 @@ async function main() {
         catalogConfigured: catalog.count() > 0 || !!process.env.OMCP_SERVICE_CATALOG_FILE,
         redaction: REDACTION_ENABLED,
         trustProxy: !!(process.env.OMCP_TRUST_PROXY && process.env.OMCP_TRUST_PROXY !== "false"),
-        toolRatePerMin: Number(process.env.OMCP_TOOL_RATE_PER_MIN) || 60,
+        toolRatePerMin: resolveToolRatePerMin(process.env.OMCP_TOOL_RATE_PER_MIN),
       },
       plugins: loader.list().map((p) => ({
         name: p.name,
@@ -860,7 +860,7 @@ async function main() {
     });
     res.json({
       identities,
-      defaultLimit: Number(process.env.OMCP_TOOL_RATE_PER_MIN) || 60,
+      defaultLimit: resolveToolRatePerMin(process.env.OMCP_TOOL_RATE_PER_MIN),
       windowMs: 60_000,
     });
   });
@@ -1465,7 +1465,7 @@ async function main() {
   // configured) bypasses this — the global express-rate-limit IP gate
   // still applies. Override via OMCP_TOOL_RATE_PER_MIN.
   const toolRateLimiter = new IdentityRateLimiter({
-    limit: Number(process.env.OMCP_TOOL_RATE_PER_MIN) || 60,
+    limit: resolveToolRatePerMin(process.env.OMCP_TOOL_RATE_PER_MIN),
   });
 
   // Bearer/X-API-Key on every /mcp request; resolve the principal + its
