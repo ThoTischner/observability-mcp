@@ -40,19 +40,29 @@ sensible posture: signed sessions, an audit trail, redaction, and
 sliding-window per-identity caps.
 
 ```yaml
-# values.yaml fragment (Helm)
-env:
-  OMCP_AUTH: basic
-  OMCP_USERS_FILE: /etc/observability-mcp/users.json
-  OMCP_SESSION_SECRET:
+# values.yaml fragment (Helm) — extraEnv is the chart's pass-through
+# slot for ad-hoc env vars; see helm/observability-mcp/values.yaml.
+extraEnv:
+  - name: OMCP_AUTH
+    value: basic
+  - name: OMCP_USERS_FILE
+    value: /etc/observability-mcp/users.json
+  - name: OMCP_SESSION_SECRET
     valueFrom:
-      secretKeyRef: { name: omcp-session, key: secret }
-  OMCP_API_KEYS:
+      secretKeyRef:
+        name: omcp-session
+        key: secret
+  - name: OMCP_API_KEYS
     valueFrom:
-      secretKeyRef: { name: omcp-mcp-keys, key: keys }
-  OMCP_MGMT_AUDIT_FILE: /var/log/omcp/audit.jsonl
-  OMCP_TOOL_RATE_PER_MIN: "120"
-  # OMCP_REDACTION: on  # default
+      secretKeyRef:
+        name: omcp-mcp-keys
+        key: keys
+  - name: OMCP_MGMT_AUDIT_FILE
+    value: /var/log/omcp/audit.jsonl
+  - name: OMCP_TOOL_RATE_PER_MIN
+    value: "120"
+  # - name: OMCP_REDACTION
+  #   value: "on"            # default
   # OMCP_AUTH_ALLOW_FALLBACK is intentionally absent — boot must fail
   # closed if the users file is missing.
 ```
