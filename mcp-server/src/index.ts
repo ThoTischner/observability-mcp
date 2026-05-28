@@ -177,8 +177,12 @@ async function main() {
   // parse as JSON. The HTTP `/api/services` + `/api/health` handlers
   // call the loader.ts CatalogStore directly; this path mirrors that
   // behaviour for MCP clients (Claude Desktop, the agent, ...).
-  type McpToolText = { content: Array<{ text: string; type?: string }> };
-  function enrichToolServicesText(result: McpToolText): McpToolText {
+  // McpToolResult is whatever the wrapped handler returned — keep it
+  // untyped so we don't fight the SDK's narrow `content: [{type:"text",...}]`
+  // overload. We pass the value back unchanged when it doesn't parse,
+  // and otherwise mutate the parsed JSON before re-stringifying into a
+  // fresh wrapper that mirrors the handler's own shape.
+  function enrichToolServicesText<T extends { content: Array<{ text: string }> }>(result: T): T {
     try {
       const parsed = JSON.parse(result.content[0]?.text ?? "{}");
       if (parsed && Array.isArray(parsed.services)) {
@@ -187,17 +191,19 @@ async function main() {
           if (entry) s.catalog = entry;
         }
       }
-      return { content: [{ ...result.content[0], text: JSON.stringify(parsed) }] };
+      const clone = { ...result, content: result.content.map((c, i) => i === 0 ? { ...c, text: JSON.stringify(parsed) } : c) };
+      return clone as T;
     } catch {
       return result;
     }
   }
-  function enrichToolHealthText(result: McpToolText, serviceName: string): McpToolText {
+  function enrichToolHealthText<T extends { content: Array<{ text: string }> }>(result: T, serviceName: string): T {
     try {
       const parsed = JSON.parse(result.content[0]?.text ?? "{}");
       const entry = serviceName ? catalog.get(serviceName) : undefined;
       if (entry && parsed && typeof parsed === "object") parsed.catalog = entry;
-      return { content: [{ ...result.content[0], text: JSON.stringify(parsed) }] };
+      const clone = { ...result, content: result.content.map((c, i) => i === 0 ? { ...c, text: JSON.stringify(parsed) } : c) };
+      return clone as T;
     } catch {
       return result;
     }
