@@ -84,8 +84,19 @@ server is still the authoritative gate — UI hiding is purely a UX win.
 Every mutating `/api/*` request produces one append-only entry with
 actor + resource + action + status + IP + the optional `:name` path
 parameter as `target`. Entries are hash-chained: each entry's `hash`
-covers the previous entry's `hash`, so `scripts/verify-audit.mjs`
-(future) can prove the log hasn't been silently truncated or reordered.
+covers the previous entry's `hash`, so
+[`scripts/verify-audit.mjs`](../scripts/verify-audit.mjs) can prove
+the log hasn't been silently truncated or reordered:
+
+```bash
+node scripts/verify-audit.mjs /var/log/omcp/audit.jsonl
+# → { "ok": true, "entries": 1234, "tipHash": "…" }   (exit 0)
+# or, on a tamper:
+# → { "ok": false, "entries": 1234, "brokenAt": 42, "reason": "…" }   (exit 1)
+```
+
+The script uses only node built-ins (no `node_modules`) so it works
+straight from a source checkout on an air-gapped operator workstation.
 
 - File path: `OMCP_MGMT_AUDIT_FILE` (JSONL, append-only). Unset → an
   in-memory ring of the last 500 entries serves the same `GET /api/audit`
@@ -199,6 +210,7 @@ node -e "
 "
 ```
 
-A break reports `{ ok: false, brokenAt: N, reason: '...' }`. Most
-common cause is hand-editing the file; restore from backup and replay
-any missed changes via the Web UI.
+A break reports `{ ok: false, brokenAt: N, reason: '...' }` and the
+script exits non-zero so a cron-driven monitor can alert. Most common
+cause is hand-editing the file; restore from backup and replay any
+missed changes via the Web UI.
