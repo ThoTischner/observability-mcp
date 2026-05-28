@@ -12,7 +12,7 @@
  * are no-ops and every existing handler behaves exactly as before.
  */
 
-import type { NextFunction, Request, Response } from "express";
+import type { NextFunction, Request, RequestHandler, Response } from "express";
 
 import { readCookie, verifySession, type SessionPayload, type SessionConfig } from "./session.js";
 
@@ -37,24 +37,24 @@ export interface AuthedRequest extends Request {
  * valid; otherwise leaves it undefined. Always calls `next()`. Mount this
  * globally so every handler can read the identity.
  */
-export function buildSessionAttacher(runtime: AuthRuntime) {
+export function buildSessionAttacher(runtime: AuthRuntime): RequestHandler {
   const sessionCfg = runtime.session;
   // In anonymous mode the secret is meaningless — verifySession would
   // throw on an empty secret — so install a true no-op middleware and
   // skip every per-request branch.
   if (runtime.mode === "anonymous" || !sessionCfg) {
-    return function noopAttacher(_req: AuthedRequest, _res: Response, next: NextFunction): void {
+    return function noopAttacher(_req: Request, _res: Response, next: NextFunction): void {
       next();
     };
   }
-  return function sessionAttacher(req: AuthedRequest, _res: Response, next: NextFunction): void {
+  return function sessionAttacher(req: Request, _res: Response, next: NextFunction): void {
     // verifySession is a pure parse + HMAC verify. It safely returns
     // null on empty / null / malformed input, so call it unconditionally
     // and let the result speak for itself — no attacker-controlled
     // branch decides whether the check runs.
     const raw = readCookie(req.headers.cookie || "");
     const payload = verifySession(raw, sessionCfg);
-    if (payload) req.session = payload;
+    if (payload) (req as AuthedRequest).session = payload;
     next();
   };
 }
@@ -65,13 +65,13 @@ export function buildSessionAttacher(runtime: AuthRuntime) {
  * route or router, NOT globally — paths the operator wants public
  * (login, /api/me, /api/info, /healthz, ...) simply don't register it.
  */
-export function buildRequireSession(runtime: AuthRuntime) {
-  return function requireSession(req: AuthedRequest, res: Response, next: NextFunction): void {
+export function buildRequireSession(runtime: AuthRuntime): RequestHandler {
+  return function requireSession(req: Request, res: Response, next: NextFunction): void {
     if (runtime.mode === "anonymous" || !runtime.session) {
       next();
       return;
     }
-    if (req.session) {
+    if ((req as AuthedRequest).session) {
       next();
       return;
     }

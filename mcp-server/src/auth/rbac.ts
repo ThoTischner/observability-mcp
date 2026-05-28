@@ -15,7 +15,7 @@
  * middleware (mounted in index.ts alongside `requireSession`).
  */
 
-import type { NextFunction, Response } from "express";
+import type { NextFunction, Request, RequestHandler, Response } from "express";
 
 import type { AuthedRequest, AuthRuntime } from "./middleware.js";
 
@@ -98,14 +98,14 @@ export function buildRequirePermission(
   resource: Resource,
   action: Action,
   policy: Record<string, Permission[]> = DEFAULT_POLICY,
-) {
+): RequestHandler {
   if (runtime.mode === "anonymous") {
-    return function rbacNoop(_req: AuthedRequest, _res: Response, next: NextFunction): void {
+    return function rbacNoop(_req: Request, _res: Response, next: NextFunction): void {
       next();
     };
   }
-  return function rbacGate(req: AuthedRequest, res: Response, next: NextFunction): void {
-    const roles = req.session?.roles;
+  return function rbacGate(req: Request, res: Response, next: NextFunction): void {
+    const roles = (req as AuthedRequest).session?.roles;
     if (hasPermission(roles, resource, action, policy)) {
       next();
       return;
