@@ -56,6 +56,10 @@ export function buildOpenApiSpec(version: string): OpenAPIV3_1.Document {
       { name: "settings", description: "Runtime server configuration." },
       { name: "metrics-config", description: "Per-source metric definitions." },
       { name: "self", description: "Server liveness and Prometheus metrics." },
+      { name: "auth", description: "Management-plane session login / logout / identity." },
+      { name: "audit", description: "Tamper-evident audit log of /api/* mutations." },
+      { name: "usage", description: "Per-identity rate-limit snapshot for /mcp callers." },
+      { name: "catalog", description: "Operator-curated service catalog." },
     ],
     paths: {
       "/api/sources": {
@@ -183,6 +187,176 @@ export function buildOpenApiSpec(version: string): OpenAPIV3_1.Document {
           tags: ["self"],
           summary: "This document.",
           responses: { "200": { description: "OpenAPI 3.1 document." } },
+        },
+      },
+      "/api/me": {
+        get: {
+          tags: ["auth"],
+          summary: "Current identity, mode and granted permissions.",
+          responses: {
+            "200": {
+              description: "Identity snapshot. `authenticated: false` in anonymous mode or when the session cookie is missing/invalid.",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      authenticated: { type: "boolean" },
+                      mode: { type: "string", enum: ["anonymous", "basic"] },
+                      user: {
+                        type: "object",
+                        properties: {
+                          sub: { type: "string" },
+                          name: { type: "string" },
+                          roles: { type: "array", items: { type: "string" } },
+                        },
+                      },
+                      permissions: {
+                        type: "array",
+                        items: {
+                          type: "object",
+                          properties: {
+                            resource: { type: "string" },
+                            action: { type: "string", enum: ["read", "write", "delete"] },
+                          },
+                        },
+                      },
+                      exp: { type: "integer", description: "Cookie expiry (seconds since epoch)." },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/api/auth/login": {
+        post: {
+          tags: ["auth"],
+          summary: "Sign in (basic mode only).",
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["username", "password"],
+                  properties: {
+                    username: { type: "string" },
+                    password: { type: "string", format: "password" },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            "200": { description: "Set-Cookie carries the signed session." },
+            "400": { description: "Missing username or password." },
+            "401": { description: "Invalid credentials." },
+            "429": { description: "Too many login attempts." },
+            "503": { description: "Server is in anonymous mode and does not accept logins." },
+          },
+        },
+      },
+      "/api/auth/logout": {
+        post: {
+          tags: ["auth"],
+          summary: "Sign out — clears the session cookie.",
+          responses: { "204": { description: "Cookie cleared." } },
+        },
+      },
+      "/api/audit": {
+        get: {
+          tags: ["audit"],
+          summary: "Recent management-plane audit entries (most recent first).",
+          parameters: [
+            { name: "from", in: "query", schema: { type: "string", format: "date-time" } },
+            { name: "to", in: "query", schema: { type: "string", format: "date-time" } },
+            { name: "actor", in: "query", schema: { type: "string" } },
+            { name: "action", in: "query", schema: { type: "string" } },
+            { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 500, default: 100 } },
+          ],
+          responses: {
+            "200": {
+              description: "Audit feed plus the chain's tip hash.",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      entries: { type: "array", items: { type: "object", additionalProperties: true } },
+                      tipHash: { type: "string" },
+                      persisted: { type: "boolean" },
+                    },
+                  },
+                },
+              },
+            },
+            "401": { description: "Unauthenticated (basic mode)." },
+            "403": { description: "Missing audit:read permission." },
+          },
+        },
+      },
+      "/api/usage": {
+        get: {
+          tags: ["usage"],
+          summary: "Per-identity windowed call count for /mcp callers.",
+          parameters: [
+            { name: "actor", in: "query", schema: { type: "string" }, description: "Narrow to a single identity." },
+          ],
+          responses: {
+            "200": {
+              description: "Usage snapshot. Anonymous /mcp traffic does not appear here.",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      identities: {
+                        type: "array",
+                        items: {
+                          type: "object",
+                          properties: {
+                            actor: { type: "string" },
+                            count: { type: "integer" },
+                            limit: { type: "integer" },
+                            windowMs: { type: "integer" },
+                          },
+                        },
+                      },
+                      defaultLimit: { type: "integer" },
+                      windowMs: { type: "integer" },
+                    },
+                  },
+                },
+              },
+            },
+            "403": { description: "Missing audit:read permission." },
+          },
+        },
+      },
+      "/api/catalog": {
+        get: {
+          tags: ["catalog"],
+          summary: "Loaded service catalog (owner / tier / on-call / SLO).",
+          responses: {
+            "200": {
+              description: "Catalog map keyed by service name.",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      services: { type: "object", additionalProperties: true },
+                      count: { type: "integer" },
+                      configured: { type: "boolean", description: "true when OMCP_SERVICE_CATALOG_FILE is set." },
+                    },
+                  },
+                },
+              },
+            },
+            "403": { description: "Missing catalog:read permission." },
+          },
         },
       },
     },
