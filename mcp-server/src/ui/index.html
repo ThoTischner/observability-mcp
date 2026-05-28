@@ -2878,7 +2878,7 @@ function sortIndClass(key){
 
 function srcRow(s){
   const sc=!s.enabled?'dot-disabled':s.status==='up'?'dot-up':'dot-down';
-  return `<div class="source-row" data-src="${esc(s.name)}"><div class="dot ${sc}"></div><div class="source-info"><div class="name">${esc(s.name)}<span class="tag tag-type">${esc(s.type)}</span>${s.signalType?`<span class="tag tag-${s.signalType}">${s.signalType}</span>`:''}</div><div class="url">${esc(s.url)}</div></div>${s.latencyMs?`<span class="tag-latency">${s.latencyMs}ms</span>`:''}<div class="source-actions" onclick="event.stopPropagation()"><label class="toggle"><input type="checkbox" ${s.enabled?'checked':''} onchange="toggleSource('${esc(s.name)}')"><span class="slider"></span></label><button class="btn-icon" onclick="openEditModal('${esc(s.name)}')">&#9998;</button><button class="btn-icon" onclick="openDeleteConfirm('source','${esc(s.name)}')">&#128465;</button></div></div>`;
+  return `<div class="source-row" data-src="${esc(s.name)}"><div class="dot ${sc}"></div><div class="source-info"><div class="name">${esc(s.name)}<span class="tag tag-type">${esc(s.type)}</span>${s.signalType?`<span class="tag tag-${s.signalType}">${s.signalType}</span>`:''}</div><div class="url">${esc(s.url)}</div></div>${s.latencyMs?`<span class="tag-latency">${s.latencyMs}ms</span>`:''}<div class="source-actions" onclick="event.stopPropagation()"><label class="toggle" data-rbac="sources:write"><input type="checkbox" ${s.enabled?'checked':''} onchange="toggleSource('${esc(s.name)}')"><span class="slider"></span></label><button class="btn-icon" data-rbac="sources:write" title="Edit source" aria-label="Edit source" onclick="openEditModal('${esc(s.name)}')">&#9998;</button><button class="btn-icon" data-rbac="sources:delete" title="Delete source" aria-label="Delete source" onclick="openDeleteConfirm('source','${esc(s.name)}')">&#128465;</button></div></div>`;
 }
 function renderSources() {
   const emptyDash = richEmpty({
@@ -2931,6 +2931,10 @@ function renderSources() {
     if (ev.target.closest('.source-actions, th.sortable')) return;
     srcDetail(el.getAttribute('data-src'));
   }));
+  // Re-apply RBAC visibility — the new rows just got data-rbac="…" on
+  // the per-row edit/delete/toggle controls and need to be hidden for
+  // viewers who can't operate them. Idempotent.
+  if (typeof omcpApplyRbacToDom === 'function') omcpApplyRbacToDom();
 }
 function srcDetail(name){
   const s=sourcesData.find(x=>x.name===name);
