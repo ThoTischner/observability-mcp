@@ -6,6 +6,95 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.8.0] — 2026-05-28
+
+A governance-and-polish release. Everything ships **off by default** —
+existing single-user demos keep working exactly as before — but the
+opt-in machinery for multi-user enterprise deployments is now complete.
+
+### Added — governance plane (#229–#237)
+
+- **Basic-mode auth** (`OMCP_AUTH=basic` + `OMCP_USERS_FILE`): signed
+  HttpOnly session cookies, scrypt-hashed local users, login flow in
+  the Web UI with global fetch-wrapper that catches
+  `401 OMCP_AUTH_REQUIRED` and replays the original request after
+  sign-in. `scripts/hash-password.mjs` mints users without a host
+  npm install. Fail-CLOSED on misconfig (override via
+  `OMCP_AUTH_ALLOW_FALLBACK`). Docs:
+  [auth-basic.md](docs/auth-basic.md). PRs #229, #230.
+- **Role-based access control** with built-in viewer / operator / admin
+  roles. Per-route `need(resource, action)` gates wired onto 11
+  mutating `/api/*` routes. `/api/me` surfaces granted permissions so
+  the Web UI hides write controls users can't operate. PR #231.
+- **Tamper-evident audit log** — JSONL with a SHA-256 hash chain,
+  replayed on restart so seq / tipHash resume cleanly.
+  `OMCP_MGMT_AUDIT_FILE` toggles file persistence; otherwise an
+  in-memory ring of the last 500 entries serves the new
+  `GET /api/audit` endpoint. Renders on the Audit Log page alongside
+  the existing entitlement-gate feed. PR #232.
+- **Service catalog** (`OMCP_SERVICE_CATALOG_FILE`) — operator-curated
+  ownership / criticality / on-call / SLO metadata, hooked into
+  `/api/services`, `/api/health`, and the `list_services` /
+  `get_service_health` MCP tools so the agent sees the same context
+  the operator does. PR #233.
+- **PII / secret redaction** on `query_logs` MCP output: emails, IPv4,
+  IPv6 (incl. `::1` / `::ffff:v4`), bearer tokens, JWTs, prefixed
+  api-keys. Counts surface in a top-level `_redacted` hint. Opt-out
+  via `OMCP_REDACTION=off`. Docs:
+  [redaction.md](docs/redaction.md). PR #234.
+- **Per-identity rate limit** on the `/mcp` HTTP transport. Default
+  60 req/min, configurable via `OMCP_TOOL_RATE_PER_MIN`. Denied
+  requests return HTTP 429 with `Retry-After` and a JSON code
+  `OMCP_IDENTITY_RATE_LIMIT`. PR #235.
+- **Consolidated access-control runbook**
+  [docs/access-control.md](docs/access-control.md) — one stop for
+  every knob above, a Helm values fragment, and a "who/why"
+  investigation runbook. PR #237.
+
+### Added — UI polish (#218–#224)
+
+- **Playwright UI smoke** workflow on every PR — boots the demo stack
+  and asserts every primary tab renders without console errors, the
+  theme toggle flips, the MCP handshake completes. PR #218.
+- **Side rail collapse-to-icon** affordance with native `title`
+  tooltips; auto-collapses on viewports narrower than 1100px. PR #223.
+- **Sortable tables, live filter inputs, comfortable/compact density
+  toggle** on the Sources and Services lists. PR #220.
+- **Rich empty states** with icon + title + CTA replacing the bare
+  `⌀` glyph; distinguishes loading vs empty. PR #221.
+- **Keyboard navigation + zoom toolbar + edge labels** on the topology
+  graph. Tab cycles nodes, Enter inspects, Esc clears, arrows move
+  focus to the spatially-nearest neighbour. PR #222.
+- **Source-form validation + Settings dirty-state save buttons**.
+  PR #224.
+- **Inline-style purge (first pass)** — 151 → 117 inline `style=`
+  attributes consolidated into utility classes. PR #219.
+
+### Added — distribution / docs
+
+- **README hero rewrite** with the cross-namespace blast-radius
+  benchmark table above the fold, plus an inline `.mcp.json` snippet.
+  PR #225.
+- **Honest comparison page**
+  [docs/comparison.md](docs/comparison.md) vs Datadog Bits AI,
+  HolmesGPT, Robusta — source-cited, no invented numbers. PR #226.
+- **Onboarding Make targets** `make connect-claude-code`,
+  `make connect-cursor`, `make doctor`. PR #227.
+- **Wider npm keywords + GitHub-sponsors funding link + supply-chain
+  verification docs** in SECURITY.md. PR #228.
+
+### Changed
+
+- **System font stack everywhere** — dropped the `rsms.me` Inter CDN
+  reference; the Web UI renders cleanly behind an air-gap with no
+  external network access at all. PR #236.
+
+### Internal
+
+- Sliding-window rate limiter, scrypt password hashing, HMAC-signed
+  cookies, canonical-JSON audit chain — all implemented with node
+  built-ins, **no new runtime dependencies**.
+
 ## [1.4.0] — 2026-05-14
 
 ### Added
