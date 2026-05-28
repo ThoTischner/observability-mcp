@@ -1033,6 +1033,18 @@
 
     .is-hidden { display: none; }
 
+    /* Deployment-misconfig warning bar — sits between the masthead and
+       the page body. Subtle danger-tint so it doesn't compete with the
+       primary content but is impossible to miss while scrolling. */
+    .omcp-warning-bar {
+      padding: 8px 16px;
+      background: var(--danger-soft);
+      color: var(--danger);
+      border-bottom: 1px solid rgba(239, 91, 110, 0.35);
+      font-size: var(--fs-sm); line-height: 1.4;
+      text-align: center;
+    }
+
     /* ===== Density variants =====
        `data-density="compact"` on <html> shrinks row + cell padding
        across lists, tables and cards so dense operator workloads fit
@@ -1257,6 +1269,12 @@
     <button class="theme-toggle" id="theme-toggle" title="Toggle light / dark" aria-label="Toggle theme" onclick="toggleTheme()">◐</button>
     <button class="btn btn-ghost btn-sm" onclick="refresh()">Refresh</button>
   </header>
+
+  <!-- Governance misconfig banner — populated by omcpCheckGovernance()
+       from /api/info. Hidden by default; the JS makes it visible when
+       there is something the operator needs to fix (currently only the
+       ephemeral session secret case). -->
+  <div id="omcp-warning-bar" class="omcp-warning-bar" style="display:none" role="alert"></div>
 
   <!-- Login modal — shown when /api/* returns 401 OMCP_AUTH_REQUIRED -->
   <div class="modal-overlay" id="login-modal">
@@ -2035,7 +2053,33 @@ async function omcpSyncIdentity() {
     omcpApplyRbacToDom();
   } catch (e) { if (badge) badge.style.display = 'none'; }
 }
-window.addEventListener('DOMContentLoaded', omcpSyncIdentity);
+
+// Reads /api/info once at boot to surface deployment-misconfig warnings
+// the operator should fix. Currently only one trigger: the auth secret
+// is process-ephemeral (OMCP_SESSION_SECRET unset in basic mode), which
+// means every sign-in dies on restart. Pure additive — no banner shown
+// when the deployment is clean.
+async function omcpCheckGovernance() {
+  try {
+    const r = await _omcpRawFetch('/api/info');
+    if (!r.ok) return;
+    const info = await r.json();
+    const g = info && info.governance;
+    if (!g) return;
+    if (g.authMode === 'basic' && g.authSecretEphemeral) {
+      const bar = document.getElementById('omcp-warning-bar');
+      if (bar) {
+        bar.textContent = '⚠ OMCP_SESSION_SECRET is not set — every sign-in will be lost on server restart. Set a stable value in production.';
+        bar.style.display = '';
+      }
+    }
+  } catch (e) { /* /api/info unreachable — no banner */ }
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  omcpSyncIdentity();
+  omcpCheckGovernance();
+});
 
 // --- Rail collapse toggle (icon-only mode) ---
 function toggleRail(){
