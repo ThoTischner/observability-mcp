@@ -74,3 +74,10 @@ flip redaction off for one tool call without restarting the server.
 docker run --rm -w /app -v "$(pwd)/mcp-server:/app" node:20-alpine \
   sh -c "npm i --silent && npx tsx --test src/policy/redact.test.ts"
 ```
+
+## See also
+
+- [access-control.md](access-control.md) — the runbook for the surrounding
+  governance layers (basic-mode auth, RBAC, audit log, rate limits) and
+  the investigation playbook entry "Why are my logs returning
+  `[redacted-email]`?".
