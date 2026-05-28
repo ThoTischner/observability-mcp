@@ -59,11 +59,14 @@ const PATTERNS: Array<{ category: RedactionCategory; re: RegExp }> = [
   { category: "jwt", re: /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g },
   { category: "bearer", re: /\b[Bb]earer\s+[A-Za-z0-9._\-+/=]{12,}\b/g },
   { category: "api-key", re: /\b(?:api[_-]?key|x-api-key|token|secret)[=:]\s*['"]?[A-Za-z0-9._\-+/=]{16,}['"]?/gi },
-  { category: "ipv4", re: /\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b/g },
   // ipv6 — covers full, mid-compressed, leading "::loopback" / "::ffff:v4"
   // mapped forms, and "::1". Trailing-only `xxxx::` shapes are rare in
-  // operational logs and intentionally not covered.
+  // operational logs and intentionally not covered. MUST run before
+  // ipv4 so that the IPv4-mapped form (`::ffff:192.168.1.42`) is
+  // classified as IPv6 rather than having ipv4 eat the dotted tail
+  // and leave a half-redacted `::ffff:[redacted-ipv4]` token.
   { category: "ipv6", re: /\b(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\b|\b(?:[0-9a-fA-F]{1,4}:){1,6}(?::[0-9a-fA-F]{1,4}){1,6}\b|::1\b|::ffff:(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b/g },
+  { category: "ipv4", re: /\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b/g },
 ];
 
 function emptyCounts(): Record<RedactionCategory, number> {
