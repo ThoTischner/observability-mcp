@@ -36,6 +36,16 @@ plus stricter redaction by default.
   v1.8.0 — operators importing the spec into Insomnia / Postman /
   OpenAPI codegens now see `/api/me`, `/api/auth/{login,logout}`,
   `/api/audit`, `/api/usage`, `/api/catalog`, `/api/policy`. #245
+- **"Load more" button** on the Web UI's Management changes audit
+  table — bumps the page size from the default 50 to the in-memory
+  ring cap (500) without curl-ing the API. #248
+- **`verify-audit.mjs --quiet`** flag for unattended cron monitoring —
+  silent on a healthy chain, still loud + JSON-on-stdout on a break.
+  `docs/access-control.md` ships a sample cron line. #249
+- **Hot-reload of `OMCP_USERS_FILE`** on the next login attempt —
+  edit the users file at runtime, the change takes effect for the
+  very next sign-in. One info log line per actual reload; transient
+  read errors keep the cached set so logins continue uninterrupted. #250
 
 ## [1.8.0] — 2026-05-28
 
