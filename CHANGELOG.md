@@ -6,6 +6,37 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+Patch-level refinements on top of 1.8.0. None of these break existing
+deployments — operators upgrading from 1.8.0 see only additive surface
+plus stricter redaction by default.
+
+### Added
+- **`GET /api/policy`** (admin-only) — read-only view of the active
+  `DEFAULT_POLICY` so operators can debug "why did role X get a 403?"
+  without a source checkout. #246
+- **`GET /api/usage`** — per-identity windowed call-count snapshot for
+  `/mcp` callers, gated by `audit:read`. #244
+- **AWS access keys, Slack tokens, GitHub PATs and PEM private-key
+  blocks** added to the `query_logs` redactor. The four new patterns
+  run before the generic `api-key` matcher so their distinctive
+  prefixes win. #243
+- **`scripts/verify-audit.mjs`** — offline audit-chain verifier
+  (pure node built-ins, no `node_modules` needed). Exits 0 on a clean
+  chain and 1 with `{ brokenAt, reason }` on the first failure.
+  Six `node:test` end-to-end cases pin the CLI behaviour contract.
+  #240, #242
+- **15s auto-refresh** on the Audit Log / Access Control / Products /
+  Entitlement pages, gated on `.active` + `document.hidden` so
+  backgrounded tabs go quiet. #241
+- **Per-row source actions hidden for viewers** — closes the E2 follow-up
+  the reviewer flagged in #231. Edit / Delete / toggle buttons in each
+  source row now carry `data-rbac` and respect the current user's
+  permission set the same way the static dashboard CTAs do. #239
+- **OpenAPI 3.1 spec covers the six new `/api/*` endpoints** added in
+  v1.8.0 — operators importing the spec into Insomnia / Postman /
+  OpenAPI codegens now see `/api/me`, `/api/auth/{login,logout}`,
+  `/api/audit`, `/api/usage`, `/api/catalog`, `/api/policy`. #245
+
 ## [1.8.0] — 2026-05-28
 
 A governance-and-polish release. Everything ships **off by default** —
