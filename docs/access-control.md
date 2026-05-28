@@ -189,6 +189,23 @@ The agent sees ownership context inline — no separate CMDB hop.
 Without the env var the file is missing → empty catalog → enrichment
 is a no-op.
 
+## Behind a reverse proxy
+
+By default `req.ip` is the raw socket address, so a fronting nginx / Envoy
+/ ingress controller makes every audit entry look like `127.0.0.1`. Set
+`OMCP_TRUST_PROXY` to one of:
+
+| Value | Meaning |
+|---|---|
+| `true` | trust every upstream hop (Express default-on shape) |
+| `loopback` | trust `127.0.0.1` / `::1` only (sensible same-host nginx default) |
+| an integer | trust the last *n* hops |
+| comma-separated IPs | explicit list of upstreams to trust |
+
+Unset / `false` keeps the safe default. The same setting also fixes the
+`Secure` cookie attribute behind TLS-terminating proxies (the server
+detects HTTPS via `req.secure || X-Forwarded-Proto`).
+
 ## Investigation runbook
 
 ### "Who changed source `payment-prod` yesterday?"

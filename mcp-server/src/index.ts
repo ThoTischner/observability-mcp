@@ -563,6 +563,32 @@ async function main() {
 
   // --- HTTP server ---
   const app = express();
+
+  // Trust-proxy: when set, Express will read req.ip / req.secure from
+  // X-Forwarded-For + X-Forwarded-Proto. OFF by default — forging those
+  // headers behind a misconfigured deployment is the kind of mistake
+  // that gives every audit entry the same client IP. Set
+  // `OMCP_TRUST_PROXY` to:
+  //   "true"            — trust every hop (Express default-on shape)
+  //   "loopback"        — trust 127.0.0.1 / ::1 only (sensible default
+  //                       when running behind a same-host nginx)
+  //   "<n>"             — trust the last <n> hops
+  //   "<ip>,<ip>"       — explicit list (single value or comma-separated)
+  // Any falsy / unset value leaves it OFF so req.ip stays the raw
+  // socket address.
+  const trustProxy = process.env.OMCP_TRUST_PROXY;
+  if (trustProxy && trustProxy !== "false") {
+    if (trustProxy === "true") {
+      app.set("trust proxy", true);
+    } else if (/^\d+$/.test(trustProxy)) {
+      app.set("trust proxy", parseInt(trustProxy, 10));
+    } else {
+      // string or comma-separated IPs / "loopback" / etc — let Express's
+      // parser handle the lookup (it accepts any of the above forms).
+      app.set("trust proxy", trustProxy);
+    }
+  }
+
   app.use(express.json({ limit: "1mb" }));
 
   // Security headers
