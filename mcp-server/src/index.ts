@@ -759,6 +759,19 @@ async function main() {
         platform: process.platform,
         arch: process.arch,
       },
+      // Governance posture — surfaces the active management-plane
+      // configuration so external dashboards / discovery probes don't
+      // need a session to learn the deployment shape. Booleans only;
+      // file paths and the session secret stay private.
+      governance: {
+        authMode: authRuntime.mode,
+        authSecretEphemeral: !!authRuntime.secretEphemeral,
+        auditPersisted: !!process.env.OMCP_MGMT_AUDIT_FILE,
+        catalogConfigured: catalog.count() > 0 || !!process.env.OMCP_SERVICE_CATALOG_FILE,
+        redaction: REDACTION_ENABLED,
+        trustProxy: !!(process.env.OMCP_TRUST_PROXY && process.env.OMCP_TRUST_PROXY !== "false"),
+        toolRatePerMin: Number(process.env.OMCP_TOOL_RATE_PER_MIN) || 60,
+      },
       plugins: loader.list().map((p) => ({
         name: p.name,
         source: p.source,
