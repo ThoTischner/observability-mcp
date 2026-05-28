@@ -3018,9 +3018,22 @@ function renderServices() {
     return;
   }
   const visible = servicesData.filter(filterSvcRow);
+  // Catalog enrichment is optional — when /api/services returned a
+  // `.catalog` field (because OMCP_SERVICE_CATALOG_FILE is set and
+  // the service name matched an entry), surface the most useful
+  // fields inline: owner chip, criticality tier pill, on-call link.
+  // Otherwise the row renders exactly as before.
+  const catalogStrip = (c) => {
+    if (!c) return '';
+    const parts = [];
+    if (c.owner) parts.push(`<span class="chip">owner: ${esc(c.owner)}</span>`);
+    if (c.tier)  parts.push(`<span class="chip">${esc(c.tier)}</span>`);
+    if (c.onCall) parts.push(`<a class="chip" href="${esc(c.onCall)}" target="_blank" rel="noopener">on-call ↗</a>`);
+    return parts.length ? ` <span class="row-inline gap-2">${parts.join('')}</span>` : '';
+  };
   const rowsHtml = visible.length === 0
     ? `<div class="empty">No services match "${esc(svcFilter)}".</div>`
-    : visible.map(s=>`<div class="service-row" data-svc="${esc(s.name)}"><div><span class="name">${esc(s.name)}</span>${s.signalTypes.map(t=>`<span class="tag tag-${t}">${t}</span>`).join('')}</div><span class="t-muted t-sm">${s.sources.join(', ')}</span></div>`).join('');
+    : visible.map(s=>`<div class="service-row" data-svc="${esc(s.name)}"><div><span class="name">${esc(s.name)}</span>${s.signalTypes.map(t=>`<span class="tag tag-${t}">${t}</span>`).join('')}${catalogStrip(s.catalog)}</div><span class="t-muted t-sm">${s.sources.join(', ')}</span></div>`).join('');
   if (sl) {
     const filterBar = `<div class="list-filter">
       <input id="svc-filter" type="search" placeholder="Filter services by name or source…" value="${esc(svcFilter)}" oninput="setSvcFilter(this.value)" aria-label="Filter services">
