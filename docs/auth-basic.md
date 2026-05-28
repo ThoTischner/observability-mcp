@@ -87,6 +87,16 @@ Set `OMCP_AUTH_ALLOW_FALLBACK=true` to opt back into the older
 "log-and-degrade-to-anonymous" behaviour — only sensible for throwaway
 demos.
 
+### Hot-reload
+
+Editing `OMCP_USERS_FILE` while the server is running takes effect on
+the **next login attempt**. Each `POST /api/auth/login` stats the file
+and re-reads it when the mtime has changed since the previous attempt
+— no server restart needed. The server logs a single `[auth]
+OMCP_USERS_FILE changed — reloaded N user(s)` line each time the file
+reloads. A transient read error (network FS hiccup) keeps the cached
+set so logins continue to work with the last known users.
+
 ## What's gated, what isn't
 
 In basic mode the cookie is required for every `/api/*` route **except**:

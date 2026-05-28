@@ -838,11 +838,51 @@ async function main() {
     legacyHeaders: false,
     message: { error: "too many login attempts, slow down" },
   });
-  app.post("/api/auth/login", loginRateLimit, (req, res) => {
+  // Cached users-file mtime — on every login we stat the file and
+  // re-read when it's changed since the last check. Adding/removing
+  // a user therefore takes effect on the next login attempt, no server
+  // restart required. Cheap path: a single stat() per attempt; the
+  // rate limit caps that at 20/min/IP anyway.
+  let lastUsersMtimeMs: number | null = null;
+  async function maybeReloadUsers(): Promise<void> {
+    const path = process.env.OMCP_USERS_FILE;
+    if (!path) return;
+    try {
+      const { stat } = await import("node:fs/promises");
+      const st = await stat(path);
+      const mtime = st.mtimeMs;
+      if (lastUsersMtimeMs === null || mtime !== lastUsersMtimeMs) {
+        const fresh = await readUsersFile(path);
+        if (fresh && fresh.users.length > 0) {
+          usersStore = fresh;
+          lastUsersMtimeMs = mtime;
+          if (lastUsersMtimeMs !== null) {
+            console.log(`[auth] OMCP_USERS_FILE changed — reloaded ${fresh.users.length} user(s)`);
+          }
+        }
+      }
+    } catch {
+      // File transiently unreadable — keep the cached store; logins
+      // will continue to work with the last known set.
+    }
+  }
+  // Prime the cache so the first login doesn't log "changed" on every boot.
+  if (authRuntime.mode === "basic") {
+    const path = process.env.OMCP_USERS_FILE;
+    if (path) {
+      try {
+        const { statSync } = await import("node:fs");
+        lastUsersMtimeMs = statSync(path).mtimeMs;
+      } catch { /* ignore — first login will pick it up */ }
+    }
+  }
+
+  app.post("/api/auth/login", loginRateLimit, async (req, res) => {
     if (authRuntime.mode !== "basic" || !sessionCfg || !usersStore) {
       res.status(503).json({ error: "auth mode does not accept logins" });
       return;
     }
+    await maybeReloadUsers();
     const body = (req.body || {}) as { username?: unknown; password?: unknown };
     const username = typeof body.username === "string" ? body.username.trim() : "";
     const password = typeof body.password === "string" ? body.password : "";
