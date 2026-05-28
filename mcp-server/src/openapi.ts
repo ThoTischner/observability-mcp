@@ -335,6 +335,30 @@ export function buildOpenApiSpec(version: string): OpenAPIV3_1.Document {
           },
         },
       },
+      "/api/policy": {
+        get: {
+          tags: ["auth"],
+          summary: "Read-only view of the active RBAC DEFAULT_POLICY (admin-only).",
+          responses: {
+            "200": {
+              description: "Policy map keyed by role.",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      policy: { type: "object", additionalProperties: true },
+                      roles: { type: "array", items: { type: "string" } },
+                      note: { type: "string" },
+                    },
+                  },
+                },
+              },
+            },
+            "403": { description: "Missing users:delete permission (admin-only)." },
+          },
+        },
+      },
       "/api/catalog": {
         get: {
           tags: ["catalog"],

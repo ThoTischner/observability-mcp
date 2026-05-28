@@ -79,6 +79,15 @@ under `permissions: […]` so the Web UI hides write controls (Add
 Source, Save Settings, etc.) the current user can't operate. The
 server is still the authoritative gate — UI hiding is purely a UX win.
 
+Admins debugging "why did role X get a 403?" can pull the full active
+policy without a source checkout:
+
+```bash
+curl -s -b "omcp_session=$ADMIN_COOKIE" "$URL/api/policy" | jq .
+# { "policy": { "viewer": [...], "operator": [...], "admin": [...] },
+#   "roles": ["viewer", "operator", "admin"], "note": "..." }
+```
+
 ## Audit log
 
 Every mutating `/api/*` request produces one append-only entry with

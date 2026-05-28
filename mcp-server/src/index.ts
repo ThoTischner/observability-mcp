@@ -49,6 +49,7 @@ import {
 import {
   buildRequirePermission,
   listGrantedPermissions,
+  DEFAULT_POLICY,
   type Resource,
   type Action,
 } from "./auth/rbac.js";
@@ -651,6 +652,7 @@ async function main() {
     "/api/audit",
     "/api/usage",
     "/api/catalog",
+    "/api/policy",
   ]) {
     app.use(prefix, requireSession);
   }
@@ -771,6 +773,19 @@ async function main() {
       user: { sub: sess.sub, name: sess.name, roles: sess.roles ?? [] },
       permissions: listGrantedPermissions(sess.roles),
       exp: sess.exp,
+    });
+  });
+
+  // --- /api/policy — read-only view of the RBAC policy in effect -------
+  // Useful when an operator is debugging "why did role X get a 403" and
+  // doesn't have a checkout to read DEFAULT_POLICY from source. Gated
+  // by admin-only delete-on-users so the policy schema isn't visible
+  // to non-admin sessions.
+  app.get("/api/policy", need("users", "delete"), (_req, res) => {
+    res.json({
+      policy: DEFAULT_POLICY,
+      roles: Object.keys(DEFAULT_POLICY),
+      note: "DEFAULT_POLICY shipped with this build. Custom policies are not yet hot-reloadable.",
     });
   });
 
