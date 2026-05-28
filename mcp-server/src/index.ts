@@ -1447,6 +1447,12 @@ async function main() {
       return null;
     }
     const decision = toolRateLimiter.check(cred.name);
+    // Standard RateLimit response headers — let well-behaved clients
+    // self-pace before they hit a 429. Emitted on BOTH allowed and
+    // denied paths so the caller always sees the live state.
+    res.setHeader("X-RateLimit-Limit", String(decision.limit));
+    res.setHeader("X-RateLimit-Remaining", String(Math.max(0, decision.limit - decision.count)));
+    res.setHeader("X-RateLimit-Window-Ms", String(decision.windowMs));
     if (!decision.allowed) {
       res.setHeader("Retry-After", String(decision.retryAfterSeconds));
       res.status(429).json({

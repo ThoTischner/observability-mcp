@@ -133,6 +133,15 @@ The `/mcp` HTTP transport carries one per-identity sliding window:
 (no `OMCP_API_KEYS`) is unaffected; the existing IP-level
 express-rate-limit still applies.
 
+Every `/mcp` response carries the live bucket state in headers so a
+well-behaved client can self-pace before hitting the cap:
+
+```http
+X-RateLimit-Limit: 60
+X-RateLimit-Remaining: 47
+X-RateLimit-Window-Ms: 60000
+```
+
 A breached cap returns:
 
 ```http
