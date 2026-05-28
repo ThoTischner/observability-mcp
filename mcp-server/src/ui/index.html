@@ -2304,6 +2304,15 @@ async function loadGatePill(){
   }catch{ el.className='gate-pill gate-unknown'; el.textContent='Gate: n/a'; }
 }
 function entKV(o){return '<dl class="kv">'+Object.entries(o).map(([k,v])=>`<dt>${escHtml(k)}</dt><dd class="mono">${escHtml(v)}</dd>`).join('')+'</dl>';}
+// Operator-controlled page size for the management-plane audit feed.
+// Starts at 50 (the original default); the "Load more" button on the
+// table jumps to 500 (the in-memory ring cap) and the change persists
+// until the next reload. Doesn't read from localStorage on purpose —
+// inspecting more entries than usual is an investigative gesture, not
+// an everyday preference.
+let _omcpMgmtAuditLimit = 50;
+function omcpMgmtAuditMore(){ _omcpMgmtAuditLimit = 500; loadEnterprise(); }
+
 // Self-refresh the audit + governance feeds while the user is on
 // page-audit, page-access, page-products or page-entitlement. Gated on
 // document.activeElement and the page's .active class so it doesn't
@@ -2383,8 +2392,11 @@ async function loadEnterprise(){
     }
   }catch{ document.getElementById('ent-audit').innerHTML='<div class="empty">Audit unavailable.</div>'; }
   // Management-plane audit (separate feed from the enterprise gate).
+  // Honours the per-page mgmt-audit-limit picker so operators can dial
+  // up from 50 to 500 entries without leaving the page.
   try{
-    const r=await fetch('/api/audit?limit=50');
+    const limit = (typeof _omcpMgmtAuditLimit === 'number') ? _omcpMgmtAuditLimit : 50;
+    const r=await fetch('/api/audit?limit='+encodeURIComponent(limit));
     if(!r.ok) throw new Error('http '+r.status);
     const a=await r.json();
     const box=document.getElementById('mgmt-audit');
@@ -2396,7 +2408,10 @@ async function loadEnterprise(){
         `<tr><td class="mono">${e.seq}</td><td class="mono t-sm">${escHtml(e.ts)}</td><td>${escHtml(e.actor.name||e.actor.sub)}</td><td><span class="chip">${escHtml(e.method)}</span> <span class="mono t-sm">${escHtml(e.path)}</span></td><td>${escHtml(e.resource)}:${escHtml(e.action)}</td><td class="mono">${e.status}</td></tr>`
       ).join('');
       const note=a.persisted?'':' · in-memory only — set OMCP_MGMT_AUDIT_FILE for persistence';
-      box.innerHTML=`<div class="t-muted t-sm mb-2">${entries.length} entries${escHtml(note)}</div>
+      const showMore = entries.length === limit
+        ? `<button class="btn btn-ghost btn-sm" onclick="omcpMgmtAuditMore()">Load more (up to 500)</button>`
+        : '';
+      box.innerHTML=`<div class="row-between mb-2"><span class="t-muted t-sm">${entries.length} entries${escHtml(note)}</span>${showMore}</div>
         <table class="dtable"><thead><tr><th>#</th><th>When</th><th>Actor</th><th>Request</th><th>Permission</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>`;
     }
   }catch(e){
