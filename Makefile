@@ -77,6 +77,15 @@ doctor: ## Quick health check — is the mcp-server reachable on $$OMCP_HOST:$$O
 	else \
 	  echo "FAIL — server is up but MCP handshake did not return serverInfo"; exit 1; \
 	fi
+	@printf "Probing /api/me identity discovery ... "
+	@me=$$(curl -fsS --max-time 3 "http://$(OMCP_HOST):$(OMCP_PORT)/api/me" 2>/dev/null || echo ''); \
+	if [ -z "$$me" ]; then \
+	  echo "FAIL — endpoint missing (older server build?)"; \
+	else \
+	  mode=$$(echo "$$me" | jq -r '.mode // "?"'); \
+	  auth=$$(echo "$$me" | jq -r '.authenticated // false'); \
+	  echo "ok (mode=$$mode authenticated=$$auth)"; \
+	fi
 	@echo
 	@echo "All good. Wire your agent up with:"
 	@echo "  make connect-claude-code   # Claude Code / Claude Desktop"
