@@ -163,6 +163,30 @@ test("redactValue — pathologically deep nesting hits the depth cap, returns su
   assert.equal(r.matches.email, 1, "only the shallow email is redacted past the depth cap");
 });
 
+test("redactText — IPv6 addresses are redacted across full / compressed / mapped forms", () => {
+  // Full 8-group address
+  const r1 = redactText("peer 2001:0db8:85a3:0000:0000:8a2e:0370:7334 connected");
+  assert.ok(r1.matches.ipv6 >= 1, "expected full IPv6 to be redacted");
+  assert.doesNotMatch(r1.text, /2001:0db8/);
+
+  // Mid-compressed (single :: collapsing one zero run)
+  const r2 = redactText("client 2001:db8::8a2e:370:7334 disconnected");
+  assert.ok(r2.matches.ipv6 >= 1, "expected compressed IPv6 to be redacted");
+
+  // Loopback
+  const r3 = redactText("listening on ::1 port 8080");
+  assert.ok(r3.matches.ipv6 >= 1, "expected ::1 loopback to be redacted");
+  assert.doesNotMatch(r3.text, /::1\b/);
+
+  // IPv4-mapped IPv6
+  const r4 = redactText("source ::ffff:192.168.1.42 forwarded");
+  assert.ok(r4.matches.ipv6 >= 1, "expected ::ffff: mapped form to be redacted");
+
+  // Pure version string — must NOT match IPv6 (only two colons, not 7-group)
+  const r5 = redactText("server version 1.2.3 build 4");
+  assert.equal(r5.matches.ipv6, 0, "version string must not look like IPv6");
+});
+
 test("redactValue — null / undefined leaves are preserved", () => {
   const r = redactValue({ a: null, b: undefined, c: "alice@example.com" });
   const v = r.value as { a: null; b: undefined; c: string };
