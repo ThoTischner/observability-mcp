@@ -56,6 +56,7 @@ import { AuditLog } from "./audit/log.js";
 import { buildAuditMiddleware } from "./audit/middleware.js";
 import { readCatalogFile, CatalogStore } from "./catalog/loader.js";
 import { redactValue } from "./policy/redact.js";
+import { IdentityRateLimiter } from "./quota/limiter.js";
 import { getPluginLoader } from "./connectors/loader.js";
 import {
   resolveHubCatalogUrl,
@@ -1342,6 +1343,16 @@ async function main() {
 
   // Single-tenant auth gate. No credentials configured → anonymous (current
   // behaviour, fully backward compatible). Configured → require a valid
+  // Per-identity sliding-window rate limit on the MCP HTTP transport.
+  // Each request from a named bearer-token caller increments that
+  // caller's bucket; once the per-window cap is hit the server replies
+  // 429 with a Retry-After. Anonymous /mcp traffic (no OMCP_API_KEYS
+  // configured) bypasses this — the global express-rate-limit IP gate
+  // still applies. Override via OMCP_TOOL_RATE_PER_MIN.
+  const toolRateLimiter = new IdentityRateLimiter({
+    limit: Number(process.env.OMCP_TOOL_RATE_PER_MIN) || 60,
+  });
+
   // Bearer/X-API-Key on every /mcp request; resolve the principal + its
   // coarse source allow-list into the RequestContext.
   function gateCtx(
@@ -1357,6 +1368,18 @@ async function main() {
       res
         .status(401)
         .json({ error: "unauthorized: valid Bearer token or X-API-Key required" });
+      return null;
+    }
+    const decision = toolRateLimiter.check(cred.name);
+    if (!decision.allowed) {
+      res.setHeader("Retry-After", String(decision.retryAfterSeconds));
+      res.status(429).json({
+        error: "rate limit exceeded for identity",
+        code: "OMCP_IDENTITY_RATE_LIMIT",
+        retryAfterSeconds: decision.retryAfterSeconds,
+        limit: decision.limit,
+        windowMs: decision.windowMs,
+      });
       return null;
     }
     return principalContext(cred.name, cred.allowedSources);
