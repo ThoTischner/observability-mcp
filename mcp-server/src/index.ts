@@ -46,6 +46,12 @@ import {
   type AuthRuntime,
   type AuthedRequest,
 } from "./auth/middleware.js";
+import {
+  buildRequirePermission,
+  listGrantedPermissions,
+  type Resource,
+  type Action,
+} from "./auth/rbac.js";
 import { getPluginLoader } from "./connectors/loader.js";
 import {
   resolveHubCatalogUrl,
@@ -539,6 +545,8 @@ async function main() {
   // there is no string-match-based "is this public?" branch anywhere.
   app.use(buildSessionAttacher(authRuntime));
   const requireSession = buildRequireSession(authRuntime);
+  const need = (resource: Resource, action: Action) =>
+    buildRequirePermission(authRuntime, resource, action);
   // Protected route prefixes. /api/me, /api/auth/*, /api/info,
   // /api/openapi.json deliberately don't appear here — they stay public.
   for (const prefix of [
@@ -671,6 +679,7 @@ async function main() {
       authenticated: true,
       mode: authRuntime.mode,
       user: { sub: sess.sub, name: sess.name, roles: sess.roles ?? [] },
+      permissions: listGrantedPermissions(sess.roles),
       exp: sess.exp,
     });
   });
@@ -811,7 +820,7 @@ async function main() {
   // Only catalog tarballUrls are fetched (no arbitrary URL in the body)
   // to avoid SSRF. The connector persists to PLUGINS_DIR (back it with
   // a PVC on k8s so it survives restarts).
-  app.post("/api/connectors/install", installRateLimit, async (req, res) => {
+  app.post("/api/connectors/install", installRateLimit, need("connectors","write"), async (req, res) => {
     if (process.env.ENABLE_UI_INSTALL !== "true") {
       return res.status(403).json({
         error: "UI install is disabled. Set ENABLE_UI_INSTALL=true and PLUGIN_TRUST_ROOT to enable it.",
@@ -878,6 +887,7 @@ async function main() {
   app.post(
     "/api/connectors/upload",
     installRateLimit,
+    need("connectors", "write"),
     express.raw({ type: "application/octet-stream", limit: "50mb" }),
     async (req, res) => {
       if (process.env.ENABLE_UI_INSTALL !== "true") {
@@ -919,7 +929,7 @@ async function main() {
   );
 
   // Add a new source
-  app.post("/api/sources", installRateLimit, async (req, res) => {
+  app.post("/api/sources", installRateLimit, need("sources","write"), async (req, res) => {
     const { name, type, url, enabled, auth, tls } = req.body;
     if (!name || !type || !url) {
       res.status(400).json({ error: "name, type, and url are required" });
@@ -939,8 +949,8 @@ async function main() {
   });
 
   // Update an existing source
-  app.put("/api/sources/:name", async (req, res) => {
-    const oldName = req.params.name;
+  app.put("/api/sources/:name", need("sources","write"), async (req, res) => {
+    const oldName = String(req.params.name);
     const { name, type, url, enabled, auth, tls } = req.body;
     const existing = registry.getSourceConfigs().find((s) => s.name === oldName);
     if (!existing) {
@@ -966,8 +976,8 @@ async function main() {
   });
 
   // Delete a source
-  app.delete("/api/sources/:name", async (req, res) => {
-    const name = req.params.name;
+  app.delete("/api/sources/:name", need("sources","delete"), async (req, res) => {
+    const name = String(req.params.name);
     const existing = registry.getSourceConfigs().find((s) => s.name === name);
     if (!existing) {
       res.status(404).json({ error: `Source "${name}" not found` });
@@ -979,7 +989,7 @@ async function main() {
   });
 
   // Test a source connection (without saving)
-  app.post("/api/sources/test", installRateLimit, async (req, res) => {
+  app.post("/api/sources/test", installRateLimit, need("sources","write"), async (req, res) => {
     const { name, type, url, enabled, auth, tls } = req.body;
     if (!type || !url) {
       res.status(400).json({ error: "type and url are required" });
@@ -999,8 +1009,8 @@ async function main() {
   });
 
   // Toggle source enabled/disabled
-  app.patch("/api/sources/:name/toggle", async (req, res) => {
-    const name = req.params.name;
+  app.patch("/api/sources/:name/toggle", need("sources","write"), async (req, res) => {
+    const name = String(req.params.name);
     const existing = registry.getSourceConfigs().find((s) => s.name === name);
     if (!existing) {
       res.status(404).json({ error: `Source "${name}" not found` });
@@ -1098,7 +1108,7 @@ async function main() {
   });
 
   // Update general settings
-  app.put("/api/settings", (req, res) => {
+  app.put("/api/settings", need("settings","write"), (req, res) => {
     config = { ...config, settings: { ...config.settings, ...req.body } };
     saveConfig(config);
     res.json({ ok: true, settings: config.settings });
@@ -1118,7 +1128,7 @@ async function main() {
     res.json(config.healthThresholds);
   });
 
-  app.put("/api/health-thresholds", (req, res) => {
+  app.put("/api/health-thresholds", need("health","write"), (req, res) => {
     config = { ...config, healthThresholds: { ...config.healthThresholds, ...req.body } };
     applyConfigToRuntime(config, registry);
     saveConfig(config);
@@ -1129,9 +1139,9 @@ async function main() {
 
   // Get metrics for a source (active metrics or defaults)
   app.get("/api/sources/:name/metrics", (req, res) => {
-    const connector = registry.getByName(req.params.name);
+    const connector = registry.getByName(String(req.params.name));
     if (!connector) {
-      res.status(404).json({ error: `Source "${req.params.name}" not found` });
+      res.status(404).json({ error: `Source "${String(req.params.name)}" not found` });
       return;
     }
     res.json({
@@ -1141,8 +1151,8 @@ async function main() {
   });
 
   // Update metrics for a source
-  app.put("/api/sources/:name/metrics", async (req, res) => {
-    const name = req.params.name;
+  app.put("/api/sources/:name/metrics", need("sources","write"), async (req, res) => {
+    const name = String(req.params.name);
     const sourceIdx = config.sources.findIndex((s) => s.name === name);
     if (sourceIdx === -1) {
       res.status(404).json({ error: `Source "${name}" not found` });
@@ -1156,8 +1166,8 @@ async function main() {
   });
 
   // Reset a source's metrics to connector defaults
-  app.delete("/api/sources/:name/metrics", async (req, res) => {
-    const name = req.params.name;
+  app.delete("/api/sources/:name/metrics", need("sources","write"), async (req, res) => {
+    const name = String(req.params.name);
     const sourceIdx = config.sources.findIndex((s) => s.name === name);
     if (sourceIdx === -1) {
       res.status(404).json({ error: `Source "${name}" not found` });
