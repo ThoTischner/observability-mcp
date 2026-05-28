@@ -119,6 +119,20 @@ MIIEpAIBAAKCAQEAwLPVKj…
   assert.doesNotMatch(r.text, /MIIEpAIBAA/);
 });
 
+test("redactValue — pathologically deep nesting hits the depth cap, returns sub-tree untouched", () => {
+  // Build a structure deeper than MAX_REDACT_DEPTH (64). At the cap,
+  // the walker should return the remaining sub-tree as-is — no
+  // mutations beyond depth 64, and no stack overflow.
+  let leaf: unknown = "alice@example.com";
+  for (let i = 0; i < 200; i++) leaf = { wrap: leaf };
+  // Wrap the deep sub-tree inside a shallow root so a string near
+  // the surface still gets redacted.
+  const r = redactValue({ shallow: "bob@example.com", deep: leaf });
+  const v = r.value as { shallow: string; deep: unknown };
+  assert.equal(v.shallow, "[redacted-email]", "shallow leaf still redacted");
+  assert.equal(r.matches.email, 1, "only the shallow email is redacted past the depth cap");
+});
+
 test("redactValue — null / undefined leaves are preserved", () => {
   const r = redactValue({ a: null, b: undefined, c: "alice@example.com" });
   const v = r.value as { a: null; b: undefined; c: string };
