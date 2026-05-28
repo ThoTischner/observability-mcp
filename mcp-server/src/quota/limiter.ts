@@ -20,6 +20,28 @@
 const DEFAULT_LIMIT_PER_MIN = 60;
 const DEFAULT_WINDOW_MS = 60_000;
 
+/** Resolve `OMCP_TOOL_RATE_PER_MIN` (or any equivalent caller-supplied
+ * string) into the per-identity cap used by the limiter and reported
+ * by `/api/info` + `/api/usage`. Single source of truth, so the three
+ * call sites don't drift.
+ *
+ * Behaviour:
+ * - unset / empty / non-numeric → DEFAULT_LIMIT_PER_MIN (60)
+ * - `"0"` → DEFAULT_LIMIT_PER_MIN (limit=0 would deny every request,
+ *   which is almost never what an operator setting "0" wants — they
+ *   either mean "default" or "disable"; we treat it as "default" and
+ *   leave the explicit disable path on the roadmap)
+ * - negative → DEFAULT_LIMIT_PER_MIN (limit=-1 with the current
+ *   `count >= limit` check would also deny every request)
+ * - any positive integer ≥ 1 → that value
+ */
+export function resolveToolRatePerMin(raw: string | undefined): number {
+  if (raw === undefined || raw === "") return DEFAULT_LIMIT_PER_MIN;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 1) return DEFAULT_LIMIT_PER_MIN;
+  return Math.floor(n);
+}
+
 export interface LimiterConfig {
   /** Cap per identity per window. Defaults to 60. */
   limit?: number;
