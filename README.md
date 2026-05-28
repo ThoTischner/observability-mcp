@@ -420,6 +420,7 @@ flags pass through after a literal `--`.
 - [Configuration](docs/configuration.md) — paths, env vars, `${VAR}` substitution, full `sources.yaml` reference
 - [Authentication & TLS](docs/auth-and-tls.md) — Basic, Bearer, custom CA, mTLS
 - [Management-plane auth (basic mode)](docs/auth-basic.md) — optional login screen + signed session cookies for the Web UI / `/api/*` plane
+- [Log redaction](docs/redaction.md) — PII / secret patterns automatically masked in `query_logs` output before it reaches the agent; opt-out via `OMCP_REDACTION=off`
 - [Prometheus](docs/prometheus.md) — defaults, label resolution, `resolvedSeries`, prom-client compatibility
 - [Loki](docs/loki.md) — label fallback, Docker container slash, managed Loki
 - [Connectors](docs/connectors.md) — write your own backend

@@ -55,6 +55,7 @@ import {
 import { AuditLog } from "./audit/log.js";
 import { buildAuditMiddleware } from "./audit/middleware.js";
 import { readCatalogFile, CatalogStore } from "./catalog/loader.js";
+import { redactValue } from "./policy/redact.js";
 import { getPluginLoader } from "./connectors/loader.js";
 import {
   resolveHubCatalogUrl,
@@ -197,6 +198,28 @@ async function main() {
       return result;
     }
   }
+  // Apply PII / secret redaction to a tool result's text payload. No-op
+  // when OMCP_REDACTION=off. Adds a top-level `_redacted` field with
+  // the per-category counts so the agent (and the human) sees a hint
+  // like `{ email: 4, ipv4: 2, totalMatches: 6 }` instead of silently
+  // losing data.
+  const REDACTION_ENABLED = String(process.env.OMCP_REDACTION ?? "on").toLowerCase() !== "off";
+  function redactToolText<T extends { content: Array<{ text: string }> }>(result: T): T {
+    if (!REDACTION_ENABLED) return result;
+    try {
+      const parsed = JSON.parse(result.content[0]?.text ?? "{}");
+      const r = redactValue(parsed);
+      const redacted = r.value as Record<string, unknown>;
+      if (r.totalMatches > 0 && redacted && typeof redacted === "object") {
+        redacted._redacted = { ...r.matches, totalMatches: r.totalMatches };
+      }
+      const clone = { ...result, content: result.content.map((c, i) => i === 0 ? { ...c, text: JSON.stringify(redacted) } : c) };
+      return clone as T;
+    } catch {
+      return result;
+    }
+  }
+
   function enrichToolHealthText<T extends { content: Array<{ text: string }> }>(result: T, serviceName: string): T {
     try {
       const parsed = JSON.parse(result.content[0]?.text ?? "{}");
@@ -347,7 +370,12 @@ async function main() {
     },
     async (args) => {
       await enforceEntitledAccess(ctx, { tool: "query_logs", source: (args as any)?.source, service: (args as any)?.service });
-      return withToolMetrics("query_logs", () => queryLogsHandler(registry, args, ctx));
+      const result = await withToolMetrics("query_logs", () => queryLogsHandler(registry, args, ctx));
+      // Redact PII / secrets from the log payload before it crosses the
+      // MCP boundary into the agent's context. Opt-out at deploy time
+      // with OMCP_REDACTION=off — useful when the operator already
+      // pre-scrubs at ingest and over-redaction would hurt debugging.
+      return redactToolText(result);
     }
   );
 
