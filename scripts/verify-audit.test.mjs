@@ -117,6 +117,35 @@ test("verify-audit — exits 1 with cannot-read on a missing file", () => {
   assert.match(r.stderr, /cannot read/);
 });
 
+test("verify-audit --quiet — silent on success, exit 0", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "omcp-verify-"));
+  try {
+    const file = join(dir, "audit.jsonl");
+    await writeChain(file, 3);
+    const r = run(["--quiet", file]);
+    assert.equal(r.status, 0);
+    assert.equal(r.stdout, "", "expected no stdout on quiet success");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("verify-audit --quiet — failure still emits JSON to stdout, exit 1", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "omcp-verify-"));
+  try {
+    const file = join(dir, "audit.jsonl");
+    await writeChain(file, 2);
+    const raw = await (await import("node:fs/promises")).readFile(file, "utf8");
+    await writeFile(file, raw.replace(/"sub":"alice"/, '"sub":"mallory"'), "utf8");
+    const r = run(["-q", file]);
+    assert.equal(r.status, 1);
+    const out = JSON.parse(r.stdout);
+    assert.equal(out.ok, false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("verify-audit — skips malformed JSONL lines, verifies the rest", async () => {
   const dir = await mkdtemp(join(tmpdir(), "omcp-verify-"));
   try {

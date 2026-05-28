@@ -107,6 +107,14 @@ node scripts/verify-audit.mjs /var/log/omcp/audit.jsonl
 The script uses only node built-ins (no `node_modules`) so it works
 straight from a source checkout on an air-gapped operator workstation.
 
+For unattended cron monitoring, pass `--quiet` — success produces no
+stdout, failure still writes the `{ ok: false, brokenAt, reason }`
+JSON. Pair with a non-zero-exit handler in your job runner:
+
+```cron
+0 * * * * node /opt/observability-mcp/scripts/verify-audit.mjs --quiet /var/log/omcp/audit.jsonl
+```
+
 - File path: `OMCP_MGMT_AUDIT_FILE` (JSONL, append-only). Unset → an
   in-memory ring of the last 500 entries serves the same `GET /api/audit`
   endpoint, useful for the demo / single-user case.

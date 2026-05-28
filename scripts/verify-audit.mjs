@@ -45,16 +45,28 @@ function verifyChain(entries) {
 }
 
 function usage() {
-  stderr.write(`Usage: node scripts/verify-audit.mjs <path-to-audit.jsonl>\n`);
+  stderr.write(`Usage: node scripts/verify-audit.mjs [--quiet] <path-to-audit.jsonl>\n`);
   stderr.write(`\n`);
   stderr.write(`Exits 0 on a clean chain; non-zero with a brokenAt index + reason\n`);
   stderr.write(`on the first failure. Designed for offline / air-gapped operator\n`);
   stderr.write(`use — no node_modules required.\n`);
+  stderr.write(`\n`);
+  stderr.write(`Flags:\n`);
+  stderr.write(`  --quiet, -q   silent on success; failure JSON still goes to stdout.\n`);
+  stderr.write(`                Pairs cleanly with cron — no spam on a healthy chain.\n`);
 }
 
 function main() {
-  const path = argv[2];
-  if (!path || path === "-h" || path === "--help") { usage(); exit(path ? 0 : 2); }
+  const args = argv.slice(2);
+  let quiet = false;
+  const positional = [];
+  for (const a of args) {
+    if (a === "--quiet" || a === "-q") quiet = true;
+    else if (a === "-h" || a === "--help") { usage(); exit(0); }
+    else positional.push(a);
+  }
+  const path = positional[0];
+  if (!path) { usage(); exit(2); }
   let raw;
   try { raw = readFileSync(path, "utf8"); }
   catch (e) { stderr.write(`cannot read ${path}: ${e.message}\n`); exit(1); }
@@ -68,14 +80,15 @@ function main() {
     catch { stderr.write(`line ${lineNo}: not valid JSON, skipping\n`); }
   }
   if (entries.length === 0) {
-    stdout.write(JSON.stringify({ ok: true, entries: 0, note: "empty file" }) + "\n");
+    if (!quiet) stdout.write(JSON.stringify({ ok: true, entries: 0, note: "empty file" }) + "\n");
     return;
   }
   const result = verifyChain(entries);
   if (result.ok) {
-    stdout.write(JSON.stringify({ ok: true, entries: entries.length, tipHash: entries[entries.length - 1].hash }, null, 2) + "\n");
+    if (!quiet) stdout.write(JSON.stringify({ ok: true, entries: entries.length, tipHash: entries[entries.length - 1].hash }, null, 2) + "\n");
     exit(0);
   }
+  // Failures are always loud — cron monitors key off this.
   stdout.write(JSON.stringify({ ok: false, entries: entries.length, ...result }, null, 2) + "\n");
   exit(1);
 }
