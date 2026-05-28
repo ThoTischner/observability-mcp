@@ -2425,8 +2425,18 @@ async function loadEnterprise(){
                   : '';
         return `<span class="mono ${cls}">${status}</span>`;
       };
+      // Read = neutral, write = accent, delete = danger. Operators
+      // scanning an outage's worth of audit entries can spot the
+      // delete-shaped rows first — those are the ones most likely to
+      // have caused the regression.
+      const permPill = (resource, action) => {
+        const cls = action === 'delete' ? 'pill-no'
+                  : action === 'write' ? 't-accent'
+                  : 't-muted';
+        return `<span class="mono ${cls}">${escHtml(resource)}:${escHtml(action)}</span>`;
+      };
       const rows=entries.map(e=>
-        `<tr><td class="mono">${e.seq}</td><td class="mono t-sm">${escHtml(e.ts)}</td><td>${escHtml(e.actor.name||e.actor.sub)}</td><td><span class="chip">${escHtml(e.method)}</span> <span class="mono t-sm">${escHtml(e.path)}</span></td><td>${escHtml(e.resource)}:${escHtml(e.action)}</td><td>${statusPill(e.status)}</td></tr>`
+        `<tr><td class="mono">${e.seq}</td><td class="mono t-sm">${escHtml(e.ts)}</td><td>${escHtml(e.actor.name||e.actor.sub)}</td><td><span class="chip">${escHtml(e.method)}</span> <span class="mono t-sm">${escHtml(e.path)}</span></td><td>${permPill(e.resource, e.action)}</td><td>${statusPill(e.status)}</td></tr>`
       ).join('');
       const note=a.persisted?'':' · in-memory only — set OMCP_MGMT_AUDIT_FILE for persistence';
       const showMore = entries.length === limit
