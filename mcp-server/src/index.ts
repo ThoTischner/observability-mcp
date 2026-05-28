@@ -517,6 +517,22 @@ async function main() {
     next();
   });
 
+  // Broad rate-limit on the whole management-plane surface. Generous
+  // enough to leave a polling UI plenty of headroom (300/min per IP),
+  // tight enough to stop unauthenticated brute-force walks of /api/*
+  // (and to keep CodeQL's missing-rate-limiting rule satisfied for
+  // every downstream route).
+  app.use(
+    "/api",
+    rateLimit({
+      windowMs: 60_000,
+      max: 300,
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: { error: "rate limited" },
+    }),
+  );
+
   // Management-plane auth: attach the session payload to every request
   // (no decision logic here — anonymous mode is a no-op). The gate is
   // mounted explicitly on each protected route prefix further down so
