@@ -130,7 +130,15 @@ export class AuditLog {
 
   /** Snapshot of the in-memory ring (most recent last). */
   list(opts: { from?: string; to?: string; actor?: string; action?: string; limit?: number } = {}): AuditEntry[] {
-    const lim = Math.max(1, Math.min(opts.limit ?? 100, this.cap));
+    // Coerce non-finite / non-positive limits (NaN from a bad query
+    // string, negative, undefined) to the 100 default. Previously
+    // NaN propagated through Math.min / Math.max and the comparison
+    // `out.length < NaN` was always false, so `?limit=foo` returned
+    // an empty array instead of the default page.
+    const requested = typeof opts.limit === "number" && Number.isFinite(opts.limit) && opts.limit > 0
+      ? Math.floor(opts.limit)
+      : 100;
+    const lim = Math.min(requested, this.cap);
     const out: AuditEntry[] = [];
     for (let i = this.ring.length - 1; i >= 0 && out.length < lim; i--) {
       const e = this.ring[i];

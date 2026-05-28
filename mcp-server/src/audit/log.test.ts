@@ -74,6 +74,23 @@ test("AuditLog — in-memory ring honours cap", async () => {
   assert.deepEqual(entries.map((e) => e.actor.sub), ["u9", "u8", "u7"]);
 });
 
+test("AuditLog.list — non-finite / non-positive limit falls back to the 100 default", async () => {
+  const log = new AuditLog({ inMemoryCap: 10 });
+  for (let i = 0; i < 5; i++) {
+    await log.record({ actor: { sub: `u${i}` }, resource: "sources", action: "write", method: "POST", path: "/api/sources", status: 200 });
+  }
+  // NaN — what /api/audit?limit=foo previously produced via parseInt
+  assert.equal(log.list({ limit: Number.NaN }).length, 5);
+  // Negative — no point pretending the caller meant "minus three entries"
+  assert.equal(log.list({ limit: -3 }).length, 5);
+  // Zero — same. The default keeps the response useful.
+  assert.equal(log.list({ limit: 0 }).length, 5);
+  // Sanity: a sensible positive limit still constrains the result
+  assert.equal(log.list({ limit: 2 }).length, 2);
+  // Decimal positive — floored, so 2.9 → 2
+  assert.equal(log.list({ limit: 2.9 }).length, 2);
+});
+
 test("AuditLog — file mode persists and bootstraps", async () => {
   const dir = await mkdtemp(join(tmpdir(), "omcp-audit-"));
   const file = join(dir, "audit.jsonl");
