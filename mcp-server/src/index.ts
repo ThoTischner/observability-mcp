@@ -526,6 +526,33 @@ async function main() {
     });
   });
 
+  // Current identity for the management plane.
+  //
+  // This is the foundation hook for the upcoming session-based "basic"
+  // auth mode. Until that mode lands and is wired up, the server stays
+  // in anonymous mode: `/api/me` reports `{ authenticated: false }` plus
+  // the configured mode (`anonymous` for now, future values: `basic`,
+  // `oidc`). Clients can already poll this endpoint to discover the
+  // mode they're talking to and degrade gracefully.
+  app.get("/api/me", (req, res) => {
+    const mode = (process.env.OMCP_AUTH || "anonymous").toLowerCase();
+    if (mode === "anonymous") {
+      res.json({ authenticated: false, mode: "anonymous" });
+      return;
+    }
+    // No request-level session middleware in this PR yet — when a future
+    // PR adds the login flow it will replace this branch with a real
+    // session lookup. Return a 503-equivalent payload so misconfigured
+    // deployments (auth requested without the flow wired) are visible.
+    void req;
+    res.json({
+      authenticated: false,
+      mode,
+      configured: false,
+      detail: "auth mode is set but the login flow has not been wired up in this build",
+    });
+  });
+
   // Connectors currently loaded into this server (builtin + filesystem
   // plugins), with manifest metadata — drives the UI "Connectors" page.
   app.get("/api/connectors", (_req, res) => {
