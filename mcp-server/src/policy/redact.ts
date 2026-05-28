@@ -9,8 +9,11 @@
  * (over-redact rather than under-redact) and explicit (each category
  * tagged in the replacement marker, e.g. `[redacted-email]`).
  *
- * Bypass is the operator's call: in basic mode a session with the
- * `redaction:bypass` permission may opt out per-request.
+ * Bypass today is process-wide only: set `OMCP_REDACTION=off` if the
+ * upstream is already PII-clean. A per-request `redaction:bypass` RBAC
+ * permission for interactive admin sessions is on the roadmap — see
+ * docs/access-control.md "Why are my logs returning [redacted-email]?"
+ * and docs/redaction.md for the current state.
  */
 
 export type RedactionCategory =
