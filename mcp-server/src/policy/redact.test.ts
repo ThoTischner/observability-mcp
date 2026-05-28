@@ -77,6 +77,40 @@ test("redactValue — walks nested objects / arrays, mutates only strings", () =
   assert.equal(r.totalMatches, 3);
 });
 
+test("redactText — AWS access key IDs (AKIA / ASIA / AROA) are redacted", () => {
+  const r1 = redactText("log: assumed role AKIAIOSFODNN7EXAMPLE today");
+  const r2 = redactText("temporary creds ASIAY34FZKBOKMUTVV7A logged");
+  const r3 = redactText("role-arn AROAIIAFOO2ZBADBCEXAMPLE");
+  assert.equal(r1.matches["aws-key"], 1);
+  assert.equal(r2.matches["aws-key"], 1);
+  assert.equal(r3.matches["aws-key"], 1);
+  assert.match(r1.text, /\[redacted-aws-key\]/);
+  assert.doesNotMatch(r1.text, /AKIAIOSFODNN7EXAMPLE/);
+});
+
+test("redactText — Slack tokens (xoxa / xoxb / xoxp / …) are redacted", () => {
+  const r = redactText("slack notify: token=xoxb-1234567890-abcdefghijklm result: ok");
+  assert.equal(r.matches["slack-token"], 1);
+  assert.doesNotMatch(r.text, /xoxb-1234567890/);
+});
+
+test("redactText — GitHub PATs are redacted (ghp_ / github_pat_)", () => {
+  const r1 = redactText("git remote set-url origin https://ghp_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789@github.com/x/y.git");
+  // Use a 40-char body, which matches `[A-Za-z0-9_]{40,}` (note: includes underscore)
+  const r2 = redactText("token github_pat_ABCDEFGH_IJKLMNOPQRSTUVWXYZ012345678ABCDEFGHIJKLMNOP");
+  assert.equal(r1.matches["gh-pat"], 1);
+  assert.equal(r2.matches["gh-pat"], 1);
+});
+
+test("redactText — PEM private-key blocks are redacted greedily", () => {
+  const pem = `-----BEGIN RSA PRIVATE KEY-----
+MIIEpAIBAAKCAQEAwLPVKj…
+-----END RSA PRIVATE KEY-----`;
+  const r = redactText(`config:\n${pem}\nend`);
+  assert.equal(r.matches["private-key"], 1);
+  assert.doesNotMatch(r.text, /MIIEpAIBAA/);
+});
+
 test("redactValue — null / undefined leaves are preserved", () => {
   const r = redactValue({ a: null, b: undefined, c: "alice@example.com" });
   const v = r.value as { a: null; b: undefined; c: string };
