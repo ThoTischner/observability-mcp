@@ -1242,10 +1242,36 @@
         <div id="notif-list"><div class="notif-empty">No notifications</div></div>
       </div>
     </div>
+    <span id="user-badge" class="row-inline t-sm" style="display:none; margin-right: var(--sp-2);">
+      <span class="t-muted">Signed in as</span>
+      <span class="user-name" style="color: var(--chrome-text); font-weight: 600;"></span>
+      <button class="btn btn-ghost btn-sm" onclick="omcpLogout()">Sign out</button>
+    </span>
     <button class="theme-toggle" id="density-toggle" title="Toggle row density" aria-label="Toggle density" onclick="toggleDensity()">≡</button>
     <button class="theme-toggle" id="theme-toggle" title="Toggle light / dark" aria-label="Toggle theme" onclick="toggleTheme()">◐</button>
     <button class="btn btn-ghost btn-sm" onclick="refresh()">Refresh</button>
   </header>
+
+  <!-- Login modal — shown when /api/* returns 401 OMCP_AUTH_REQUIRED -->
+  <div class="modal-overlay" id="login-modal">
+    <div class="modal" style="width:380px;">
+      <div class="modal-header"><h3>Sign in</h3></div>
+      <div class="modal-body">
+        <div id="login-banner" class="form-banner"></div>
+        <div class="form-group">
+          <label>Username</label>
+          <input id="login-username" type="text" autocomplete="username" onkeydown="omcpLoginKey(event)">
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input id="login-password" type="password" autocomplete="current-password" onkeydown="omcpLoginKey(event)">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" id="login-submit" onclick="omcpSubmitLogin()">Sign in</button>
+      </div>
+    </div>
+  </div>
 
   <div class="container">
     <!-- ===== Dashboard ===== -->
@@ -1879,6 +1905,85 @@ function toggleTheme(){
   try{ localStorage.setItem('omcp-theme',next); }catch(e){}
   syncThemeToggle();
 }
+
+// --- Management-plane auth (basic mode) ----------------------------------
+// When OMCP_AUTH=basic on the server, /api/* returns 401 + body
+// { code: "OMCP_AUTH_REQUIRED" } for unauthenticated requests. This block
+// wraps window.fetch to catch that, show the login modal, and replay the
+// original request once the user signs in. In anonymous mode nothing here
+// fires — the wrapper is a passthrough.
+const _omcpRawFetch = window.fetch.bind(window);
+let _omcpLoginInflight = null;
+let _omcpLoginResolve = null;
+window.fetch = async function omcpAuthedFetch(input, init) {
+  const res = await _omcpRawFetch(input, init);
+  if (res.status !== 401) return res;
+  let body = null;
+  try { body = await res.clone().json(); } catch(e) {}
+  if (!body || body.code !== 'OMCP_AUTH_REQUIRED') return res;
+  await omcpEnsureLoggedIn();
+  return _omcpRawFetch(input, init);
+};
+function omcpEnsureLoggedIn() {
+  if (_omcpLoginInflight) return _omcpLoginInflight;
+  _omcpLoginInflight = new Promise((resolve) => { _omcpLoginResolve = resolve; });
+  const m = document.getElementById('login-modal');
+  if (m) m.classList.add('open');
+  setTimeout(() => { const u = document.getElementById('login-username'); if (u) u.focus(); }, 50);
+  return _omcpLoginInflight;
+}
+function omcpLoginKey(e) { if (e.key === 'Enter') { e.preventDefault(); omcpSubmitLogin(); } }
+async function omcpSubmitLogin() {
+  const u = document.getElementById('login-username').value.trim();
+  const p = document.getElementById('login-password').value;
+  const banner = document.getElementById('login-banner');
+  if (!u || !p) {
+    banner.className = 'form-banner show error';
+    banner.textContent = 'Username and password are required';
+    return;
+  }
+  const btn = document.getElementById('login-submit');
+  btn.disabled = true;
+  try {
+    const res = await _omcpRawFetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: u, password: p }),
+    });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({ error: 'sign-in failed' }));
+      banner.className = 'form-banner show error';
+      banner.textContent = j.error || 'sign-in failed';
+      return;
+    }
+    document.getElementById('login-modal').classList.remove('open');
+    document.getElementById('login-password').value = '';
+    banner.className = 'form-banner';
+    if (_omcpLoginResolve) { const r = _omcpLoginResolve; _omcpLoginResolve = null; _omcpLoginInflight = null; r(); }
+    await omcpSyncIdentity();
+  } finally { btn.disabled = false; }
+}
+async function omcpLogout() {
+  try { await _omcpRawFetch('/api/auth/logout', { method: 'POST' }); } catch(e) {}
+  await omcpSyncIdentity();
+  // Reload the page so any cached in-memory state is dropped.
+  location.reload();
+}
+async function omcpSyncIdentity() {
+  const badge = document.getElementById('user-badge');
+  try {
+    const r = await _omcpRawFetch('/api/me');
+    if (!r.ok) { if (badge) badge.style.display = 'none'; return; }
+    const me = await r.json();
+    if (me.authenticated && badge) {
+      badge.querySelector('.user-name').textContent = me.user.name;
+      badge.style.display = '';
+    } else if (badge) {
+      badge.style.display = 'none';
+    }
+  } catch (e) { if (badge) badge.style.display = 'none'; }
+}
+window.addEventListener('DOMContentLoaded', omcpSyncIdentity);
 
 // --- Rail collapse toggle (icon-only mode) ---
 function toggleRail(){
