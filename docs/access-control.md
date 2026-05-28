@@ -151,9 +151,12 @@ JSON. Pair with a non-zero-exit handler in your job runner:
 
 The `/mcp` HTTP transport carries one per-identity sliding window:
 60 requests/minute per named bearer-token caller by default.
-`OMCP_TOOL_RATE_PER_MIN` overrides. Anonymous `/mcp` traffic
-(no `OMCP_API_KEYS`) is unaffected; the existing IP-level
-express-rate-limit still applies.
+`OMCP_TOOL_RATE_PER_MIN` overrides — accepts any positive integer;
+unset / empty / non-numeric / `0` / negative all fall back to the
+default 60 (so an operator setting `0` to mean "disable" doesn't
+accidentally lock every caller out). The explicit-disable path is
+on the roadmap. Anonymous `/mcp` traffic (no `OMCP_API_KEYS`) is
+unaffected; the existing IP-level express-rate-limit still applies.
 
 Every `/mcp` response carries the live bucket state in headers so a
 well-behaved client can self-pace before hitting the cap:
