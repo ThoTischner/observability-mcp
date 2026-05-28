@@ -41,7 +41,7 @@ test("DEFAULT_POLICY — operator writes sources + settings but never deletes", 
 });
 
 test("DEFAULT_POLICY — admin can do everything across every resource", () => {
-  for (const resource of ["sources", "services", "health", "topology", "settings", "connectors", "audit", "users"] as const) {
+  for (const resource of ["sources", "services", "health", "topology", "settings", "connectors", "audit", "catalog", "users"] as const) {
     for (const action of ["read", "write", "delete"] as const) {
       assert.equal(hasPermission(["admin"], resource, action), true, `admin should ${action} ${resource}`);
     }
@@ -120,8 +120,8 @@ test("listGrantedPermissions — deduplicates across overlapping roles", () => {
 
 test("listGrantedPermissions — admin lists every (resource, action) once", () => {
   const p = listGrantedPermissions(["admin"]);
-  // 8 resources * 3 actions = 24 unique entries
-  assert.equal(p.length, 24);
+  // 9 resources * 3 actions = 27 unique entries
+  assert.equal(p.length, 27);
 });
 
 test("DEFAULT_POLICY shape — has the three built-in roles", () => {
