@@ -649,6 +649,7 @@ async function main() {
     "/api/enterprise",
     "/api/hub",
     "/api/audit",
+    "/api/usage",
     "/api/catalog",
   ]) {
     app.use(prefix, requireSession);
@@ -788,6 +789,26 @@ async function main() {
       limit: q.limit ? parseInt(q.limit, 10) : undefined,
     });
     res.json({ entries, tipHash: mgmtAudit.tipHash, persisted: !!process.env.OMCP_MGMT_AUDIT_FILE });
+  });
+
+  // --- /api/usage — per-identity MCP rate-limit snapshot -----------------
+  // Read-only view of the IdentityRateLimiter's bucket state. Gated by
+  // need("audit","read") — the same role set that already sees the
+  // audit log can see who is calling what. Anonymous /mcp traffic
+  // never enters a bucket so it doesn't show up here.
+  app.get("/api/usage", need("audit", "read"), (req, res) => {
+    const q = req.query as Record<string, string | undefined>;
+    const ids = q.actor ? [q.actor] : toolRateLimiter.knownIdentities();
+    const now = Date.now();
+    const identities = ids.map((id) => {
+      const s = toolRateLimiter.inspect(id, now);
+      return { actor: id, count: s.count, limit: s.limit, windowMs: s.windowMs };
+    });
+    res.json({
+      identities,
+      defaultLimit: Number(process.env.OMCP_TOOL_RATE_PER_MIN) || 60,
+      windowMs: 60_000,
+    });
   });
 
   // --- /api/auth/* — login + logout for basic mode -----------------------

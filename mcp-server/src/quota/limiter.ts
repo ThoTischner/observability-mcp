@@ -97,6 +97,11 @@ export class IdentityRateLimiter {
     return { count, limit: this.limit, windowMs: this.windowMs };
   }
 
+  /** All identities we've ever seen — for /api/usage aggregation. */
+  knownIdentities(): string[] {
+    return Array.from(this.buckets.keys());
+  }
+
   /** For testing — reset every identity's bucket. */
   reset(): void {
     this.buckets.clear();

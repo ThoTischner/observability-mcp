@@ -135,6 +135,23 @@ Content-Type: application/json
 Granularity is per HTTP request, not per JSON-RPC message. A batched
 JSON-RPC request counts as one; a multi-tool LLM turn counts as N.
 
+Live snapshot: `GET /api/usage` (gated by `audit:read`) returns the
+current windowed count per identity:
+
+```json
+{
+  "identities": [
+    { "actor": "agent-prod", "count": 14, "limit": 60, "windowMs": 60000 },
+    { "actor": "ci",         "count":  3, "limit": 60, "windowMs": 60000 }
+  ],
+  "defaultLimit": 60,
+  "windowMs": 60000
+}
+```
+
+Pass `?actor=<name>` to inspect a single identity (count is 0 for
+identities the server has never seen).
+
 ## Service catalog enrichment
 
 When `OMCP_SERVICE_CATALOG_FILE` points at a JSON catalog (schema in
