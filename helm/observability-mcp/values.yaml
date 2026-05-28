@@ -58,9 +58,33 @@ sources:
   lokiUrl: ""
 
 # Extra environment variables passed to the container.
+# Use the list-of-{name, value | valueFrom} shape Kubernetes expects.
+# Common knobs:
+#   - MCP_LOG_LEVEL  — runtime log verbosity (info / debug)
+#   - OMCP_AUTH      — anonymous (default) | basic; see docs/auth-basic.md
+#   - OMCP_USERS_FILE              path to the local-users JSON file (basic mode)
+#   - OMCP_SESSION_SECRET          ≥32-char HMAC key for signing session cookies
+#   - OMCP_API_KEYS                bearer tokens for the /mcp transport
+#   - OMCP_MGMT_AUDIT_FILE         JSONL audit log; in-memory ring (500) when unset
+#   - OMCP_SERVICE_CATALOG_FILE    owner / tier / on-call / SLO metadata
+#   - OMCP_TOOL_RATE_PER_MIN       per-identity /mcp cap; default 60
+#   - OMCP_REDACTION               on (default) | off — see docs/redaction.md
+#   - OMCP_TRUST_PROXY             true | loopback | <hops> | <ip,ip,...>
+#   - OMCP_AUTH_ALLOW_FALLBACK     true → degrade to anonymous on basic-mode
+#                                  boot misconfig; OFF by default (fail-closed)
+# Detailed runbook: docs/access-control.md
 extraEnv: []
   # - name: MCP_LOG_LEVEL
   #   value: info
+  # - name: OMCP_AUTH
+  #   value: basic
+  # - name: OMCP_USERS_FILE
+  #   value: /etc/observability-mcp/users.json
+  # - name: OMCP_SESSION_SECRET
+  #   valueFrom:
+  #     secretKeyRef:
+  #       name: omcp-session
+  #       key: secret
 
 # Connector plugins. Builtin Prometheus/Loki need no configuration —
 # this block is only for additional / airgapped connectors. See
