@@ -5,6 +5,18 @@ shipped over the recent governance series (PRs #229–#235). Each layer
 is opt-in — the default deployment is single-user, no auth, exactly like
 the README quickstart promises.
 
+**Quick links**
+
+- [The four layers, in dependency order](#the-four-layers-in-dependency-order)
+- [Minimal production-ready setup](#minimal-production-ready-setup)
+- [Roles & permissions](#roles--permissions)
+- [Audit log](#audit-log) — `/api/audit`, hash chain, offline verifier
+- [Rate limits](#rate-limits) — `/api/usage`, `X-RateLimit-*` headers
+- [Service catalog enrichment](#service-catalog-enrichment)
+- [Posture discovery](#posture-discovery) — `/api/info` governance block
+- [Behind a reverse proxy](#behind-a-reverse-proxy) — `OMCP_TRUST_PROXY`
+- [Investigation runbook](#investigation-runbook)
+
 ## The four layers, in dependency order
 
 | Layer | Env knob | Default | Detail doc |
@@ -188,6 +200,32 @@ The agent sees ownership context inline — no separate CMDB hop.
 
 Without the env var the file is missing → empty catalog → enrichment
 is a no-op.
+
+## Posture discovery
+
+External dashboards and discovery probes (kube-state-metrics derived
+exporters, Helm chart annotations, Backstage plugins, etc.) often want
+to learn the deployment's governance shape without holding a session.
+`GET /api/info` ships a public `governance` block for exactly that:
+
+```json
+{
+  "governance": {
+    "authMode": "basic",
+    "authSecretEphemeral": false,
+    "auditPersisted": true,
+    "catalogConfigured": true,
+    "redaction": true,
+    "trustProxy": true,
+    "toolRatePerMin": 60
+  }
+}
+```
+
+Booleans + the rate-limit number only — no file paths, no session
+secret, no user counts. The expected alert is "this deployment
+silently reverted to anonymous mode" or "redaction is off in
+prod" — both visible from a single unauthenticated GET.
 
 ## Behind a reverse proxy
 
