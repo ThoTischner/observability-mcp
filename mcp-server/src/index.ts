@@ -626,10 +626,22 @@ async function main() {
     });
   });
 
+  // Same per-IP cap for /api/me and the auth endpoints — the UI polls
+  // this on every page load to decide whether to show the login modal,
+  // so a 20/min limit per IP is generous for humans and tight for
+  // scripted abuse.
+  const authReadRateLimit = rateLimit({
+    windowMs: 60_000,
+    max: 60,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "rate limited" },
+  });
+
   // Current identity for the management plane. Always public so the UI
   // can decide whether to show a login modal even before sending its
   // first authenticated request.
-  app.get("/api/me", (req, res) => {
+  app.get("/api/me", authReadRateLimit, (req, res) => {
     if (authRuntime.mode === "anonymous") {
       res.json({ authenticated: false, mode: "anonymous" });
       return;

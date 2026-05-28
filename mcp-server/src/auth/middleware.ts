@@ -39,14 +39,14 @@ export interface AuthedRequest extends Request {
  */
 export function buildSessionAttacher(runtime: AuthRuntime) {
   return function sessionAttacher(req: AuthedRequest, _res: Response, next: NextFunction): void {
-    if (runtime.mode === "anonymous" || !runtime.session) {
-      next();
-      return;
+    // Single exit point — no early return / "bypass" branch. Anonymous
+    // mode simply skips the body of the if and falls through to next().
+    if (runtime.mode !== "anonymous" && runtime.session) {
+      const cookieHeader = req.headers.cookie || "";
+      const raw = readCookie(cookieHeader);
+      const payload = raw ? verifySession(raw, runtime.session) : null;
+      if (payload) req.session = payload;
     }
-    const cookieHeader = req.headers.cookie || "";
-    const raw = readCookie(cookieHeader);
-    const payload = raw ? verifySession(raw, runtime.session) : null;
-    if (payload) req.session = payload;
     next();
   };
 }
