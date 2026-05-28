@@ -46,6 +46,20 @@ plus stricter redaction by default.
   edit the users file at runtime, the change takes effect for the
   very next sign-in. One info log line per actual reload; transient
   read errors keep the cached set so logins continue uninterrupted. #250
+- **`X-RateLimit-Limit / Remaining / Window-Ms`** headers on every
+  `/mcp` response — well-behaved clients can self-pace before hitting
+  a 429. #252
+- **Colour-coded HTTP status pills** in the Management changes audit
+  table — 2xx green, 4xx/5xx red, so an outage's worth of 401s
+  stops looking identical to the 2xx steady-state. #253
+- **`OMCP_TRUST_PROXY`** opt-in for reverse-proxy deployments —
+  audit IPs, per-IP rate-limit buckets and the Secure cookie attribute
+  all start seeing the real client through nginx / Envoy / ingress
+  controllers. Off by default so a forged `X-Forwarded-For` can't
+  impersonate a different IP on a public listener. #254
+- **`make doctor`** gained a third probe — `/api/me` reports the
+  active auth mode + authenticated state alongside the existing
+  `/healthz` + MCP-handshake checks. #255
 
 ## [1.8.0] — 2026-05-28
 
