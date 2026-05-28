@@ -27,6 +27,26 @@ import {
   extractToken,
   resolveToken,
 } from "./auth/credentials.js";
+import {
+  issueSession,
+  verifySession,
+  setCookieHeader,
+  clearCookieHeader,
+  readCookie,
+  generateSecret,
+  type SessionConfig,
+} from "./auth/session.js";
+import {
+  readUsersFile,
+  authenticate,
+  type LocalUsersFile,
+} from "./auth/local-users.js";
+import {
+  buildAuthMiddleware,
+  type AuthMode,
+  type AuthRuntime,
+  type AuthedRequest,
+} from "./auth/middleware.js";
 import { getPluginLoader } from "./connectors/loader.js";
 import {
   resolveHubCatalogUrl,
@@ -405,6 +425,63 @@ async function main() {
     return mcpServer;
   }
 
+  // --- Management-plane auth (basic mode) -----------------------------------
+  // Off by default. Enable with `OMCP_AUTH=basic` + `OMCP_USERS_FILE` and
+  // optionally `OMCP_SESSION_SECRET`. When the secret is omitted in basic
+  // mode the server generates one for the process lifetime — sessions
+  // won't survive a restart and a warning is logged. See docs/auth-basic.md.
+  //
+  // SECURITY DEFAULT: misconfiguration in basic mode is fail-CLOSED — the
+  // process exits with a non-zero status rather than silently degrading
+  // to anonymous. Set `OMCP_AUTH_ALLOW_FALLBACK=true` to opt back into
+  // the old fall-back-to-anonymous behaviour (only sensible for the
+  // throwaway-demo case where ops can immediately see the boot log).
+  const requestedAuthMode = String(process.env.OMCP_AUTH ?? "anonymous").toLowerCase();
+  const allowFallback = String(process.env.OMCP_AUTH_ALLOW_FALLBACK ?? "false").toLowerCase() === "true";
+  function authMisconfig(reason: string): never | void {
+    if (allowFallback) {
+      console.error(`[auth] ${reason} — OMCP_AUTH_ALLOW_FALLBACK=true → falling back to anonymous`);
+      return;
+    }
+    console.error(`[auth] ${reason} — refusing to start (set OMCP_AUTH_ALLOW_FALLBACK=true to override)`);
+    process.exit(1);
+  }
+  let authMode: AuthMode = "anonymous";
+  let sessionCfg: SessionConfig | undefined;
+  let usersStore: LocalUsersFile | null = null;
+  let secretEphemeral = false;
+  if (requestedAuthMode === "basic") {
+    const usersPath = process.env.OMCP_USERS_FILE;
+    if (!usersPath) {
+      authMisconfig("OMCP_AUTH=basic requires OMCP_USERS_FILE");
+    } else {
+      usersStore = await readUsersFile(usersPath);
+      if (!usersStore) {
+        authMisconfig(`OMCP_USERS_FILE=${usersPath} unreadable or malformed`);
+        usersStore = null;
+      } else if (usersStore.users.length === 0) {
+        authMisconfig(`OMCP_USERS_FILE=${usersPath} has no users`);
+        usersStore = null;
+      } else {
+        let secret = process.env.OMCP_SESSION_SECRET;
+        if (!secret || secret.length < 32) {
+          secret = generateSecret();
+          secretEphemeral = true;
+          console.warn(
+            "[auth] OMCP_SESSION_SECRET not set (or < 32 chars). Generated an ephemeral secret — " +
+              "sessions will be invalidated on restart. Set OMCP_SESSION_SECRET to a stable value in production.",
+          );
+        }
+        sessionCfg = { secret };
+        authMode = "basic";
+        console.log(`[auth] basic mode active — ${usersStore.users.length} user(s) loaded`);
+      }
+    }
+  } else if (requestedAuthMode !== "anonymous") {
+    authMisconfig(`unknown OMCP_AUTH=${requestedAuthMode}`);
+  }
+  const authRuntime: AuthRuntime = { mode: authMode, session: sessionCfg, secretEphemeral };
+
   // --- HTTP server ---
   const app = express();
   app.use(express.json({ limit: "1mb" }));
@@ -440,6 +517,11 @@ async function main() {
     });
     next();
   });
+
+  // Management-plane auth gate. No-op in anonymous mode, 401 on
+  // unauthenticated /api/* writes in basic mode (read-only paths and
+  // /api/auth/* / /api/me / /api/info / /api/openapi.json stay public).
+  app.use(buildAuthMiddleware(authRuntime));
 
   // k8s-convention liveness/readiness probes at the root of the path
   // tree, no /api prefix. Helm chart points its probes here. Cheap
@@ -526,31 +608,75 @@ async function main() {
     });
   });
 
-  // Current identity for the management plane.
-  //
-  // This is the foundation hook for the upcoming session-based "basic"
-  // auth mode. Until that mode lands and is wired up, the server stays
-  // in anonymous mode: `/api/me` reports `{ authenticated: false }` plus
-  // the configured mode (`anonymous` for now, future values: `basic`,
-  // `oidc`). Clients can already poll this endpoint to discover the
-  // mode they're talking to and degrade gracefully.
+  // Current identity for the management plane. Always public so the UI
+  // can decide whether to show a login modal even before sending its
+  // first authenticated request.
   app.get("/api/me", (req, res) => {
-    const mode = (process.env.OMCP_AUTH || "anonymous").toLowerCase();
-    if (mode === "anonymous") {
+    if (authRuntime.mode === "anonymous") {
       res.json({ authenticated: false, mode: "anonymous" });
       return;
     }
-    // No request-level session middleware in this PR yet — when a future
-    // PR adds the login flow it will replace this branch with a real
-    // session lookup. Return a 503-equivalent payload so misconfigured
-    // deployments (auth requested without the flow wired) are visible.
-    void req;
+    const sess = (req as AuthedRequest).session;
+    if (!sess) {
+      res.json({ authenticated: false, mode: authRuntime.mode });
+      return;
+    }
     res.json({
-      authenticated: false,
-      mode,
-      configured: false,
-      detail: "auth mode is set but the login flow has not been wired up in this build",
+      authenticated: true,
+      mode: authRuntime.mode,
+      user: { sub: sess.sub, name: sess.name, roles: sess.roles ?? [] },
+      exp: sess.exp,
     });
+  });
+
+  // --- /api/auth/* — login + logout for basic mode -----------------------
+  // Login: POST { username, password } → 200 + Set-Cookie on success, 401
+  // on bad creds, 400 on missing fields, 503 in anonymous mode (the UI
+  // shouldn't have rendered the modal at all in that case but we still
+  // answer cleanly). Logout: POST → 204 + clears the cookie.
+  const loginRateLimit = rateLimit({
+    windowMs: 60_000,
+    max: 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "too many login attempts, slow down" },
+  });
+  app.post("/api/auth/login", loginRateLimit, (req, res) => {
+    if (authRuntime.mode !== "basic" || !sessionCfg || !usersStore) {
+      res.status(503).json({ error: "auth mode does not accept logins" });
+      return;
+    }
+    const body = (req.body || {}) as { username?: unknown; password?: unknown };
+    const username = typeof body.username === "string" ? body.username.trim() : "";
+    const password = typeof body.password === "string" ? body.password : "";
+    if (!username || !password) {
+      res.status(400).json({ error: "username and password are required" });
+      return;
+    }
+    const user = authenticate(username, password, usersStore);
+    if (!user) {
+      res.status(401).json({ error: "invalid credentials" });
+      return;
+    }
+    const { cookie } = issueSession(
+      { sub: user.username, name: user.name, roles: user.roles },
+      sessionCfg,
+    );
+    const secure = req.secure || (req.headers["x-forwarded-proto"] === "https");
+    res.setHeader("Set-Cookie", setCookieHeader(cookie, sessionCfg, { secure }));
+    res.json({
+      ok: true,
+      user: { sub: user.username, name: user.name, roles: user.roles ?? [] },
+    });
+  });
+  app.post("/api/auth/logout", (req, res) => {
+    if (authRuntime.mode !== "basic" || !sessionCfg) {
+      res.status(204).end();
+      return;
+    }
+    const secure = req.secure || (req.headers["x-forwarded-proto"] === "https");
+    res.setHeader("Set-Cookie", clearCookieHeader(sessionCfg, { secure }));
+    res.status(204).end();
   });
 
   // Connectors currently loaded into this server (builtin + filesystem
