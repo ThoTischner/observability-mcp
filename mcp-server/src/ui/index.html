@@ -2435,8 +2435,19 @@ async function loadEnterprise(){
                   : 't-muted';
         return `<span class="mono ${cls}">${escHtml(resource)}:${escHtml(action)}</span>`;
       };
+      // Anonymous-mode entries render in muted italic so they read
+      // distinctly from authenticated actors — useful for spotting
+      // misconfigured deployments and pre-migration entries in the
+      // same feed.
+      const actorCell = (a) => {
+        const label = a.name || a.sub;
+        if (a.sub === 'anonymous') {
+          return `<span class="t-muted" style="font-style:italic">${escHtml(label)}</span>`;
+        }
+        return escHtml(label);
+      };
       const rows=entries.map(e=>
-        `<tr><td class="mono">${e.seq}</td><td class="mono t-sm">${escHtml(e.ts)}</td><td>${escHtml(e.actor.name||e.actor.sub)}</td><td><span class="chip">${escHtml(e.method)}</span> <span class="mono t-sm">${escHtml(e.path)}</span></td><td>${permPill(e.resource, e.action)}</td><td>${statusPill(e.status)}</td></tr>`
+        `<tr><td class="mono">${e.seq}</td><td class="mono t-sm">${escHtml(e.ts)}</td><td>${actorCell(e.actor)}</td><td><span class="chip">${escHtml(e.method)}</span> <span class="mono t-sm">${escHtml(e.path)}</span></td><td>${permPill(e.resource, e.action)}</td><td>${statusPill(e.status)}</td></tr>`
       ).join('');
       const note=a.persisted?'':' · in-memory only — set OMCP_MGMT_AUDIT_FILE for persistence';
       const showMore = entries.length === limit
