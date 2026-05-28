@@ -1333,7 +1333,7 @@
         </div>
       </div>
       <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-        <div class="card"><div class="card-header"><h2>Sources</h2><button class="btn btn-primary btn-sm" onclick="showPage('sources');openAddModal()">+ Add Source</button></div><div id="dash-sources"><div class="empty">Loading...</div></div></div>
+        <div class="card"><div class="card-header"><h2>Sources</h2><button class="btn btn-primary btn-sm" data-rbac="sources:write" onclick="showPage('sources');openAddModal()">+ Add Source</button></div><div id="dash-sources"><div class="empty">Loading...</div></div></div>
         <div class="card"><div class="card-header"><h2>Services</h2></div><div id="dash-services"><div class="empty">Loading...</div></div></div>
       </div>
       <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px;">
@@ -1355,7 +1355,7 @@
           <div class="breadcrumb">Console / Observability / <b>Sources</b></div>
           <h1>Data Sources</h1>
         </div>
-        <div class="ph-actions"><button class="btn btn-primary btn-sm" onclick="openAddModal()">+ Add Source</button></div>
+        <div class="ph-actions"><button class="btn btn-primary btn-sm" data-rbac="sources:write" onclick="openAddModal()">+ Add Source</button></div>
       </div>
       <div class="card">
         <div class="card-header"><h2>All sources</h2></div>
@@ -1408,7 +1408,7 @@
           <p class="empty" style="margin:0 0 12px">Install a signed connector <code>.tgz</code> directly — handy for air-gapped environments. The bundle is always verified against the configured trust root before it is loaded.</p>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <input type="file" id="conn-upload-file" accept=".tgz,.tar.gz,application/octet-stream">
-            <button class="btn btn-primary btn-sm" onclick="uploadConnector(this)">Upload &amp; install</button>
+            <button class="btn btn-primary btn-sm" data-rbac="connectors:write" onclick="uploadConnector(this)">Upload &amp; install</button>
           </div>
         </div>
       </div>
@@ -1525,8 +1525,8 @@
             </div>
           </div>
           <div style="display:flex; gap:8px; justify-content:flex-end;">
-            <button class="btn btn-ghost btn-sm" onclick="resetSettings()">Reset to Defaults</button>
-            <button class="btn btn-primary btn-sm" id="btn-save-settings" onclick="saveSettings()" disabled>Save Settings</button>
+            <button class="btn btn-ghost btn-sm" data-rbac="settings:write" onclick="resetSettings()">Reset to Defaults</button>
+            <button class="btn btn-primary btn-sm" id="btn-save-settings" data-rbac="settings:write" onclick="saveSettings()" disabled>Save Settings</button>
           </div>
         </div>
 
@@ -1581,8 +1581,8 @@
             <div class="form-group"><label>Degraded above score</label><input type="number" id="ht-bound-degraded" min="0" max="100"></div>
           </div>
           <div style="display:flex; gap:8px; justify-content:flex-end;">
-            <button class="btn btn-ghost btn-sm" onclick="resetHealth()">Reset to Defaults</button>
-            <button class="btn btn-primary btn-sm" id="btn-save-health" onclick="saveHealth()" disabled>Save Thresholds</button>
+            <button class="btn btn-ghost btn-sm" data-rbac="health:write" onclick="resetHealth()">Reset to Defaults</button>
+            <button class="btn btn-primary btn-sm" id="btn-save-health" data-rbac="health:write" onclick="saveHealth()" disabled>Save Thresholds</button>
           </div>
         </div>
 
@@ -1969,18 +1969,41 @@ async function omcpLogout() {
   // Reload the page so any cached in-memory state is dropped.
   location.reload();
 }
+// Identity + granted permissions snapshot, refreshed after sign-in /
+// out. Other code calls omcpCan('sources','write') to decide whether
+// to render write controls. Anonymous mode → window.__omcpMe.permissions
+// is undefined and omcpCan() returns true (no RBAC enforced).
+window.__omcpMe = { authenticated: false, mode: 'anonymous', permissions: null };
+function omcpCan(resource, action) {
+  const me = window.__omcpMe;
+  if (!me || me.mode === 'anonymous') return true;
+  if (!Array.isArray(me.permissions)) return false;
+  return me.permissions.some(p => p.resource === resource && p.action === action);
+}
+function omcpApplyRbacToDom() {
+  // Hide elements marked with data-rbac="resource:action" when the
+  // current user lacks that permission. Idempotent — safe to call on
+  // every render.
+  document.querySelectorAll('[data-rbac]').forEach(el => {
+    const [r, a] = (el.getAttribute('data-rbac') || '').split(':');
+    if (!r || !a) return;
+    el.style.display = omcpCan(r, a) ? '' : 'none';
+  });
+}
 async function omcpSyncIdentity() {
   const badge = document.getElementById('user-badge');
   try {
     const r = await _omcpRawFetch('/api/me');
     if (!r.ok) { if (badge) badge.style.display = 'none'; return; }
     const me = await r.json();
+    window.__omcpMe = me;
     if (me.authenticated && badge) {
       badge.querySelector('.user-name').textContent = me.user.name;
       badge.style.display = '';
     } else if (badge) {
       badge.style.display = 'none';
     }
+    omcpApplyRbacToDom();
   } catch (e) { if (badge) badge.style.display = 'none'; }
 }
 window.addEventListener('DOMContentLoaded', omcpSyncIdentity);
