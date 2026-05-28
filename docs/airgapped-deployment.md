@@ -135,6 +135,24 @@ GitOps-friendly: commit `values.yaml` + a sealed `auth.token` secret. No state i
 
 observability-mcp ships **no built-in telemetry** — no startup phone-home, no usage pings, no error reporting back to the maintainer. Logs go to stdout, metrics go to your Prometheus, and that's it. Safe to run inside a fully isolated network without redaction.
 
+## Web UI fonts — no external CDN
+
+The bundled Web UI does **not** load any third-party font from a public
+CDN. It uses the OS-native system font stack
+(`-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica
+Neue', Arial, ui-sans-serif, sans-serif`), so the management surface
+renders cleanly in browsers behind an air-gap without any external
+network access at all.
+
+If the operator's policy requires a verified custom font, bake it
+into a derived image: add an `@font-face` block at the top of
+`mcp-server/src/ui/index.html` referencing a `.woff2` shipped under
+`mcp-server/src/ui/`, rebuild the image with `docker compose build
+mcp-server`, push to your internal registry, and point the Helm
+chart's `image.repository` at the rebuilt tag. The bundled UI is a
+single file by design — no plugin or values-override mechanism for
+fonts.
+
 ## Updates
 
 Releases are tagged in the GitHub repo. The recommended workflow:
