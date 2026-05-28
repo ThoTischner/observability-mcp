@@ -950,7 +950,7 @@ async function main() {
 
   // Update an existing source
   app.put("/api/sources/:name", need("sources","write"), async (req, res) => {
-    const oldName = req.params.name;
+    const oldName = String(req.params.name);
     const { name, type, url, enabled, auth, tls } = req.body;
     const existing = registry.getSourceConfigs().find((s) => s.name === oldName);
     if (!existing) {
@@ -977,7 +977,7 @@ async function main() {
 
   // Delete a source
   app.delete("/api/sources/:name", need("sources","delete"), async (req, res) => {
-    const name = req.params.name;
+    const name = String(req.params.name);
     const existing = registry.getSourceConfigs().find((s) => s.name === name);
     if (!existing) {
       res.status(404).json({ error: `Source "${name}" not found` });
@@ -1010,7 +1010,7 @@ async function main() {
 
   // Toggle source enabled/disabled
   app.patch("/api/sources/:name/toggle", need("sources","write"), async (req, res) => {
-    const name = req.params.name;
+    const name = String(req.params.name);
     const existing = registry.getSourceConfigs().find((s) => s.name === name);
     if (!existing) {
       res.status(404).json({ error: `Source "${name}" not found` });
@@ -1139,9 +1139,9 @@ async function main() {
 
   // Get metrics for a source (active metrics or defaults)
   app.get("/api/sources/:name/metrics", (req, res) => {
-    const connector = registry.getByName(req.params.name);
+    const connector = registry.getByName(String(req.params.name));
     if (!connector) {
-      res.status(404).json({ error: `Source "${req.params.name}" not found` });
+      res.status(404).json({ error: `Source "${String(req.params.name)}" not found` });
       return;
     }
     res.json({
@@ -1152,7 +1152,7 @@ async function main() {
 
   // Update metrics for a source
   app.put("/api/sources/:name/metrics", need("sources","write"), async (req, res) => {
-    const name = req.params.name;
+    const name = String(req.params.name);
     const sourceIdx = config.sources.findIndex((s) => s.name === name);
     if (sourceIdx === -1) {
       res.status(404).json({ error: `Source "${name}" not found` });
@@ -1167,7 +1167,7 @@ async function main() {
 
   // Reset a source's metrics to connector defaults
   app.delete("/api/sources/:name/metrics", need("sources","write"), async (req, res) => {
-    const name = req.params.name;
+    const name = String(req.params.name);
     const sourceIdx = config.sources.findIndex((s) => s.name === name);
     if (sourceIdx === -1) {
       res.status(404).json({ error: `Source "${name}" not found` });
