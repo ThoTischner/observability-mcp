@@ -19,7 +19,11 @@ export type RedactionCategory =
   | "ipv6"
   | "bearer"
   | "jwt"
-  | "api-key";
+  | "api-key"
+  | "aws-key"
+  | "slack-token"
+  | "private-key"
+  | "gh-pat";
 
 export interface RedactionResult {
   text: string;
@@ -35,13 +39,23 @@ export interface RedactionResult {
 // - JWT: 3-part base64url joined by dots.
 // - Generic API-key: long alnum + base64-ish run after a key= marker.
 const PATTERNS: Array<{ category: RedactionCategory; re: RegExp }> = [
-  // emails first so they don't get partially matched by other patterns
+  // High-confidence cloud-vendor secrets go first — their prefixes are
+  // distinctive enough that they don't conflict with generic patterns.
+  // - AWS access key id: 16-32 chars after AKIA/ASIA/AROA prefix.
+  // - Slack tokens: xoxa-/xoxb-/xoxp-/xoxr-/xoxs- + 10+ chars.
+  // - GitHub PAT: github_pat_<base62 segments> or ghp_/gho_/ghs_/ghu_/ghr_ + 36 chars.
+  // - PEM private-key blocks: greedy match across newlines.
+  { category: "aws-key", re: /\b(?:AKIA|ASIA|AROA)[0-9A-Z]{16,20}\b/g },
+  { category: "slack-token", re: /\bxox[abprsu]-[A-Za-z0-9-]{10,}\b/g },
+  { category: "gh-pat", re: /\b(?:github_pat_[A-Za-z0-9_]{40,}|gh[opsuru]_[A-Za-z0-9]{36})\b/g },
+  { category: "private-key", re: /-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP |ENCRYPTED )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |DSA |OPENSSH |PGP |ENCRYPTED )?PRIVATE KEY-----/g },
+
+  // emails before other patterns so they don't get eaten partially
   { category: "email", re: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,24}\b/g },
   { category: "jwt", re: /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g },
   { category: "bearer", re: /\b[Bb]earer\s+[A-Za-z0-9._\-+/=]{12,}\b/g },
   { category: "api-key", re: /\b(?:api[_-]?key|x-api-key|token|secret)[=:]\s*['"]?[A-Za-z0-9._\-+/=]{16,}['"]?/gi },
   { category: "ipv4", re: /\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b/g },
-  // simple ipv6: 8 groups of 1-4 hex digits, or :: compression with at least one group on each side.
   // ipv6 — covers full, mid-compressed, leading "::loopback" / "::ffff:v4"
   // mapped forms, and "::1". Trailing-only `xxxx::` shapes are rare in
   // operational logs and intentionally not covered.
@@ -49,7 +63,10 @@ const PATTERNS: Array<{ category: RedactionCategory; re: RegExp }> = [
 ];
 
 function emptyCounts(): Record<RedactionCategory, number> {
-  return { email: 0, ipv4: 0, ipv6: 0, bearer: 0, jwt: 0, "api-key": 0 };
+  return {
+    email: 0, ipv4: 0, ipv6: 0, bearer: 0, jwt: 0, "api-key": 0,
+    "aws-key": 0, "slack-token": 0, "private-key": 0, "gh-pat": 0,
+  };
 }
 
 /** Run all patterns in a deterministic order; later patterns won't

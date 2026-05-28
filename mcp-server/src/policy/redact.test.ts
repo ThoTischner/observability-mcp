@@ -32,13 +32,21 @@ test("redactText — JWTs detected by eyJ prefix + three-part shape", () => {
   assert.doesNotMatch(r.text, /eyJ/);
 });
 
-test("redactText — api-key style assignments", () => {
+test("redactText — api-key / cloud-token style assignments", () => {
+  // r1: generic prefix-based api-key match.
+  // r2: x-api-key with an opaque body — falls through to api-key.
+  // r3: token= with a Slack-shape value — the new slack-token pattern
+  //     wins because it runs before api-key; either outcome is fine,
+  //     the contract is "the secret is gone after one pass".
   const r1 = redactText('api_key="abc123def456ghi789jkl"');
   const r2 = redactText("x-api-key: sk_test_abcdefghijklmnopqrstuvwxyz");
   const r3 = redactText("token=xoxb-1234567890-abcdefghijklm");
-  assert.ok(r1.matches["api-key"] + r1.matches.bearer >= 1);
-  assert.ok(r2.matches["api-key"] + r2.matches.bearer >= 1);
-  assert.ok(r3.matches["api-key"] + r3.matches.bearer >= 1);
+  assert.ok(r1.totalMatches >= 1, "expected r1 to be redacted somewhere");
+  assert.ok(r2.totalMatches >= 1, "expected r2 to be redacted somewhere");
+  assert.ok(r3.totalMatches >= 1, "expected r3 to be redacted somewhere");
+  assert.doesNotMatch(r1.text, /abc123def456ghi789jkl/);
+  assert.doesNotMatch(r2.text, /sk_test_abcdefghijklmnopqrstuvwxyz/);
+  assert.doesNotMatch(r3.text, /xoxb-1234567890/);
 });
 
 test("redactText — leaves harmless text alone", () => {
@@ -75,6 +83,40 @@ test("redactValue — walks nested objects / arrays, mutates only strings", () =
   assert.equal(r.matches.email, 2);
   assert.equal(r.matches.ipv4, 1);
   assert.equal(r.totalMatches, 3);
+});
+
+test("redactText — AWS access key IDs (AKIA / ASIA / AROA) are redacted", () => {
+  const r1 = redactText("log: assumed role AKIAIOSFODNN7EXAMPLE today");
+  const r2 = redactText("temporary creds ASIAY34FZKBOKMUTVV7A logged");
+  const r3 = redactText("role-arn AROAIIAFOO2ZBADBCEXAMPLE");
+  assert.equal(r1.matches["aws-key"], 1);
+  assert.equal(r2.matches["aws-key"], 1);
+  assert.equal(r3.matches["aws-key"], 1);
+  assert.match(r1.text, /\[redacted-aws-key\]/);
+  assert.doesNotMatch(r1.text, /AKIAIOSFODNN7EXAMPLE/);
+});
+
+test("redactText — Slack tokens (xoxa / xoxb / xoxp / …) are redacted", () => {
+  const r = redactText("slack notify: token=xoxb-1234567890-abcdefghijklm result: ok");
+  assert.equal(r.matches["slack-token"], 1);
+  assert.doesNotMatch(r.text, /xoxb-1234567890/);
+});
+
+test("redactText — GitHub PATs are redacted (ghp_ / github_pat_)", () => {
+  const r1 = redactText("git remote set-url origin https://ghp_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789@github.com/x/y.git");
+  // Use a 40-char body, which matches `[A-Za-z0-9_]{40,}` (note: includes underscore)
+  const r2 = redactText("token github_pat_ABCDEFGH_IJKLMNOPQRSTUVWXYZ012345678ABCDEFGHIJKLMNOP");
+  assert.equal(r1.matches["gh-pat"], 1);
+  assert.equal(r2.matches["gh-pat"], 1);
+});
+
+test("redactText — PEM private-key blocks are redacted greedily", () => {
+  const pem = `-----BEGIN RSA PRIVATE KEY-----
+MIIEpAIBAAKCAQEAwLPVKj…
+-----END RSA PRIVATE KEY-----`;
+  const r = redactText(`config:\n${pem}\nend`);
+  assert.equal(r.matches["private-key"], 1);
+  assert.doesNotMatch(r.text, /MIIEpAIBAA/);
 });
 
 test("redactValue — null / undefined leaves are preserved", () => {

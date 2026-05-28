@@ -20,6 +20,10 @@ scrubbing — not a substitute for it.
 | `bearer` | `Authorization: Bearer <token>` (≥12 char token) | `[redacted-bearer]` |
 | `jwt` | `eyJ…header.payload.sig` three-part shape | `[redacted-jwt]` |
 | `api-key` | `(api[_-]?key\|x-api-key\|token\|secret)[=:]\s*['"]?<≥16 char value>['"]?` | `[redacted-api-key]` |
+| `aws-key` | AWS access key id (`AKIA…` / `ASIA…` / `AROA…` + 16–20 chars) | `[redacted-aws-key]` |
+| `slack-token` | `xox[abprsu]-…` Slack tokens | `[redacted-slack-token]` |
+| `gh-pat` | `gh[opsuru]_…` and `github_pat_…` GitHub personal access tokens | `[redacted-gh-pat]` |
+| `private-key` | PEM-encoded `-----BEGIN [...] PRIVATE KEY-----` blocks (greedy across newlines) | `[redacted-private-key]` |
 
 The categories are non-overlapping — each redacted region is replaced by
 a category-tagged marker that no later pattern matches, so a second pass
