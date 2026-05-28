@@ -1944,7 +1944,18 @@ function omcpEnsureLoggedIn() {
   _omcpLoginInflight = new Promise((resolve) => { _omcpLoginResolve = resolve; });
   const m = document.getElementById('login-modal');
   if (m) m.classList.add('open');
-  setTimeout(() => { const u = document.getElementById('login-username'); if (u) u.focus(); }, 50);
+  // Prefill the most recent username (kept in localStorage; the password
+  // field never persists). Focus jumps straight to password when we
+  // already have a username, otherwise to username.
+  setTimeout(() => {
+    const u = document.getElementById('login-username');
+    const p = document.getElementById('login-password');
+    let lastUser = '';
+    try { lastUser = localStorage.getItem('omcp-last-user') || ''; } catch (e) {}
+    if (u && lastUser && !u.value) u.value = lastUser;
+    if (u && p && u.value) p.focus();
+    else if (u) u.focus();
+  }, 50);
   return _omcpLoginInflight;
 }
 function omcpLoginKey(e) { if (e.key === 'Enter') { e.preventDefault(); omcpSubmitLogin(); } }
@@ -1974,6 +1985,9 @@ async function omcpSubmitLogin() {
     document.getElementById('login-modal').classList.remove('open');
     document.getElementById('login-password').value = '';
     banner.className = 'form-banner';
+    // Remember the username for next time so the operator doesn't
+    // retype it on every cookie expiry. Password field never persists.
+    try { localStorage.setItem('omcp-last-user', u); } catch (e) {}
     if (_omcpLoginResolve) { const r = _omcpLoginResolve; _omcpLoginResolve = null; _omcpLoginInflight = null; r(); }
     await omcpSyncIdentity();
   } finally { btn.disabled = false; }
