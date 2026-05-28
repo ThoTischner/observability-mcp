@@ -71,6 +71,23 @@ test("inspect: returns counts without consuming a slot", () => {
   assert.equal(lim.check("alice", t).allowed, true);
 });
 
+test("knownIdentities — returns every identity that has been checked", () => {
+  const lim = new IdentityRateLimiter({ limit: 5, windowMs: 60_000 });
+  const t = 1_700_000_000_000;
+  lim.check("alice", t);
+  lim.check("bob", t);
+  lim.check("alice", t);
+  const ids = lim.knownIdentities().sort();
+  assert.deepEqual(ids, ["alice", "bob"]);
+});
+
+test("inspect on an unknown identity returns count=0", () => {
+  const lim = new IdentityRateLimiter({ limit: 5, windowMs: 60_000 });
+  const ins = lim.inspect("never-seen");
+  assert.equal(ins.count, 0);
+  assert.equal(ins.limit, 5);
+});
+
 test("reset clears all buckets", () => {
   const lim = new IdentityRateLimiter({ limit: 1, windowMs: 60_000 });
   const t = 1_700_000_000_000;
