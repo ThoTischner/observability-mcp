@@ -55,6 +55,15 @@ test("redactText — leaves harmless text alone", () => {
   assert.equal(r.text, "the order-service replied with 200 OK after 45ms");
 });
 
+test("redactText — long digit strings without Luhn don't trigger credit-card", () => {
+  // 16-digit telemetry sequence (UNIX nanos + service id) — should pass through.
+  const r = redactText("ts=1717000000000000000 seq=4242424242424242 user=test");
+  // 4242424242424242 IS Luhn-valid (Visa test number), so that counts as a hit;
+  // but ts=1717... starts with a non-bordered digit run that includes "1717" pattern.
+  // The assertion: only the Luhn-valid 16-digit string is counted as credit-card.
+  assert.equal(r.matches["credit-card"], 1);
+});
+
 test("redactText — already-redacted markers don't re-match in further passes", () => {
   // Run the redactor twice; the second pass should be a no-op.
   const first = redactText("contact alice@example.com");
@@ -108,6 +117,27 @@ test("redactText — GitHub PATs are redacted (ghp_ / github_pat_)", () => {
   const r2 = redactText("token github_pat_ABCDEFGH_IJKLMNOPQRSTUVWXYZ012345678ABCDEFGHIJKLMNOP");
   assert.equal(r1.matches["gh-pat"], 1);
   assert.equal(r2.matches["gh-pat"], 1);
+});
+
+test("redactText — Luhn-valid credit-card numbers are redacted, invalid ones pass through", () => {
+  // Visa test number 4111 1111 1111 1111 (Luhn-valid)
+  const r1 = redactText("charge attempted on card 4111111111111111 for $42.00");
+  assert.equal(r1.matches["credit-card"], 1);
+  assert.match(r1.text, /\[redacted-credit-card\]/);
+
+  // Same number with separators
+  const r2 = redactText("card 4111-1111-1111-1111 declined");
+  assert.equal(r2.matches["credit-card"], 1);
+  assert.doesNotMatch(r2.text, /4111-1111-1111-1111/);
+
+  // Random 16 digits that DON'T pass Luhn → left alone (e.g. order ID)
+  const r3 = redactText("order 1234567890123456 created");
+  assert.equal(r3.matches["credit-card"], 0);
+  assert.match(r3.text, /1234567890123456/);
+
+  // Too short / too long stays as-is
+  const r4 = redactText("seq 123456789012 and 12345678901234567890");
+  assert.equal(r4.matches["credit-card"], 0);
 });
 
 test("redactText — PEM private-key blocks are redacted greedily", () => {
