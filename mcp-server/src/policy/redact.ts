@@ -86,26 +86,37 @@ export function redactText(input: string): RedactionResult {
   return { text, matches, totalMatches: total };
 }
 
+/** Maximum nesting depth the walker will descend into. Operational
+ * log payloads are essentially flat (objects of strings + a few
+ * nested arrays); a pathologically deep structure is almost certainly
+ * a bug or an attack, and stack-overflowing the auth path is worse
+ * than truncating. The cap is generous — well above anything a
+ * Prometheus / Loki record would ever produce. */
+export const MAX_REDACT_DEPTH = 64;
+
 /** Walk an arbitrary parsed-JSON value and redact every string leaf,
  * accumulating match counts. Non-string leaves and structural keys are
- * left untouched. Returns a new value (does not mutate input). */
+ * left untouched. Returns a new value (does not mutate input). Bails
+ * out below `MAX_REDACT_DEPTH` levels of nesting and returns the raw
+ * sub-tree untouched at that point. */
 export function redactValue(input: unknown): { value: unknown; matches: Record<RedactionCategory, number>; totalMatches: number } {
   const counts = emptyCounts();
-  function walk(v: unknown): unknown {
+  function walk(v: unknown, depth: number): unknown {
+    if (depth > MAX_REDACT_DEPTH) return v;
     if (typeof v === "string") {
       const r = redactText(v);
       for (const k of Object.keys(counts) as RedactionCategory[]) counts[k] += r.matches[k];
       return r.text;
     }
-    if (Array.isArray(v)) return v.map((x) => walk(x));
+    if (Array.isArray(v)) return v.map((x) => walk(x, depth + 1));
     if (v && typeof v === "object") {
       const out: Record<string, unknown> = {};
-      for (const [k, vv] of Object.entries(v as Record<string, unknown>)) out[k] = walk(vv);
+      for (const [k, vv] of Object.entries(v as Record<string, unknown>)) out[k] = walk(vv, depth + 1);
       return out;
     }
     return v;
   }
-  const value = walk(input);
+  const value = walk(input, 0);
   let total = 0;
   for (const k of Object.keys(counts) as RedactionCategory[]) total += counts[k];
   return { value, matches: counts, totalMatches: total };
