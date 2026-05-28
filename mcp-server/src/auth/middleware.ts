@@ -38,15 +38,23 @@ export interface AuthedRequest extends Request {
  * globally so every handler can read the identity.
  */
 export function buildSessionAttacher(runtime: AuthRuntime) {
+  const sessionCfg = runtime.session;
+  // In anonymous mode the secret is meaningless — verifySession would
+  // throw on an empty secret — so install a true no-op middleware and
+  // skip every per-request branch.
+  if (runtime.mode === "anonymous" || !sessionCfg) {
+    return function noopAttacher(_req: AuthedRequest, _res: Response, next: NextFunction): void {
+      next();
+    };
+  }
   return function sessionAttacher(req: AuthedRequest, _res: Response, next: NextFunction): void {
-    // Single exit point — no early return / "bypass" branch. Anonymous
-    // mode simply skips the body of the if and falls through to next().
-    if (runtime.mode !== "anonymous" && runtime.session) {
-      const cookieHeader = req.headers.cookie || "";
-      const raw = readCookie(cookieHeader);
-      const payload = raw ? verifySession(raw, runtime.session) : null;
-      if (payload) req.session = payload;
-    }
+    // verifySession is a pure parse + HMAC verify. It safely returns
+    // null on empty / null / malformed input, so call it unconditionally
+    // and let the result speak for itself — no attacker-controlled
+    // branch decides whether the check runs.
+    const raw = readCookie(req.headers.cookie || "");
+    const payload = verifySession(raw, sessionCfg);
+    if (payload) req.session = payload;
     next();
   };
 }
