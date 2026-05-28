@@ -1,0 +1,92 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+
+import { IdentityRateLimiter } from "./limiter.js";
+
+test("allows up to the configured limit, then denies", () => {
+  const lim = new IdentityRateLimiter({ limit: 3, windowMs: 60_000 });
+  const t = 1_700_000_000_000;
+  assert.equal(lim.check("alice", t + 0).allowed, true);
+  assert.equal(lim.check("alice", t + 100).allowed, true);
+  assert.equal(lim.check("alice", t + 200).allowed, true);
+  const denied = lim.check("alice", t + 300);
+  assert.equal(denied.allowed, false);
+  assert.equal(denied.count, 3);
+  assert.equal(denied.limit, 3);
+  assert.ok(denied.retryAfterSeconds >= 1);
+});
+
+test("sliding window: expired entries free up slots", () => {
+  const lim = new IdentityRateLimiter({ limit: 2, windowMs: 10_000 });
+  const t = 1_700_000_000_000;
+  lim.check("alice", t + 0);
+  lim.check("alice", t + 5_000);
+  // At t+9s alice is still at the cap.
+  assert.equal(lim.check("alice", t + 9_000).allowed, false);
+  // At t+11s the first entry has aged out → one slot opens.
+  const after = lim.check("alice", t + 11_000);
+  assert.equal(after.allowed, true);
+  assert.equal(after.count, 2);
+});
+
+test("identities are isolated from each other", () => {
+  const lim = new IdentityRateLimiter({ limit: 1, windowMs: 60_000 });
+  const t = 1_700_000_000_000;
+  assert.equal(lim.check("alice", t).allowed, true);
+  assert.equal(lim.check("alice", t).allowed, false);
+  // bob has his own fresh bucket.
+  assert.equal(lim.check("bob", t).allowed, true);
+});
+
+test("retryAfterSeconds points at the oldest in-window record's expiry", () => {
+  const lim = new IdentityRateLimiter({ limit: 1, windowMs: 30_000 });
+  const t = 1_700_000_000_000;
+  lim.check("alice", t);
+  const denied = lim.check("alice", t + 5_000);
+  assert.equal(denied.allowed, false);
+  // 30s window started at t, so expiry is t+30s → 25s from t+5s.
+  assert.equal(denied.retryAfterSeconds, 25);
+});
+
+test("denied calls do NOT push the window forward", () => {
+  const lim = new IdentityRateLimiter({ limit: 1, windowMs: 10_000 });
+  const t = 1_700_000_000_000;
+  lim.check("alice", t);
+  // Multiple denies — none of them should reset the oldest-timestamp.
+  for (let i = 1; i < 10; i++) lim.check("alice", t + i * 100);
+  // Still expecting expiry at t+10s, not pushed forward by the denies.
+  const justAfterExpiry = lim.check("alice", t + 10_001);
+  assert.equal(justAfterExpiry.allowed, true);
+});
+
+test("inspect: returns counts without consuming a slot", () => {
+  const lim = new IdentityRateLimiter({ limit: 5, windowMs: 60_000 });
+  const t = 1_700_000_000_000;
+  lim.check("alice", t);
+  lim.check("alice", t);
+  const ins = lim.inspect("alice", t);
+  assert.equal(ins.count, 2);
+  assert.equal(ins.limit, 5);
+  // Subsequent check still has room for 3 more.
+  assert.equal(lim.check("alice", t).allowed, true);
+});
+
+test("reset clears all buckets", () => {
+  const lim = new IdentityRateLimiter({ limit: 1, windowMs: 60_000 });
+  const t = 1_700_000_000_000;
+  lim.check("alice", t);
+  lim.check("bob", t);
+  lim.reset();
+  assert.equal(lim.check("alice", t).allowed, true);
+  assert.equal(lim.check("bob", t).allowed, true);
+});
+
+test("default limit applies when constructed with no args", () => {
+  const lim = new IdentityRateLimiter();
+  // Exhaust the default 60/min cap.
+  const t = 1_700_000_000_000;
+  for (let i = 0; i < 60; i++) {
+    assert.equal(lim.check("alice", t + i).allowed, true);
+  }
+  assert.equal(lim.check("alice", t + 60).allowed, false);
+});
