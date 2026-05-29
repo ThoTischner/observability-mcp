@@ -95,6 +95,19 @@ const SERVER_VERSION: string = (() => {
   }
 })();
 
+/** Defensive read of a single query-string value. Express's
+ * `req.query[k]` is typed as `string | ParsedQs | (string | ParsedQs)[]`
+ * — a caller passing `?actor=a&actor=b` (or `?actor[]=a`) yields an
+ * array (or object) rather than a string, which then propagates as
+ * `[a,b]` into downstream filters that expect a string. This helper
+ * returns the first string-shaped value or undefined; arrays / nested
+ * objects collapse safely instead of leaking through. */
+function qstr(v: unknown): string | undefined {
+  if (typeof v === "string") return v;
+  if (Array.isArray(v) && typeof v[0] === "string") return v[0];
+  return undefined;
+}
+
 function applyConfigToRuntime(config: Config, registry: ConnectorRegistry) {
   setHealthThresholds(config.healthThresholds);
 }
@@ -834,13 +847,12 @@ async function main() {
   // policy) can pull it. Supports optional ?from, ?to (RFC-3339), ?actor,
   // ?action, ?limit (default 100, capped to ring size).
   app.get("/api/audit", need("audit", "read"), (req, res) => {
-    const q = req.query as Record<string, string | undefined>;
     const entries = mgmtAudit.list({
-      from: q.from,
-      to: q.to,
-      actor: q.actor,
-      action: q.action,
-      limit: q.limit ? parseInt(q.limit, 10) : undefined,
+      from: qstr(req.query.from),
+      to: qstr(req.query.to),
+      actor: qstr(req.query.actor),
+      action: qstr(req.query.action),
+      limit: qstr(req.query.limit) ? parseInt(qstr(req.query.limit)!, 10) : undefined,
     });
     res.json({ entries, tipHash: mgmtAudit.tipHash, persisted: !!process.env.OMCP_MGMT_AUDIT_FILE });
   });
@@ -851,8 +863,8 @@ async function main() {
   // audit log can see who is calling what. Anonymous /mcp traffic
   // never enters a bucket so it doesn't show up here.
   app.get("/api/usage", need("audit", "read"), (req, res) => {
-    const q = req.query as Record<string, string | undefined>;
-    const ids = q.actor ? [q.actor] : toolRateLimiter.knownIdentities();
+    const actor = qstr(req.query.actor);
+    const ids = actor ? [actor] : toolRateLimiter.knownIdentities();
     const now = Date.now();
     const identities = ids.map((id) => {
       const s = toolRateLimiter.inspect(id, now);
