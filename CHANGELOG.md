@@ -97,6 +97,46 @@ plus stricter redaction by default.
   when `OMCP_AUTH=basic` is set but `OMCP_SESSION_SECRET` is not, so
   the operator learns that sessions will die on restart before the
   first incident teaches them the hard way. #268
+- **Helm `values.yaml` documents the v1.8.0 env vars** in the
+  `extraEnv:` block comment — `helm show values` now lists every
+  `OMCP_*` knob with a one-line description, plus a 3-key
+  copy-pastable example (basic auth + `secretKeyRef` for the
+  session secret). #270
+- **OpenAPI 3.1 spec covers `/api/info`** with a full schema for the
+  `governance` posture block (authMode, authSecretEphemeral,
+  auditPersisted, catalogConfigured, redaction, trustProxy,
+  toolRatePerMin). Codegen-friendly. #274
+- **`scripts/verify-audit.mjs` documentation cross-links** —
+  `docs/auth-basic.md` and `docs/redaction.md` now link back to the
+  one-stop access-control runbook. #273
+
+### Changed
+- **`OMCP_TOOL_RATE_PER_MIN` parsing centralised** behind a single
+  `resolveToolRatePerMin()` helper used by `/api/info`, `/api/usage`,
+  and the limiter itself. `0` / negative / non-numeric now fall back
+  to the documented default 60 (previously `-1` made the limiter
+  reject every request; `0` similarly locked everyone out). #276, #277
+- **IPv6 redaction runs before IPv4** so IPv4-mapped addresses
+  (`::ffff:192.168.1.42`) are classified as a single IPv6 leaf rather
+  than leaving a half-redacted `::ffff:[redacted-ipv4]` token. #272
+
+### Fixed
+- **`GET /api/audit?limit=foo`** previously returned an empty array
+  because `parseInt("foo", 10)` is NaN and the loop's
+  `out.length < NaN` was always false. Non-finite / non-positive
+  limits now coerce to the 100 default; positive decimals floor. #278
+- **`mcp-server/src/policy/redact.ts` docstring** corrected to match
+  reality — the file claimed a `redaction:bypass` RBAC permission
+  shipped today, but per-request bypass is on the roadmap; only
+  process-wide `OMCP_REDACTION=off` exists. #271
+
+### Internal
+- **`mcp-server/src/openapi.test.ts`** pins the 17 documented
+  `/api/*` routes plus the `/api/info` governance-block schema shape
+  so a future undocumented endpoint trips the test instead of
+  shipping silently. #275
+- **IPv6 redaction tests** cover full / compressed / `::1` /
+  IPv4-mapped forms — closes a coverage gap the regex already had. #272
 
 ## [1.8.0] — 2026-05-28
 
