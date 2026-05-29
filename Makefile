@@ -51,11 +51,14 @@ connect-claude-code: ## Print the .mcp.json snippet for Claude Code / Claude Des
 
 connect-cursor: ## Print the MCP config snippet for Cursor
 	@echo "# Drop into ~/.cursor/mcp.json (create the file if it doesn't exist)"
+	@echo "# If the server has OMCP_API_KEYS set, add a Bearer header — see"
+	@echo "# the commented \"headers\" block below."
 	@echo ""
 	@echo '{'
 	@echo '  "mcpServers": {'
 	@echo '    "observability": {'
 	@echo '      "url": "http://$(OMCP_HOST):$(OMCP_PORT)/mcp"'
+	@echo '      // "headers": { "Authorization": "Bearer <your-api-key>" }'
 	@echo '    }'
 	@echo '  }'
 	@echo '}'
