@@ -40,6 +40,8 @@ connect-claude-code: ## Print the .mcp.json snippet for Claude Code / Claude Des
 	@echo "# (Claude Code: claude mcp add observability --transport http http://$(OMCP_HOST):$(OMCP_PORT)/mcp)"
 	@echo "# (Claude Desktop: ~/.config/Claude/claude_desktop_config.json on Linux,"
 	@echo "#  ~/Library/Application Support/Claude/claude_desktop_config.json on macOS)"
+	@echo "# If the server has OMCP_API_KEYS set, add a Bearer header to the"
+	@echo "# transport block: \"headers\": { \"Authorization\": \"Bearer <key>\" }"
 	@echo ""
 	@echo '{'
 	@echo '  "mcpServers": {'
