@@ -86,6 +86,17 @@ doctor: ## Quick health check — is the mcp-server reachable on $$OMCP_HOST:$$O
 	  auth=$$(echo "$$me" | jq -r '.authenticated // false'); \
 	  echo "ok (mode=$$mode authenticated=$$auth)"; \
 	fi
+	@printf "Probing /api/info governance posture ... "
+	@info=$$(curl -fsS --max-time 3 "http://$(OMCP_HOST):$(OMCP_PORT)/api/info" 2>/dev/null || echo ''); \
+	if [ -z "$$info" ]; then \
+	  echo "FAIL — endpoint missing (older server build?)"; \
+	else \
+	  authMode=$$(echo "$$info" | jq -r '.governance.authMode // "?"'); \
+	  redaction=$$(echo "$$info" | jq -r '.governance.redaction // false'); \
+	  auditPersisted=$$(echo "$$info" | jq -r '.governance.auditPersisted // false'); \
+	  rate=$$(echo "$$info" | jq -r '.governance.toolRatePerMin // "?"'); \
+	  echo "ok (authMode=$$authMode redaction=$$redaction auditPersisted=$$auditPersisted rate=$$rate/min)"; \
+	fi
 	@echo
 	@echo "All good. Wire your agent up with:"
 	@echo "  make connect-claude-code   # Claude Code / Claude Desktop"
