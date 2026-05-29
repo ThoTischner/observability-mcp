@@ -81,7 +81,9 @@ The server starts with **zero sources**. Add Prometheus/Loki via the Web UI or `
 > If you'd rather have the snippets above printed by a Make target — including
 > custom-host / custom-port substitution — use `make connect-claude-code` or
 > `make connect-cursor`. `make doctor` round-trips a real MCP handshake against
-> a running server and tells you what to fix if it can't.
+> a running server, reports the live governance posture (auth mode, redaction,
+> audit-log persistence, per-identity rate cap), and tells you what to fix if
+> it can't.
 
 > **Multi-user / production?** See [docs/access-control.md](docs/access-control.md)
 > for the opt-in basic-mode login + RBAC + audit log + per-identity rate limit
