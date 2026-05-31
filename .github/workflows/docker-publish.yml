@@ -159,6 +159,13 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # Keyless cosign sign + SBOM attach: id-token allows OIDC
+      # exchange with sigstore's Fulcio for a short-lived signing
+      # cert. Cosign OCI attestations push to the same registry
+      # repo as the image (covered by packages: write above) — no
+      # separate `attestations: write` needed (that's for GitHub's
+      # native attest-* action family, which we don't use here).
+      id-token: write
     steps:
       - name: Lowercase image name
         id: image
@@ -201,5 +208,61 @@ jobs:
             $(printf '${{ env.REGISTRY }}/${{ steps.image.outputs.lower }}@sha256:%s ' *)
 
       - name: Inspect image
+        id: inspect
         run: |
           docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ steps.image.outputs.lower }}:${{ steps.meta.outputs.version }}
+          DIGEST="$(docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ steps.image.outputs.lower }}:${{ steps.meta.outputs.version }} --format '{{.Manifest.Digest}}')"
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+
+      # ---- Phase E9: keyless cosign signing ----
+      # Sigstore OIDC + Fulcio: no key management. The signature is
+      # pushed to the OCI registry alongside the manifest digest;
+      # `cosign verify` (with the workflow identity + Fulcio root)
+      # is enough for downstream operators to confirm provenance.
+      - name: Install cosign
+        # Pin hash + label corrected by reviewer: this SHA is the
+        # sigstore/cosign-installer v3.9.2 release. We let the
+        # action's default cosign version (currently v2.5.3) ride
+        # rather than pinning a downgrade — keyless behaviour is
+        # default since cosign 2.x, no operator-visible change.
+        uses: sigstore/cosign-installer@d58896d6a1865668819e1d91763c7751a165e159 # v3.9.2
+      - name: Sign the image (keyless)
+        run: |
+          cosign sign --yes \
+            "${{ env.REGISTRY }}/${{ steps.image.outputs.lower }}@${{ steps.inspect.outputs.digest }}"
+
+      # ---- Phase E9: Syft SBOM (CycloneDX + SPDX) + cosign attach ----
+      # The buildx-side SBOM is OCI-attached; this extra Syft pass
+      # produces standalone CycloneDX-JSON + SPDX-JSON files the
+      # release uploads (and cosign attests against the image
+      # digest with type=cyclonedx) so an air-gapped operator can
+      # download + verify the SBOM without pulling the image.
+      - name: Install Syft
+        # Pin label corrected by reviewer: this SHA is the
+        # anchore/sbom-action v0.20.4 release.
+        uses: anchore/sbom-action/download-syft@7b36ad622f042cab6f59a75c2ac24ccb256e9b45 # v0.20.4
+      - name: Generate SBOMs (Syft)
+        # Note: Syft handed a manifest-list digest defaults to the
+        # host runner's platform (linux/amd64 on GitHub-hosted
+        # runners). The arm64 variant of the image is covered by
+        # the buildx-embedded SBOM only; doing a second per-platform
+        # Syft pass is tracked as an E9 follow-up.
+        run: |
+          syft "${{ env.REGISTRY }}/${{ steps.image.outputs.lower }}@${{ steps.inspect.outputs.digest }}" \
+            -o cyclonedx-json=image-sbom.cdx.json \
+            -o spdx-json=image-sbom.spdx.json
+      - name: Attest SBOM to the image (cosign attestation)
+        run: |
+          cosign attest --yes --predicate image-sbom.cdx.json --type cyclonedx \
+            "${{ env.REGISTRY }}/${{ steps.image.outputs.lower }}@${{ steps.inspect.outputs.digest }}"
+          cosign attest --yes --predicate image-sbom.spdx.json --type spdxjson \
+            "${{ env.REGISTRY }}/${{ steps.image.outputs.lower }}@${{ steps.inspect.outputs.digest }}"
+      - name: Upload SBOM as workflow artifact
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4
+        with:
+          name: image-sbom-${{ steps.meta.outputs.version }}
+          path: |
+            image-sbom.cdx.json
+            image-sbom.spdx.json
+          if-no-files-found: error
+          retention-days: 90
