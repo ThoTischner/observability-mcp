@@ -27,6 +27,9 @@ export interface AuditEntry {
   seq: number;
   /** Identity that triggered the change. "anonymous" when auth is off. */
   actor: { sub: string; name?: string };
+  /** Tenant the actor belonged to at the time of the action.
+   *  Omitted on pre-E7 entries; readers default to "default". */
+  tenant?: string;
   /** Logical resource + action, mirrors the RBAC vocabulary. */
   resource: string;
   action: string;
@@ -129,7 +132,7 @@ export class AuditLog {
   }
 
   /** Snapshot of the in-memory ring (most recent last). */
-  list(opts: { from?: string; to?: string; actor?: string; action?: string; limit?: number } = {}): AuditEntry[] {
+  list(opts: { from?: string; to?: string; actor?: string; action?: string; limit?: number; tenant?: string } = {}): AuditEntry[] {
     // Coerce non-finite / non-positive limits (NaN from a bad query
     // string, negative, undefined) to the 100 default. Previously
     // NaN propagated through Math.min / Math.max and the comparison
@@ -146,6 +149,10 @@ export class AuditLog {
       if (opts.to && e.ts > opts.to) continue;
       if (opts.actor && e.actor.sub !== opts.actor) continue;
       if (opts.action && e.action !== opts.action) continue;
+      if (opts.tenant) {
+        const entryTenant = e.tenant || "default";
+        if (entryTenant !== opts.tenant) continue;
+      }
       out.push(e);
     }
     return out;

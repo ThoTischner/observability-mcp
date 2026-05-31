@@ -38,6 +38,7 @@ export function buildAuditMiddleware(cfg: AuditMiddlewareConfig): RequestHandler
           actor: sess
             ? { sub: sess.sub, name: sess.name }
             : { sub: "anonymous" },
+          tenant: sess?.tenant || "default",
           resource: cfg.resource,
           action: cfg.action,
           method: req.method,
@@ -45,7 +46,7 @@ export function buildAuditMiddleware(cfg: AuditMiddlewareConfig): RequestHandler
           status: res.statusCode,
           ip: req.ip || undefined,
           target,
-        })
+        } as Parameters<typeof cfg.audit.record>[0])
         .catch(() => {
           // record() already swallows file errors — this catch only
           // covers the synchronous Promise wiring.
