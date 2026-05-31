@@ -1282,13 +1282,24 @@
       <div class="modal-header"><h3>Sign in</h3></div>
       <div class="modal-body">
         <div id="login-banner" class="form-banner"></div>
-        <div class="form-group">
-          <label>Username</label>
-          <input id="login-username" type="text" autocomplete="username" onkeydown="omcpLoginKey(event)">
+        <!-- OIDC: shown when authMode=oidc. Single primary button — the
+             IdP collects credentials, not us. -->
+        <div id="login-oidc" style="display:none;" class="form-group">
+          <button class="btn btn-primary" id="login-sso" onclick="omcpStartSso()" style="width:100%;">
+            Sign in with SSO
+          </button>
+          <div class="form-hint t-sm" id="login-sso-hint" style="margin-top: var(--sp-2);"></div>
         </div>
-        <div class="form-group">
-          <label>Password</label>
-          <input id="login-password" type="password" autocomplete="current-password" onkeydown="omcpLoginKey(event)">
+        <!-- Basic: shown when authMode=basic. Hidden in oidc mode. -->
+        <div id="login-basic">
+          <div class="form-group">
+            <label>Username</label>
+            <input id="login-username" type="text" autocomplete="username" onkeydown="omcpLoginKey(event)">
+          </div>
+          <div class="form-group">
+            <label>Password</label>
+            <input id="login-password" type="password" autocomplete="current-password" onkeydown="omcpLoginKey(event)">
+          </div>
         </div>
       </div>
       <div class="modal-footer">
@@ -1962,10 +1973,29 @@ function omcpEnsureLoggedIn() {
   _omcpLoginInflight = new Promise((resolve) => { _omcpLoginResolve = resolve; });
   const m = document.getElementById('login-modal');
   if (m) m.classList.add('open');
-  // Prefill the most recent username (kept in localStorage; the password
-  // field never persists). Focus jumps straight to password when we
-  // already have a username, otherwise to username.
+  // Toggle SSO vs basic mode form based on what the server told us.
+  // OIDC mode hides the basic-mode submit button entirely — the SSO
+  // button is the only path.
+  const me = window.__omcpMe || {};
+  const isOidc = me.mode === 'oidc';
+  const ssoBlock = document.getElementById('login-oidc');
+  const basicBlock = document.getElementById('login-basic');
+  const ssoHint = document.getElementById('login-sso-hint');
+  const submitBtn = document.getElementById('login-submit');
+  if (ssoBlock) ssoBlock.style.display = isOidc ? '' : 'none';
+  if (basicBlock) basicBlock.style.display = isOidc ? 'none' : '';
+  if (submitBtn) submitBtn.style.display = isOidc ? 'none' : '';
+  if (ssoHint && isOidc) {
+    ssoHint.textContent = me.idpIssuer ? 'You will be redirected to ' + me.idpIssuer : '';
+  }
+  // Prefill the most recent username (basic mode only — OIDC needs no
+  // local credential). Focus rules unchanged.
   setTimeout(() => {
+    if (isOidc) {
+      const sso = document.getElementById('login-sso');
+      if (sso) sso.focus();
+      return;
+    }
     const u = document.getElementById('login-username');
     const p = document.getElementById('login-password');
     let lastUser = '';
@@ -1975,6 +2005,16 @@ function omcpEnsureLoggedIn() {
     else if (u) u.focus();
   }, 50);
   return _omcpLoginInflight;
+}
+// Kick off the OIDC redirect. The return_to carries the current path
+// so the user lands back where they were after the IdP round-trip.
+function omcpStartSso() {
+  const ret = location.pathname + location.search + location.hash;
+  // Only same-origin paths are valid (isSafeReturnTo on the server
+  // enforces this — but we sanitise client-side too so the URL stays
+  // tidy in browser history).
+  const safe = ret && ret.startsWith('/') && !ret.startsWith('//') ? ret : '/';
+  location.href = '/api/auth/oidc/login?return_to=' + encodeURIComponent(safe);
 }
 function omcpLoginKey(e) { if (e.key === 'Enter') { e.preventDefault(); omcpSubmitLogin(); } }
 async function omcpSubmitLogin() {
@@ -2045,7 +2085,20 @@ async function omcpSyncIdentity() {
     const me = await r.json();
     window.__omcpMe = me;
     if (me.authenticated && badge) {
-      badge.querySelector('.user-name').textContent = me.user.name;
+      // Show the email next to the name when the IdP gave us a
+      // verified one. Also surface the IdP issuer host as a title
+      // tooltip when this is an OIDC session — operators with
+      // multiple IdPs can tell at a glance which one they're on.
+      const nameEl = badge.querySelector('.user-name');
+      if (nameEl) {
+        const u = me.user || {};
+        nameEl.textContent = u.email ? (u.name + ' · ' + u.email) : u.name;
+      }
+      if (me.mode === 'oidc' && me.idpIssuer) {
+        try { badge.title = 'signed in via ' + new URL(me.idpIssuer).host; } catch (e) { badge.title = 'signed in via ' + me.idpIssuer; }
+      } else {
+        badge.removeAttribute('title');
+      }
       badge.style.display = '';
     } else if (badge) {
       badge.style.display = 'none';
