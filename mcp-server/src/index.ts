@@ -64,6 +64,7 @@ import { buildAuditMiddleware } from "./audit/middleware.js";
 import { readCatalogFile, CatalogStore } from "./catalog/loader.js";
 import { redactValue } from "./policy/redact.js";
 import { IdentityRateLimiter, resolveToolRatePerMin } from "./quota/limiter.js";
+import { TokenBudget, estimateTokensFor, resolveDailyTokenLimit } from "./quota/token-budget.js";
 import { getPluginLoader } from "./connectors/loader.js";
 import {
   resolveHubCatalogUrl,
@@ -264,6 +265,46 @@ async function main() {
   // the per-category counts so the agent (and the human) sees a hint
   // like `{ email: 4, ipv4: 2, totalMatches: 6 }` instead of silently
   // losing data.
+  /** Charge the estimated tokens in a tool response against the
+   *  per-identity daily budget. When the budget would be exceeded,
+   *  replace the response with a structured error payload —
+   *  the tool's data never crosses the boundary, and the agent
+   *  sees a parseable {error: "OMCP_TOKEN_BUDGET_EXCEEDED", ...}
+   *  rather than a generic failure. Anonymous principals are not
+   *  charged (the budget is per-credential).
+   *
+   *  This charges RETROACTIVELY: the tool body has already executed,
+   *  so the work is done by the time we decide to deny — the call
+   *  that flips the bucket over the cap still pays the cost; the
+   *  N+1 call denies before doing work. Pre-flight denial would
+   *  require predicting response size before the connector runs,
+   *  which isn't tractable for query_logs / query_metrics where
+   *  size is data-dependent. The trade-off is intentional: one
+   *  over-cap call per bucket roll vs an unhelpful "request denied,
+   *  size unknown" upstream. */
+  function chargeTokenBudget<T extends { content: Array<{ text: string }> }>(
+    result: T,
+    ctx: RequestContext,
+    toolName: string,
+  ): T {
+    if (ctx.auth !== "apikey") return result;
+    const text = result.content[0]?.text ?? "";
+    const tokens = estimateTokensFor(text);
+    const decision = tokenBudget.check(ctx.principalId, tokens);
+    if (decision.allowed || decision.limit === 0) return result;
+    const errBody = {
+      error: "OMCP_TOKEN_BUDGET_EXCEEDED",
+      tool: toolName,
+      used: decision.used,
+      limit: decision.limit,
+      requested: tokens,
+      retryAfterSeconds: decision.retryAfterSeconds,
+      freedAtRetry: decision.freedAtRetry,
+      message: `Daily token budget exceeded (${decision.used}/${decision.limit} tokens used in the trailing 24h; this call would have added ~${tokens}). Try again in ~${Math.ceil(decision.retryAfterSeconds / 3600)}h or raise OMCP_TOOL_DAILY_TOKENS.`,
+    };
+    return { ...result, content: [{ ...result.content[0], text: JSON.stringify(errBody) }] } as T;
+  }
+
   const REDACTION_ENABLED = String(process.env.OMCP_REDACTION ?? "on").toLowerCase() !== "off";
   function redactToolText<T extends { content: Array<{ text: string }> }>(
     result: T,
@@ -388,7 +429,8 @@ async function main() {
     },
     async (args) => {
       await enforceEntitledAccess(ctx, { tool: "query_metrics", source: (args as any)?.source, service: (args as any)?.service });
-      return withToolMetrics("query_metrics", () => queryMetricsHandler(registry, args, ctx));
+      const result = await withToolMetrics("query_metrics", () => queryMetricsHandler(registry, args, ctx));
+      return chargeTokenBudget(result, ctx, "query_metrics");
     }
   );
 
@@ -474,7 +516,8 @@ async function main() {
           // crash the tool call. The chain itself remains intact.
         });
       }
-      return redactToolText(result, { bypass });
+      const redacted = redactToolText(result, { bypass });
+      return chargeTokenBudget(redacted, ctx, "query_logs");
     }
   );
 
@@ -496,7 +539,8 @@ async function main() {
     async (args) => {
       await enforceEntitledAccess(ctx, { tool: "get_service_health", service: (args as any)?.service });
       const result = await withToolMetrics("get_service_health", () => getServiceHealthHandler(registry, args, ctx));
-      return enrichToolHealthText(result, String((args as any)?.service ?? ""));
+      const enriched = enrichToolHealthText(result, String((args as any)?.service ?? ""));
+      return chargeTokenBudget(enriched, ctx, "get_service_health");
     }
   );
 
@@ -1075,16 +1119,34 @@ async function main() {
   // never enters a bucket so it doesn't show up here.
   app.get("/api/usage", need("audit", "read"), (req, res) => {
     const actor = qstr(req.query.actor);
-    const ids = actor ? [actor] : toolRateLimiter.knownIdentities();
+    // Union of identities known to either tracker — an identity might
+    // only show in the budget tracker (no recent calls but historical
+    // tokens still inside the 24h window) or vice versa.
+    const idSet = new Set<string>([
+      ...(actor ? [actor] : toolRateLimiter.knownIdentities()),
+      ...(actor ? [actor] : tokenBudget.knownIdentities()),
+    ]);
+    const ids = [...idSet];
     const now = Date.now();
     const identities = ids.map((id) => {
-      const s = toolRateLimiter.inspect(id, now);
-      return { actor: id, count: s.count, limit: s.limit, windowMs: s.windowMs };
+      const r = toolRateLimiter.inspect(id, now);
+      const b = tokenBudget.inspect(id, now);
+      return {
+        actor: id,
+        count: r.count,
+        limit: r.limit,
+        windowMs: r.windowMs,
+        tokens: { used: b.used, limit: b.limit, windowMs: b.windowMs },
+      };
     });
     res.json({
       identities,
       defaultLimit: resolveToolRatePerMin(process.env.OMCP_TOOL_RATE_PER_MIN),
       windowMs: 60_000,
+      tokens: {
+        defaultLimit: resolveDailyTokenLimit(process.env.OMCP_TOOL_DAILY_TOKENS),
+        windowMs: 24 * 60 * 60 * 1000,
+      },
     });
   });
 
@@ -1698,6 +1760,16 @@ async function main() {
   // still applies. Override via OMCP_TOOL_RATE_PER_MIN.
   const toolRateLimiter = new IdentityRateLimiter({
     limit: resolveToolRatePerMin(process.env.OMCP_TOOL_RATE_PER_MIN),
+  });
+
+  // Token-budget: per-identity 24h rolling daily cap on tokens pulled
+  // through the MCP tool layer. Off by default (OMCP_TOOL_DAILY_TOKENS
+  // unset/zero/negative). When configured, big-data tools
+  // (query_logs / query_metrics / get_service_health) charge the
+  // estimated response size against the cap; over-cap calls return a
+  // structured OMCP_TOKEN_BUDGET_EXCEEDED payload instead of data.
+  const tokenBudget = new TokenBudget({
+    dailyLimit: resolveDailyTokenLimit(process.env.OMCP_TOOL_DAILY_TOKENS),
   });
 
   // Bearer/X-API-Key on every /mcp request; resolve the principal + its
