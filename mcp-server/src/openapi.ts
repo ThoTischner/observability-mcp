@@ -281,12 +281,13 @@ export function buildOpenApiSpec(version: string): OpenAPIV3_1.Document {
                     type: "object",
                     properties: {
                       authenticated: { type: "boolean" },
-                      mode: { type: "string", enum: ["anonymous", "basic"] },
+                      mode: { type: "string", enum: ["anonymous", "basic", "oidc"] },
                       user: {
                         type: "object",
                         properties: {
                           sub: { type: "string" },
                           name: { type: "string" },
+                          email: { type: "string", description: "Present when the IdP supplied a verified email claim (OIDC mode)." },
                           roles: { type: "array", items: { type: "string" } },
                         },
                       },
@@ -301,6 +302,10 @@ export function buildOpenApiSpec(version: string): OpenAPIV3_1.Document {
                         },
                       },
                       exp: { type: "integer", description: "Cookie expiry (seconds since epoch)." },
+                      idpIssuer: {
+                        type: "string",
+                        description: "Active OIDC issuer URL. Present only when mode === \"oidc\". Useful for UI badges or IdP-side profile links.",
+                      },
                     },
                   },
                 },

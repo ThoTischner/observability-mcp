@@ -96,8 +96,16 @@ export function registerOidcRoutes(app: Application, deps: OidcEndpointDeps): vo
       ?? sanitiseClaim(claims.preferred_username)
       ?? sanitiseClaim(claims.email)
       ?? sub;
+    // Only persist email when the IdP marked it verified — an
+    // unverified email is operator-supplied user input from the
+    // IdP's perspective and shouldn't appear next to a name in
+    // an admin UI as if it were authoritative. When the claim is
+    // absent we trust it (most IdPs default to verified for the
+    // primary identity).
+    const emailVerified = claims.email_verified === undefined || claims.email_verified === true;
+    const email = emailVerified ? sanitiseClaim(claims.email) : undefined;
     const roles = oidc.resolveRoles(claims);
-    const { cookie } = issueSession({ sub, name, roles }, sessionCfg);
+    const { cookie } = issueSession({ sub, name, email, roles }, sessionCfg);
     // Two cookies: clear the now-spent flow cookie, set the long-lived
     // session cookie. The browser accepts both in a single response.
     res.setHeader("Set-Cookie", [
