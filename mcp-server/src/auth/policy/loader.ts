@@ -67,6 +67,16 @@ export function loadPolicyFromString(text: string, origin: string): PolicyEngine
       if (!g || typeof g !== "object" || Array.isArray(g)) {
         throw new PolicyLoadError(`${origin}: roles.${role}[${i}] must be an object`);
       }
+      // Reject unexpected keys FIRST so a typo like `tesource:` gets
+      // the helpful "unexpected key 'tesource'" message instead of
+      // the misleading "resource 'undefined' unknown" that the value
+      // check below would otherwise emit (no `resource` field
+      // present in the object).
+      for (const k of Object.keys(g as Record<string, unknown>)) {
+        if (k !== "resource" && k !== "action") {
+          throw new PolicyLoadError(`${origin}: roles.${role}[${i}] has unexpected key '${k}'`);
+        }
+      }
       const resource = (g as Record<string, unknown>).resource;
       const action = (g as Record<string, unknown>).action;
       if (typeof resource !== "string" || !VALID_RESOURCES.has(resource as Resource)) {
@@ -74,13 +84,6 @@ export function loadPolicyFromString(text: string, origin: string): PolicyEngine
       }
       if (typeof action !== "string" || !VALID_ACTIONS.has(action as Action)) {
         throw new PolicyLoadError(`${origin}: roles.${role}[${i}].action '${String(action)}' unknown (allowed: ${[...VALID_ACTIONS].join(", ")})`);
-      }
-      // Reject unexpected keys to prevent typos (e.g. `tesource`) from
-      // silently producing a grant with the default `resource`.
-      for (const k of Object.keys(g as Record<string, unknown>)) {
-        if (k !== "resource" && k !== "action") {
-          throw new PolicyLoadError(`${origin}: roles.${role}[${i}] has unexpected key '${k}'`);
-        }
       }
       perms.push({ resource: resource as Resource, action: action as Action });
     }
