@@ -25,6 +25,24 @@ test("generateCodeVerifier — two calls produce distinct values", () => {
   assert.notEqual(a, b);
 });
 
+test("generateCodeVerifier — distribution is roughly uniform across the 66 unreserved chars", () => {
+  // Rejection-sampling guarantee: every char must appear approximately
+  // N*64/66 ≈ 0.97 times per verifier on average. A weak smoke test:
+  // across 200 verifiers (12_800 chars) no character class is empty
+  // and the most-common / least-common counts stay within a 2x ratio.
+  // With biased modulo, the last 8 chars would be ~20% under-represented;
+  // this asserts that's no longer the case.
+  const counts = new Map<string, number>();
+  for (let i = 0; i < 200; i++) {
+    for (const c of generateCodeVerifier()) counts.set(c, (counts.get(c) ?? 0) + 1);
+  }
+  assert.equal(counts.size, 66, "every unreserved char should appear at least once");
+  const all = [...counts.values()];
+  const min = Math.min(...all);
+  const max = Math.max(...all);
+  assert.ok(max / min < 2, `distribution too skewed (min=${min} max=${max})`);
+});
+
 test("challengeFromVerifier — matches base64url(sha256(verifier))", () => {
   const v = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"; // RFC 7636 §4.4 sample
   const expected = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"; // RFC 7636 §4.4

@@ -17,13 +17,23 @@ export function base64url(buf: Buffer): string {
 
 /** Generate a fresh PKCE code_verifier — 64 unreserved chars. */
 export function generateCodeVerifier(): string {
-  // Each byte → one unreserved char via modulo. Length 64 yields ~380
-  // bits of entropy which is well above the 256-bit floor the spec
-  // recommends for opaque random strings.
-  const bytes = randomBytes(64);
-  let out = "";
-  for (let i = 0; i < bytes.length; i++) out += UNRESERVED[bytes[i] % UNRESERVED.length];
-  return out;
+  // Uniform-sample one unreserved char per output position via
+  // rejection sampling: 256 mod 66 = 58, so bytes in [0, 198) map
+  // uniformly; bytes ≥ 198 are rejected and re-drawn. Plain modulo
+  // would over-represent the first 58 of 66 chars (CodeQL flags it
+  // as a high-severity finding). 64 output chars yields ~380 bits
+  // of entropy, well above the spec's 256-bit floor.
+  const N = UNRESERVED.length; // 66
+  const UNIFORM_CEIL = 256 - (256 % N); // 198
+  const out: string[] = [];
+  while (out.length < 64) {
+    const buf = randomBytes(64);
+    for (let i = 0; i < buf.length && out.length < 64; i++) {
+      const b = buf[i];
+      if (b < UNIFORM_CEIL) out.push(UNRESERVED[b % N]);
+    }
+  }
+  return out.join("");
 }
 
 /** Derive the S256 code_challenge from a verifier. */
