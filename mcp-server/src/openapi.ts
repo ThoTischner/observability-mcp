@@ -524,6 +524,48 @@ export function buildOpenApiSpec(version: string): OpenAPIV3_1.Document {
           },
         },
       },
+      "/api/products": {
+        get: {
+          tags: ["products"],
+          summary: "Loaded MCP Products catalogue (curated tool bundles for agents).",
+          parameters: [
+            { name: "tenant", in: "query", schema: { type: "string" }, description: "Tenant scope. Non-admins silently scoped to their own; admins can pick any (omit → all)." },
+          ],
+          responses: {
+            "200": {
+              description: "Products list scoped to caller's tenant; admins see staging entries too.",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      products: { type: "array", items: { type: "object", additionalProperties: true } },
+                      configured: { type: "boolean" },
+                      scopedTo: { type: ["string", "null"] },
+                      includesStaging: { type: "boolean" },
+                    },
+                  },
+                },
+              },
+            },
+            "403": { description: "Missing products:read permission." },
+          },
+        },
+      },
+      "/api/products/{id}": {
+        get: {
+          tags: ["products"],
+          summary: "Single product by id (404 on cross-tenant or staging probe by non-admin).",
+          parameters: [
+            { name: "id", in: "path", required: true, schema: { type: "string" } },
+          ],
+          responses: {
+            "200": { description: "The product entry.", content: { "application/json": { schema: { type: "object", additionalProperties: true } } } },
+            "404": { description: "Not found (or hidden by tenant / staging scope)." },
+            "403": { description: "Missing products:read permission." },
+          },
+        },
+      },
       "/api/catalog": {
         get: {
           tags: ["catalog"],

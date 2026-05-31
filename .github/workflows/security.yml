@@ -52,7 +52,7 @@ jobs:
         run: npm ci
       - name: Run tests
         working-directory: ./mcp-server
-        run: npx tsx --test src/analysis/*.test.ts src/config/*.test.ts src/sdk/*.test.ts src/auth/*.test.ts src/auth/oidc/*.test.ts src/auth/policy/*.test.ts src/tenancy/*.test.ts src/audit/*.test.ts src/catalog/*.test.ts src/policy/*.test.ts src/quota/*.test.ts src/connectors/verify.test.ts src/connectors/hub.test.ts src/connectors/install.test.ts src/cli/*.test.ts src/tools/*.test.ts src/net/*.test.ts src/openapi.test.ts src/enterprise-gate.test.ts
+        run: npx tsx --test src/analysis/*.test.ts src/config/*.test.ts src/sdk/*.test.ts src/auth/*.test.ts src/auth/oidc/*.test.ts src/auth/policy/*.test.ts src/tenancy/*.test.ts src/products/*.test.ts src/audit/*.test.ts src/catalog/*.test.ts src/policy/*.test.ts src/quota/*.test.ts src/connectors/verify.test.ts src/connectors/hub.test.ts src/connectors/install.test.ts src/cli/*.test.ts src/tools/*.test.ts src/net/*.test.ts src/openapi.test.ts src/enterprise-gate.test.ts
       - name: Connector hub catalog (validate + in-sync)
         run: |
           node hub/build-catalog.mjs --check
