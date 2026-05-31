@@ -1770,7 +1770,22 @@ async function main() {
   // structured OMCP_TOKEN_BUDGET_EXCEEDED payload instead of data.
   const tokenBudget = new TokenBudget({
     dailyLimit: resolveDailyTokenLimit(process.env.OMCP_TOOL_DAILY_TOKENS),
+    filePath: process.env.OMCP_TOKEN_BUDGET_FILE?.trim() || undefined,
   });
+  // AWAIT bootstrap before any tool call can arrive: a void-fired
+  // bootstrap raced with /mcp requests would silently overwrite
+  // post-boot charges with the on-disk snapshot when it later
+  // resolved. The file is small (KB range) so the wait is
+  // negligible; a missing file returns immediately.
+  await tokenBudget.bootstrap();
+  // Flush on graceful shutdown so the debounce-window of pending
+  // charges isn't dropped on `kubectl rollout restart` etc. The
+  // process keeps running while we wait — the snapshot is small.
+  for (const sig of ["SIGTERM", "SIGINT"] as const) {
+    process.once(sig, () => {
+      void tokenBudget.flushNow().catch(() => { /* best-effort */ });
+    });
+  }
 
   // Bearer/X-API-Key on every /mcp request; resolve the principal + its
   // coarse source allow-list into the RequestContext.

@@ -34,6 +34,7 @@ Two adjacent controls fall under the same umbrella:
 |---|---|---|---|
 | **PII / secret redaction** of `query_logs` output | `OMCP_REDACTION` | `on` | [redaction.md](redaction.md) |
 | **Per-identity rate limit** on the `/mcp` transport | `OMCP_TOOL_RATE_PER_MIN` | 60 | (in this doc, "Rate limits") |
+| **Per-identity daily token budget** on the MCP tool layer | `OMCP_TOOL_DAILY_TOKENS` (+ optional `OMCP_TOKEN_BUDGET_FILE` for restart survival) | 0 (uncapped) | (in this doc, "Token budget") |
 
 ## Minimal production-ready setup
 
@@ -204,6 +205,66 @@ current windowed count per identity:
 
 Pass `?actor=<name>` to inspect a single identity (count is 0 for
 identities the server has never seen).
+
+## Token budget
+
+`OMCP_TOOL_DAILY_TOKENS=<positive integer>` enables a per-identity
+rolling 24-hour token cap. Tokens are estimated post-tool-execution
+(over-count by ~5% vs cl100k_base, so the gate errs on the strict
+side) and charged against the calling bearer-token credential. When
+the bucket would exceed the cap, the tool returns
+
+```json
+{
+  "error": "OMCP_TOKEN_BUDGET_EXCEEDED",
+  "tool": "query_logs",
+  "used": 49800,
+  "limit": 50000,
+  "requested": 1200,
+  "retryAfterSeconds": 73400,
+  "freedAtRetry": 14000,
+  "message": "Daily token budget exceeded (49800/50000 ...)."
+}
+```
+
+instead of the data. The agent sees a parseable refusal, not a
+generic failure.
+
+Anonymous `/mcp` traffic is not charged (the budget is per
+credential; an operator running without `OMCP_API_KEYS` has no
+identity-keyed bucket to charge). Three tools currently honour the
+gate: `query_logs`, `query_metrics`, `get_service_health`. Adding
+new high-token tools is a one-line `chargeTokenBudget(result, ctx,
+"new_tool")` wrap.
+
+The `retryAfterSeconds` walks bucket history oldest-first until
+enough capacity has dropped to fit the denied request; `freedAtRetry`
+reports how many tokens that frees so a well-behaved agent can
+decide whether to back off or retry sooner with a smaller request.
+
+`OMCP_TOKEN_BUDGET_FILE=<path>` enables snapshot persistence —
+buckets reload at boot, so a server restart mid-day doesn't reset
+quotas. Writes are debounced (1s default) and atomic (write-rename).
+Unset → in-memory only, which is fine for demo / single-operator
+setups where a restart-on-each-deploy effectively rolls budgets.
+
+Live snapshot at `GET /api/usage` (same gate as the rate-limit view)
+returns:
+
+```json
+{
+  "identities": [
+    {
+      "actor": "agent-prod",
+      "count": 14,
+      "limit": 60,
+      "windowMs": 60000,
+      "tokens": { "used": 42100, "limit": 50000, "windowMs": 86400000 }
+    }
+  ],
+  "tokens": { "defaultLimit": 50000, "windowMs": 86400000 }
+}
+```
 
 ## Service catalog enrichment
 

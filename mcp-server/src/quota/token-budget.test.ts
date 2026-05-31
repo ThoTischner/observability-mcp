@@ -1,6 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { TokenBudget, estimateTokens, estimateTokensFor, resolveDailyTokenLimit } from "./token-budget.js";
 
 test("estimateTokens — empty/null/undefined → 0", () => {
@@ -156,4 +160,79 @@ test("resolveDailyTokenLimit — positive integers pass through; decimals floore
   assert.equal(resolveDailyTokenLimit("50000"), 50000);
   assert.equal(resolveDailyTokenLimit("1"), 1);
   assert.equal(resolveDailyTokenLimit("1234.7"), 1234);
+});
+
+test("TokenBudget persistence — flushNow writes a snapshot that bootstrap() reads back", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "omcp-token-"));
+  const file = join(dir, "budget.json");
+  try {
+    const t = 1_700_000_000_000;
+    const b1 = new TokenBudget({ dailyLimit: 1000, filePath: file, flushDebounceMs: 0, now: () => t });
+    b1.check("alice", 300);
+    b1.check("bob", 700);
+    await b1.flushNow();
+    const text = await readFile(file, "utf8");
+    const parsed = JSON.parse(text) as Record<string, Array<{ at: number; tokens: number }>>;
+    assert.equal(parsed.alice[0].tokens, 300);
+    assert.equal(parsed.bob[0].tokens, 700);
+    // A fresh tracker pointed at the same file picks up the buckets.
+    const b2 = new TokenBudget({ dailyLimit: 1000, filePath: file, flushDebounceMs: 0, now: () => t });
+    await b2.bootstrap();
+    assert.equal(b2.inspect("alice").used, 300);
+    assert.equal(b2.inspect("bob").used, 700);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("TokenBudget persistence — bootstrap drops entries older than 24h", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "omcp-token-"));
+  const file = join(dir, "budget.json");
+  try {
+    const t0 = 1_700_000_000_000;
+    const b1 = new TokenBudget({ dailyLimit: 1000, filePath: file, flushDebounceMs: 0, now: () => t0 });
+    b1.check("alice", 500);
+    await b1.flushNow();
+    // Restart 30h later — the alice entry should drop on bootstrap.
+    const tLater = t0 + 30 * 60 * 60 * 1000;
+    const b2 = new TokenBudget({ dailyLimit: 1000, filePath: file, flushDebounceMs: 0, now: () => tLater });
+    await b2.bootstrap();
+    assert.equal(b2.inspect("alice").used, 0, "expired buckets must drop on bootstrap");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("TokenBudget persistence — corrupt snapshot is tolerated (start fresh, don't crash)", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "omcp-token-"));
+  const file = join(dir, "budget.json");
+  try {
+    // Write something that's not valid JSON.
+    const fs = await import("node:fs/promises");
+    await fs.writeFile(file, "{not: json", "utf8");
+    const b = new TokenBudget({ dailyLimit: 1000, filePath: file, flushDebounceMs: 0 });
+    await b.bootstrap();
+    // Tracker should be empty; subsequent operations should work fine.
+    assert.equal(b.inspect("alice").used, 0);
+    b.check("alice", 100);
+    assert.equal(b.inspect("alice").used, 100);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("TokenBudget persistence — debounced flush eventually writes (default 1s)", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "omcp-token-"));
+  const file = join(dir, "budget.json");
+  try {
+    const b = new TokenBudget({ dailyLimit: 1000, filePath: file, flushDebounceMs: 50 });
+    b.check("alice", 42);
+    // Wait past the debounce window
+    await new Promise((r) => setTimeout(r, 120));
+    const text = await readFile(file, "utf8");
+    const parsed = JSON.parse(text) as Record<string, Array<{ at: number; tokens: number }>>;
+    assert.equal(parsed.alice[0].tokens, 42);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });

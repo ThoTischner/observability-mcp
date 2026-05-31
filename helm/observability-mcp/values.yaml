@@ -73,6 +73,15 @@ sources:
 #   - OMCP_MGMT_AUDIT_FILE         JSONL audit log; in-memory ring (500) when unset
 #   - OMCP_SERVICE_CATALOG_FILE    owner / tier / on-call / SLO metadata
 #   - OMCP_TOOL_RATE_PER_MIN       per-identity /mcp cap; default 60
+#   - OMCP_TOOL_DAILY_TOKENS       per-identity 24h-rolling token cap;
+#                                  default 0 (uncapped). Charges only
+#                                  named bearer-token callers, never
+#                                  anonymous /mcp traffic. See
+#                                  docs/access-control.md.
+#   - OMCP_TOKEN_BUDGET_FILE       JSON snapshot path so per-identity
+#                                  budgets survive restarts; unset →
+#                                  in-memory only (resets on every
+#                                  boot).
 #   - OMCP_REDACTION               on (default) | off — see docs/redaction.md
 #   - OMCP_TRUST_PROXY             true | loopback | <hops> | <ip,ip,...>
 #   - OMCP_AUTH_ALLOW_FALLBACK     true → degrade to anonymous on basic-mode
