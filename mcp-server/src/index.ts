@@ -246,12 +246,15 @@ async function main() {
   // overload. We pass the value back unchanged when it doesn't parse,
   // and otherwise mutate the parsed JSON before re-stringifying into a
   // fresh wrapper that mirrors the handler's own shape.
-  function enrichToolServicesText<T extends { content: Array<{ text: string }> }>(result: T): T {
+  function enrichToolServicesText<T extends { content: Array<{ text: string }> }>(result: T, ctx: RequestContext): T {
     try {
       const parsed = JSON.parse(result.content[0]?.text ?? "{}");
       if (parsed && Array.isArray(parsed.services)) {
         for (const s of parsed.services) {
-          const entry = typeof s?.name === "string" ? catalog.get(s.name) : undefined;
+          // Scope enrichment to the caller's tenant so we don't
+          // leak owner / on-call / SLO bytes for other tenants'
+          // services that happen to share a name in the catalog.
+          const entry = typeof s?.name === "string" ? catalog.get(s.name, ctx.tenant) : undefined;
           if (entry) s.catalog = entry;
         }
       }
@@ -345,10 +348,10 @@ async function main() {
     }
   }
 
-  function enrichToolHealthText<T extends { content: Array<{ text: string }> }>(result: T, serviceName: string): T {
+  function enrichToolHealthText<T extends { content: Array<{ text: string }> }>(result: T, serviceName: string, ctx: RequestContext): T {
     try {
       const parsed = JSON.parse(result.content[0]?.text ?? "{}");
-      const entry = serviceName ? catalog.get(serviceName) : undefined;
+      const entry = serviceName ? catalog.get(serviceName, ctx.tenant) : undefined;
       if (entry && parsed && typeof parsed === "object") parsed.catalog = entry;
       const clone = { ...result, content: result.content.map((c, i) => i === 0 ? { ...c, text: JSON.stringify(parsed) } : c) };
       return clone as T;
@@ -399,7 +402,7 @@ async function main() {
     async (args) => {
       await enforceEntitledAccess(ctx, { tool: "list_services" });
       const result = await withToolMetrics("list_services", () => listServicesHandler(registry, args, ctx));
-      return enrichToolServicesText(result);
+      return enrichToolServicesText(result, ctx);
     }
   );
 
@@ -559,7 +562,7 @@ async function main() {
     async (args) => {
       await enforceEntitledAccess(ctx, { tool: "get_service_health", service: (args as any)?.service });
       const result = await withToolMetrics("get_service_health", () => getServiceHealthHandler(registry, args, ctx));
-      const enriched = enrichToolHealthText(result, String((args as any)?.service ?? ""));
+      const enriched = enrichToolHealthText(result, String((args as any)?.service ?? ""), ctx);
       return chargeTokenBudget(enriched, ctx, "get_service_health");
     }
   );
@@ -1596,14 +1599,20 @@ async function main() {
   }
 
   // List discovered services
-  app.get("/api/services", async (_req, res) => {
+  app.get("/api/services", async (req, res) => {
     try {
+      const sess = (req as AuthedRequest).session;
+      const callerTenant = sess?.tenant || "default";
       const result = await listServicesHandler(registry, {}, defaultContext());
       const parsed = parseToolResult(result) as { services?: Array<Record<string, unknown> & { name?: string }> };
-      // Enrich each entry with the catalog metadata (no-op when empty).
+      // Tenant-scope catalog enrichment so a viewer in tenant A
+      // doesn't accidentally see acme's owner/SLO metadata on a
+      // service that happens to share a name. Anonymous mode is
+      // session-less so callerTenant is "default" → matches
+      // entries with no tenant field too (pre-E7 behaviour).
       if (parsed?.services) {
         for (const s of parsed.services) {
-          const entry = typeof s.name === "string" ? catalog.get(s.name) : undefined;
+          const entry = typeof s.name === "string" ? catalog.get(s.name, callerTenant) : undefined;
           if (entry) s.catalog = entry;
         }
       }
@@ -1613,21 +1622,32 @@ async function main() {
 
   // Read-only view of the configured catalog. Gated by the same
   // "catalog:read" permission Phase E4 added to DEFAULT_POLICY.
-  app.get("/api/catalog", need("catalog", "read"), (_req, res) => {
+  app.get("/api/catalog", need("catalog", "read"), (req, res) => {
+    // Same scoping shape as /api/audit + /api/usage: non-admins see
+    // only their own tenant's catalog entries; admins see all by
+    // default and can ?tenant=X for an explicit drill-down.
+    const sess = (req as AuthedRequest).session;
+    const isAdmin = hasPermission(sess?.roles, "users", "delete");
+    const callerTenant = sess?.tenant || "default";
+    const requestedTenant = qstr(req.query.tenant);
+    const tenantFilter = isAdmin ? requestedTenant : callerTenant;
+    const services = catalog.list(tenantFilter || undefined);
     res.json({
-      services: catalog.list(),
-      count: catalog.count(),
+      services,
+      count: Object.keys(services).length,
       configured: !!process.env.OMCP_SERVICE_CATALOG_FILE,
+      scopedTo: tenantFilter || (isAdmin ? null : callerTenant),
     });
   });
 
   // Health endpoint for UI dashboard
   app.get("/api/health/:service", async (req, res) => {
     try {
+      const callerTenant = (req as AuthedRequest).session?.tenant || "default";
       const service = String(req.params.service);
       const result = await getServiceHealthHandler(registry, { service }, defaultContext());
       const parsed = parseToolResult(result) as Record<string, unknown>;
-      const entry = catalog.get(service);
+      const entry = catalog.get(service, callerTenant);
       if (entry && parsed && typeof parsed === "object") parsed.catalog = entry;
       res.json(parsed);
     } catch {
@@ -1636,8 +1656,9 @@ async function main() {
   });
 
   // Health for all services
-  app.get("/api/health", async (_req, res) => {
+  app.get("/api/health", async (req, res) => {
     try {
+      const callerTenant = (req as AuthedRequest).session?.tenant || "default";
       const servicesResult = await listServicesHandler(registry, {}, defaultContext());
       const parsed = parseToolResult(servicesResult) as { services?: Array<{ name: string }> };
       const services = parsed?.services || [];
@@ -1646,7 +1667,10 @@ async function main() {
         try {
           const result = await getServiceHealthHandler(registry, { service: svc.name }, defaultContext());
           const h = parseToolResult(result) as Record<string, unknown>;
-          const entry = catalog.get(svc.name);
+          // Same tenant scoping as /api/services to avoid the
+          // dashboard cross-tenant catalog leak the reviewer
+          // caught in slice 3.
+          const entry = catalog.get(svc.name, callerTenant);
           if (entry && h && typeof h === "object") h.catalog = entry;
           health[svc.name] = h;
         } catch { health[svc.name] = { error: "failed to fetch health" }; }
