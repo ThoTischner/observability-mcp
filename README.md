@@ -22,6 +22,10 @@ question instead of juggling N vendor servers and their query languages.*
 [![Helm chart](https://img.shields.io/badge/helm-observability--mcp-0F1689?logo=helm&logoColor=white)](./helm/observability-mcp)
 [![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/observability-mcp)](https://artifacthub.io/packages/search?repo=observability-mcp)
 [![Provenance](https://img.shields.io/badge/npm-provenance-success?logo=npm)](https://docs.npmjs.com/generating-provenance-statements)
+[![Cosign signed](https://img.shields.io/badge/image-cosign_signed-2E7D32?logo=sigstore&logoColor=white)](SECURITY.md#container-image--ghcr--scanned--cosign-signed--syft-sbom)
+[![SBOM CycloneDX](https://img.shields.io/badge/SBOM-CycloneDX-AB47BC?logo=cyclonedx&logoColor=white)](SECURITY.md#container-image--ghcr--scanned--cosign-signed--syft-sbom)
+[![SBOM SPDX](https://img.shields.io/badge/SBOM-SPDX-1976D2?logo=spdx&logoColor=white)](SECURITY.md#container-image--ghcr--scanned--cosign-signed--syft-sbom)
+[![SLSA provenance](https://img.shields.io/badge/SLSA-build_provenance-455A64?logo=slsa&logoColor=white)](SECURITY.md#container-image--ghcr--scanned--cosign-signed--syft-sbom)
 [![Connector Hub](https://img.shields.io/badge/connector-hub-38bdf8?logo=googlechrome&logoColor=white)](https://thotischner.github.io/observability-mcp/hub/)
 
 ![observability-mcp — guided tour of the web UI](docs/demo.gif)
