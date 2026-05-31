@@ -1368,6 +1368,19 @@
           <div class="flow-node"><span class="fn-ic">✦</span><span class="fn-t">Analysis</span><span class="fn-s">scored health</span></div>
         </div>
       </div>
+      <!-- Today's usage strip (top-5 identities by activity in the trailing
+           24h window). Reads /api/usage; hidden when no identity has any
+           traffic yet OR the viewer lacks audit:read (silently — non-admin
+           sessions just don't see it). -->
+      <div class="card" id="dash-usage-card" style="display:none">
+        <div class="card-header"><h2>Today's MCP usage
+          <button class="info" aria-label="About the usage strip"
+            data-title="Usage strip"
+            data-info="Per-identity totals across the trailing 24h window: requests counted by the rate-limiter (1-minute resolution) and tokens estimated post-tool-execution. The token bucket is the same one OMCP_TOOL_DAILY_TOKENS gates against — when it fills, the corresponding identity gets OMCP_TOKEN_BUDGET_EXCEEDED on the next call. Anonymous /mcp traffic isn't shown (no per-identity bucket to charge)."
+            onclick="infoPop(this)">?</button>
+        </h2></div>
+        <div id="dash-usage" class="content"><div class="empty">Loading…</div></div>
+      </div>
       <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 16px;">
         <div class="card"><div class="card-header"><h2>Sources</h2><button class="btn btn-primary btn-sm" data-rbac="sources:write" onclick="showPage('sources');openAddModal()">+ Add Source</button></div><div id="dash-sources"><div class="empty">Loading...</div></div></div>
         <div class="card"><div class="card-header"><h2>Services</h2></div><div id="dash-services"><div class="empty">Loading...</div></div></div>
@@ -3013,6 +3026,40 @@ function closeModal(id) { document.getElementById(id).classList.remove('open'); 
 
 // --- Data Loading ---
 async function loadSources() { try { sourcesData=await(await fetch('/api/sources')).json(); renderSources(); updateStats(); } catch(e){} }
+async function loadDashUsage() {
+  const card = document.getElementById('dash-usage-card');
+  const box = document.getElementById('dash-usage');
+  if (!card || !box) return;
+  try {
+    const r = await fetch('/api/usage');
+    if (!r.ok) { card.style.display = 'none'; return; }
+    const j = await r.json();
+    const ids = (j.identities || [])
+      .map((i) => ({
+        actor: i.actor,
+        calls: i.count || 0,
+        rateLimit: i.limit || 0,
+        tokensUsed: (i.tokens && i.tokens.used) || 0,
+        tokenLimit: (i.tokens && i.tokens.limit) || 0,
+      }))
+      .filter((i) => i.calls > 0 || i.tokensUsed > 0)
+      .sort((a, b) => (b.tokensUsed - a.tokensUsed) || (b.calls - a.calls))
+      .slice(0, 5);
+    if (ids.length === 0) { card.style.display = 'none'; return; }
+    card.style.display = '';
+    const rows = ids.map((i) => {
+      const pct = i.tokenLimit > 0 ? Math.min(100, Math.round((i.tokensUsed / i.tokenLimit) * 100)) : null;
+      const tokenCell = i.tokenLimit > 0
+        ? `${i.tokensUsed.toLocaleString()} / ${i.tokenLimit.toLocaleString()} <span class="t-sm" style="opacity:.7">(${pct}%)</span>`
+        : `${i.tokensUsed.toLocaleString()} <span class="t-sm" style="opacity:.7">(uncapped)</span>`;
+      const bar = pct !== null
+        ? `<div style="background: var(--surface-2); height: 6px; border-radius: 3px; overflow:hidden; margin-top: 2px;"><div style="width:${pct}%; height:100%; background: ${pct >= 90 ? 'var(--danger)' : pct >= 70 ? 'var(--warning)' : 'var(--success)'};"></div></div>`
+        : '';
+      return `<tr><td><code>${escHtml(i.actor)}</code></td><td>${i.calls.toLocaleString()} / ${i.rateLimit.toLocaleString()}</td><td>${tokenCell}${bar}</td></tr>`;
+    }).join('');
+    box.innerHTML = `<table class="data-table" style="width:100%"><thead><tr><th>Identity</th><th>Calls (rate-limit/min)</th><th>Tokens (24h)</th></tr></thead><tbody>${rows}</tbody></table>`;
+  } catch (e) { card.style.display = 'none'; }
+}
 async function loadServices() { try { const d=await(await fetch('/api/services')).json(); servicesData=d.services||[]; renderServices(); updateStats(); } catch(e){} }
 async function loadTypes() { try { supportedTypes=await(await fetch('/api/source-types')).json(); } catch(e){ supportedTypes=['prometheus','loki']; } }
 async function loadSettingsData() {
@@ -4639,7 +4686,7 @@ function richEmpty(opts) {
 function loadingBlock(label) {
   return `<div class="state is-loading" role="status" aria-live="polite"><div class="state-ico">${STATE_ICONS.spinner}</div><div class="state-title">${esc(label||'Loading…')}</div></div>`;
 }
-async function refresh(){await Promise.all([loadSources(),loadServices()]);}
+async function refresh(){await Promise.all([loadSources(),loadServices(),loadDashUsage()]);}
 
 async function loadInfo(){
   try{

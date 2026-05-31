@@ -266,6 +266,19 @@ returns:
 }
 ```
 
+The Web UI's **Overview** page shows the same data as a "Today's
+MCP usage" strip — top 5 identities sorted by token consumption,
+with a coloured progress bar that turns amber at 70% of the daily
+cap and red at 90%. The strip is hidden when no identity has any
+traffic yet, or the viewer lacks the `audit:read` permission.
+
+### Error codes
+
+| Code | Meaning | Caller response |
+|---|---|---|
+| `OMCP_TOKEN_BUDGET_EXCEEDED` | Identity is at the cap; this call would push over. | Wait `retryAfterSeconds`; `freedAtRetry` tells how much will be available. |
+| `OMCP_TOKEN_REQUEST_EXCEEDS_BUDGET` | Single response alone larger than the entire daily cap. | Retrying won't help — narrow the query (smaller window / lower limit / more selective filter) or raise the cap. |
+
 ## Service catalog enrichment
 
 When `OMCP_SERVICE_CATALOG_FILE` points at a JSON catalog (schema in
