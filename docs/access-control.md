@@ -291,8 +291,35 @@ env:
   OMCP_REDACTION: "off"
 ```
 
-There is no per-request bypass today — that's tracked as a follow-up
-under the `redaction:bypass` RBAC permission name.
+Per-request bypass requires **two** independent grants — both must
+align for a single tool call to skip redaction:
+
+1. **RBAC permission** `redaction:bypass` (admin role by default).
+   This is the management-plane gate — visible via `/api/policy` and
+   reflected on the Policy UI tab.
+2. **Credential opt-in** via `OMCP_KEY_BYPASS_REDACTION=<key-names>`.
+   This is the data-plane gate — only credentials listed here may
+   carry the bypass flag, and only when the call also sets
+   `bypass_redaction: true` in the tool args.
+
+Either gate alone keeps redaction on. The MCP tool currently honouring
+the per-call flag is `query_logs`; future high-PII tools will follow
+the same pattern.
+
+Example: an `agent` credential authorised for live-incident debugging:
+
+```yaml
+env:
+  OMCP_API_KEYS: "agent:tok_..."
+  OMCP_KEY_BYPASS_REDACTION: "agent"   # data-plane allow-list
+  # The RBAC side is automatic for admin role; for OIDC sessions the
+  # IdP claim → role mapping decides whether the same identity also
+  # sees the policy entry in the UI.
+```
+
+The agent then invokes `query_logs` with `{ ..., bypass_redaction: true }`
+and gets unredacted payload bytes; without the env, the same arg is
+silently ignored and the response stays redacted.
 
 ### "Caller hit a 429 on the `/mcp` transport"
 

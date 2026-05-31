@@ -48,6 +48,16 @@ test("DEFAULT_POLICY — admin can do everything across every resource", () => {
   }
 });
 
+test("DEFAULT_POLICY — only admin holds redaction:bypass", () => {
+  assert.equal(hasPermission(["admin"], "redaction", "bypass"), true);
+  assert.equal(hasPermission(["operator"], "redaction", "bypass"), false);
+  assert.equal(hasPermission(["viewer"], "redaction", "bypass"), false);
+  // Other actions on the redaction resource are intentionally NOT granted —
+  // there is no read/write/delete semantic, only bypass.
+  assert.equal(hasPermission(["admin"], "redaction", "read"), false);
+  assert.equal(hasPermission(["admin"], "redaction", "write"), false);
+});
+
 test("hasPermission — empty / missing roles grant nothing", () => {
   assert.equal(hasPermission(undefined, "sources", "read"), false);
   assert.equal(hasPermission([], "sources", "read"), false);
@@ -120,8 +130,9 @@ test("listGrantedPermissions — deduplicates across overlapping roles", () => {
 
 test("listGrantedPermissions — admin lists every (resource, action) once", () => {
   const p = listGrantedPermissions(["admin"]);
-  // 9 resources * 3 actions = 27 unique entries
-  assert.equal(p.length, 27);
+  // 9 resources * 3 actions = 27, plus the special redaction:bypass entry = 28.
+  assert.equal(p.length, 28);
+  assert.ok(p.some((g) => g.resource === "redaction" && g.action === "bypass"));
 });
 
 test("DEFAULT_POLICY shape — has the three built-in roles", () => {

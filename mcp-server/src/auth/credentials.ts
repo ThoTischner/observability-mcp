@@ -10,6 +10,12 @@
  *                  (a bare "tok_xyz" is allowed; name defaults to "key")
  *   OMCP_KEY_SOURCES="agent=prom-prod|loki-prod;ci=prom-staging"
  *                  # optional coarse per-key source allow-list
+ *   OMCP_KEY_BYPASS_REDACTION="agent,ci"
+ *                  # optional comma-separated list of key NAMES allowed
+ *                  # to bypass log-payload redaction on per-call request
+ *                  # via the bypass_redaction tool arg. Off by default
+ *                  # for every key — pair with the redaction:bypass
+ *                  # RBAC permission for the management-plane angle.
  *
  * Rich role-based access control (tools/services/lookback/read-only, the
  * full governance object) is intentionally NOT here — this is only the
@@ -20,6 +26,11 @@ export interface Credential {
   name: string;
   token: string;
   allowedSources?: string[];
+  /** True when the operator opted this credential into the per-call
+   *  redaction bypass. The bypass still requires the MCP tool caller
+   *  to explicitly set `bypass_redaction: true` in the tool args —
+   *  this flag only authorises it; it never auto-disables redaction. */
+  bypassRedaction?: boolean;
 }
 
 function parseKeySources(raw: string | undefined): Map<string, string[]> {
@@ -36,18 +47,29 @@ function parseKeySources(raw: string | undefined): Map<string, string[]> {
   return m;
 }
 
+function parseBypassSet(raw: string | undefined): Set<string> {
+  if (!raw) return new Set();
+  return new Set(raw.split(",").map((s) => s.trim()).filter(Boolean));
+}
+
 /** Parse credentials from env. Returns an empty list when unconfigured. */
 export function loadCredentials(env: NodeJS.ProcessEnv = process.env): Credential[] {
   const raw = env.OMCP_API_KEYS?.trim();
   if (!raw) return [];
   const keySources = parseKeySources(env.OMCP_KEY_SOURCES);
+  const bypassNames = parseBypassSet(env.OMCP_KEY_BYPASS_REDACTION);
   const creds: Credential[] = [];
   for (const part of raw.split(",").map((s) => s.trim()).filter(Boolean)) {
     const idx = part.indexOf(":");
     const name = idx > 0 ? part.slice(0, idx).trim() : "key";
     const token = (idx > 0 ? part.slice(idx + 1) : part).trim();
     if (!token) continue;
-    creds.push({ name, token, allowedSources: keySources.get(name) });
+    creds.push({
+      name,
+      token,
+      allowedSources: keySources.get(name),
+      bypassRedaction: bypassNames.has(name) || undefined,
+    });
   }
   return creds;
 }

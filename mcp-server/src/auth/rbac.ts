@@ -19,7 +19,7 @@ import type { NextFunction, Request, RequestHandler, Response } from "express";
 
 import type { AuthedRequest, AuthRuntime } from "./middleware.js";
 
-export type Action = "read" | "write" | "delete";
+export type Action = "read" | "write" | "delete" | "bypass";
 export type Resource =
   | "sources"
   | "services"
@@ -29,7 +29,8 @@ export type Resource =
   | "connectors"
   | "audit"
   | "catalog"
-  | "users";
+  | "users"
+  | "redaction";
 
 export interface Permission {
   resource: Resource;
@@ -68,6 +69,11 @@ export const DEFAULT_POLICY: Record<string, Permission[]> = {
       .flatMap((r) =>
         (["read", "write", "delete"] as Action[]).map<Permission>((a) => ({ resource: r, action: a })),
       ),
+    // Special: admins may bypass log-redaction on per-call MCP tool
+    // invocations (when the bearer credential ALSO opts in via
+    // OMCP_KEY_BYPASS_REDACTION — RBAC is the management-plane gate,
+    // the credential flag is the data-plane gate; both must allow).
+    { resource: "redaction", action: "bypass" },
   ],
 };
 

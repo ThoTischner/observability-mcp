@@ -221,8 +221,12 @@ async function main() {
   // like `{ email: 4, ipv4: 2, totalMatches: 6 }` instead of silently
   // losing data.
   const REDACTION_ENABLED = String(process.env.OMCP_REDACTION ?? "on").toLowerCase() !== "off";
-  function redactToolText<T extends { content: Array<{ text: string }> }>(result: T): T {
+  function redactToolText<T extends { content: Array<{ text: string }> }>(
+    result: T,
+    opts: { bypass?: boolean } = {},
+  ): T {
     if (!REDACTION_ENABLED) return result;
+    if (opts.bypass) return result;
     try {
       const parsed = JSON.parse(result.content[0]?.text ?? "{}");
       const r = redactValue(parsed);
@@ -384,15 +388,52 @@ async function main() {
         .describe(
           "Optional. Maximum number of log entries to return (most recent first). Default: 100.",
         ),
+      bypass_redaction: z
+        .boolean()
+        .optional()
+        .describe(
+          "Optional. When true, request that PII/secret redaction be skipped for this single call. The server only honours this when the calling credential was explicitly authorised via OMCP_KEY_BYPASS_REDACTION; otherwise the request still gets redacted output. Default: false.",
+        ),
     },
     async (args) => {
       await enforceEntitledAccess(ctx, { tool: "query_logs", source: (args as any)?.source, service: (args as any)?.service });
       const result = await withToolMetrics("query_logs", () => queryLogsHandler(registry, args, ctx));
       // Redact PII / secrets from the log payload before it crosses the
-      // MCP boundary into the agent's context. Opt-out at deploy time
-      // with OMCP_REDACTION=off — useful when the operator already
-      // pre-scrubs at ingest and over-redaction would hurt debugging.
-      return redactToolText(result);
+      // MCP boundary into the agent's context. Per-call bypass kicks in
+      // only when BOTH (a) the credential is OMCP_KEY_BYPASS_REDACTION
+      // allow-listed, AND (b) the agent explicitly opted in via the
+      // bypass_redaction arg. Either alone keeps redaction on, so
+      // configuration-only and arg-only paths both fail closed.
+      const wantsBypass = (args as { bypass_redaction?: boolean })?.bypass_redaction === true;
+      const allowed = ctx.allowBypassRedaction === true;
+      const bypass = wantsBypass && allowed;
+      if (bypass) {
+        // Forensic breadcrumb: redaction-bypass invocations bypass the
+        // /api/* audit chain (those routes are management-plane only),
+        // so we emit a structured stderr line. Operators tail stderr +
+        // forward to their SIEM of choice. Slice 2+ wires this into
+        // the chained audit log so it's tamper-evident too.
+        console.error(JSON.stringify({
+          event: "redaction_bypass_engaged",
+          ts: new Date().toISOString(),
+          principal: ctx.principalId,
+          tool: "query_logs",
+          service: (args as { service?: string })?.service ?? null,
+          correlationId: ctx.correlationId,
+        }));
+      } else if (wantsBypass && !allowed) {
+        // The caller asked but isn't authorised — same forensic line
+        // so denied attempts are visible.
+        console.error(JSON.stringify({
+          event: "redaction_bypass_denied",
+          ts: new Date().toISOString(),
+          principal: ctx.principalId,
+          tool: "query_logs",
+          correlationId: ctx.correlationId,
+          reason: "credential_not_in_OMCP_KEY_BYPASS_REDACTION",
+        }));
+      }
+      return redactToolText(result, { bypass });
     }
   );
 
@@ -1560,7 +1601,9 @@ async function main() {
       });
       return null;
     }
-    return principalContext(cred.name, cred.allowedSources);
+    return principalContext(cred.name, cred.allowedSources, {
+      allowBypassRedaction: cred.bypassRedaction,
+    });
   }
 
   app.post("/mcp", async (req, res) => {

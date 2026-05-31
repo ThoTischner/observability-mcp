@@ -20,7 +20,7 @@ describe("single-tenant auth primitive", () => {
     assert.equal(creds.length, 2);
     assert.deepEqual(
       creds[0],
-      { name: "ci", token: "tok_abc", allowedSources: undefined }
+      { name: "ci", token: "tok_abc", allowedSources: undefined, bypassRedaction: undefined }
     );
     assert.equal(creds[1].name, "key");
     assert.equal(creds[1].token, "tok_bare");
@@ -33,6 +33,23 @@ describe("single-tenant auth primitive", () => {
     });
     assert.deepEqual(creds[0].allowedSources, ["prom-prod", "loki-prod"]);
     assert.deepEqual(creds[1].allowedSources, ["prom-staging"]);
+  });
+
+  it("parses OMCP_KEY_BYPASS_REDACTION → flags only the listed names", () => {
+    const creds = loadCredentials({
+      OMCP_API_KEYS: "agent:tok1,ci:tok2,unprivileged:tok3",
+      OMCP_KEY_BYPASS_REDACTION: "agent, ci",
+    });
+    assert.equal(creds.find((c) => c.name === "agent")?.bypassRedaction, true);
+    assert.equal(creds.find((c) => c.name === "ci")?.bypassRedaction, true);
+    // Unlisted keys MUST be undefined (not false) so JSON serialisation
+    // omits the field — keeps the audit log payload tidy.
+    assert.equal(creds.find((c) => c.name === "unprivileged")?.bypassRedaction, undefined);
+  });
+
+  it("OMCP_KEY_BYPASS_REDACTION absent → no key bypasses (least privilege default)", () => {
+    const creds = loadCredentials({ OMCP_API_KEYS: "agent:tok1,ci:tok2" });
+    for (const c of creds) assert.equal(c.bypassRedaction, undefined);
   });
 
   it("extractToken handles Bearer and X-API-Key", () => {
