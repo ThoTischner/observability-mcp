@@ -1731,8 +1731,31 @@ curl -X PUT http://localhost:3000/api/enterprise/policy \
           table; an admin can create or change products via the editor or the API example.
         </div>
       </div>
+      <!-- MCP Products — governed via /api/products (the new, RBAC-gated
+           surface from the MCP Products + RBAC phase). Replaces the
+           legacy enterprise-catalog block below for new deployments;
+           the legacy block stays so existing /api/enterprise/catalog
+           operators see their data until they migrate. -->
+      <div class="card" id="mcp-products-card">
+        <div class="card-header">
+          <h2>MCP Products
+            <button class="info" aria-label="About the MCP Products API"
+              data-title="MCP Products"
+              data-info="Curated tool bundles loaded from OMCP_PRODUCTS_FILE. Each product names an id, display name, optional tool allowlist (filters tools/list at the /mcp transport in a future slice), branding metadata, and a status (published | staging). Non-admins see only their own tenant's published entries; admins see everything plus staging. Edits go through PUT /api/products/{id} with strict body validation."
+              onclick="infoPop(this)">?</button>
+          </h2>
+          <div class="row-inline">
+            <span id="mcp-products-scope" class="badge"></span>
+            <button class="btn btn-primary btn-sm" data-rbac="products:write" onclick="mcpProductsNew()">+ New product</button>
+          </div>
+        </div>
+        <div id="mcp-products-box"><div class="empty">Loading…</div></div>
+      </div>
+
+      <!-- Legacy enterprise-products card (kept for operators that
+           still wire OMCP_ENTERPRISE_CATALOG_FILE) -->
       <div class="card">
-        <div class="card-header"><h2>Products</h2></div>
+        <div class="card-header"><h2>Products <span class="t-sm" style="opacity:.7">(legacy / enterprise catalog)</span></h2></div>
         <div id="ent-catalog"><div class="empty">Loading…</div></div>
         <div id="ent-cat-editor" class="hidden" style="margin-top:12px">
           <div class="ed-bar">
@@ -1992,6 +2015,7 @@ function showPage(name) {
   if(name==='topology') loadTopology();
   if(name==='connectors') loadConnectors();
   if(name==='access'||name==='products'||name==='audit'||name==='entitlement') loadEnterprise();
+  if(name==='products') loadMcpProducts();
   if(name==='policies') loadPolicies();
 }
 
@@ -3048,6 +3072,111 @@ function closeModal(id) { document.getElementById(id).classList.remove('open'); 
 
 // --- Data Loading ---
 async function loadSources() { try { sourcesData=await(await fetch('/api/sources')).json(); renderSources(); updateStats(); } catch(e){} }
+// --- MCP Products (new /api/products surface) ---
+async function loadMcpProducts() {
+  const box = document.getElementById('mcp-products-box');
+  const scope = document.getElementById('mcp-products-scope');
+  if (!box) return;
+  try {
+    const r = await fetch('/api/products');
+    if (!r.ok) {
+      // 403 = no products:read; render a friendly hint instead of an empty list
+      if (r.status === 403) {
+        box.innerHTML = '<div class="empty">Requires <code>products:read</code> permission (granted to viewer / operator / admin by default).</div>';
+      } else {
+        box.innerHTML = '<div class="empty">/api/products unavailable.</div>';
+      }
+      return;
+    }
+    const j = await r.json();
+    if (scope) {
+      const s = j.scopedTo === null ? 'all tenants' : (j.scopedTo || 'default');
+      scope.textContent = 'scope: ' + s + (j.includesStaging ? ' · staging visible' : '');
+    }
+    if (!j.products || j.products.length === 0) {
+      const hint = j.configured
+        ? 'No products yet. Click <b>+ New product</b> or edit <code>OMCP_PRODUCTS_FILE</code> directly.'
+        : 'Set <code>OMCP_PRODUCTS_FILE=&lt;path&gt;</code> on the server (or use <b>+ New product</b> to start an in-memory catalog).';
+      box.innerHTML = '<div class="empty">' + hint + '</div>';
+      return;
+    }
+    const rows = j.products.map((p) => {
+      const status = p.status === 'staging'
+        ? '<span class="pill" style="background:var(--warning-soft);color:var(--warning)">staging</span>'
+        : '<span class="pill" style="background:var(--success-soft);color:var(--success)">published</span>';
+      const tools = (p.tools || []).slice(0, 5).map((t) => `<code class="t-sm">${escHtml(t)}</code>`).join(' ');
+      const moreTools = (p.tools || []).length > 5 ? ` <span class="t-sm" style="opacity:.7">+${(p.tools.length - 5)} more</span>` : '';
+      const tenantCell = `<span class="tag">${escHtml(p.tenant || 'default')}</span>`;
+      return `<tr>
+        <td><code>${escHtml(p.id)}</code></td>
+        <td>${escHtml(p.name)}${p.description ? `<div class="t-sm" style="opacity:.7">${escHtml(p.description)}</div>` : ''}</td>
+        <td>${tenantCell}</td>
+        <td>${status}</td>
+        <td>${tools || '<span class="t-sm" style="opacity:.5">all tools</span>'}${moreTools}</td>
+        <td style="text-align:right">
+          <button class="btn-icon" data-rbac="products:write" title="Edit" onclick="mcpProductsEdit('${encodeURIComponent(p.id)}')">&#9998;</button>
+          <button class="btn-icon" data-rbac="products:delete" title="Delete" onclick="mcpProductsDelete('${encodeURIComponent(p.id)}')">&#128465;</button>
+        </td>
+      </tr>`;
+    }).join('');
+    box.innerHTML = `<table class="data-table" style="width:100%">
+      <thead><tr><th>id</th><th>Name</th><th>Tenant</th><th>Status</th><th>Tools</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+    omcpApplyRbacToDom();
+  } catch (e) {
+    box.innerHTML = '<div class="empty">/api/products unavailable: ' + escHtml(String(e && e.message || e)) + '</div>';
+  }
+}
+async function mcpProductsNew() {
+  const id = (window.prompt('New product id (lowercase, [a-z0-9._-]):') || '').trim();
+  if (!id) return;
+  const name = (window.prompt('Display name:') || '').trim();
+  if (!name) return;
+  await mcpProductsUpsert(id, { id, name, status: 'staging' });
+}
+async function mcpProductsEdit(idEnc) {
+  const id = decodeURIComponent(idEnc);
+  const r = await fetch('/api/products/' + encodeURIComponent(id));
+  if (!r.ok) { toast('Could not fetch ' + id); return; }
+  const current = await r.json();
+  const newName = window.prompt('Display name', current.name);
+  if (newName === null) return;
+  const status = window.prompt('Status (published | staging)', current.status || 'published');
+  if (status === null) return;
+  await mcpProductsUpsert(id, { ...current, name: newName, status });
+}
+async function mcpProductsUpsert(id, body) {
+  try {
+    const r = await fetch('/api/products/' + encodeURIComponent(id), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      toast('Save failed: ' + (j.error || r.status));
+      return;
+    }
+    toast('Saved ' + id);
+    await loadMcpProducts();
+  } catch (e) { toast('Save failed: ' + (e && e.message || e)); }
+}
+async function mcpProductsDelete(idEnc) {
+  const id = decodeURIComponent(idEnc);
+  if (!window.confirm('Delete product ' + id + '?')) return;
+  try {
+    const r = await fetch('/api/products/' + encodeURIComponent(id), { method: 'DELETE' });
+    if (r.status === 204) {
+      toast('Deleted ' + id);
+      await loadMcpProducts();
+      return;
+    }
+    const j = await r.json().catch(() => ({}));
+    toast('Delete failed: ' + (j.error || r.status));
+  } catch (e) { toast('Delete failed: ' + (e && e.message || e)); }
+}
+
 async function loadDashUsage() {
   const card = document.getElementById('dash-usage-card');
   const box = document.getElementById('dash-usage');
