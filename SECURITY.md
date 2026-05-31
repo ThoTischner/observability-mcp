@@ -84,7 +84,7 @@ Provenance is also visible on the
 [npm package page](https://www.npmjs.com/package/@thotischner/observability-mcp)
 under the "Provenance" tab.
 
-### Container image — GHCR + scanned
+### Container image — GHCR + scanned + cosign-signed + Syft SBOM
 
 ```bash
 # Pull and inspect the source-commit label
@@ -95,6 +95,60 @@ docker image inspect ghcr.io/thotischner/observability-mcp:latest \
 
 CI scans every image with Trivy before publishing; high-severity CVEs block
 the release.
+
+**Keyless cosign signing.** Every image is signed via Sigstore keyless OIDC
+(no operator-managed key material). Verify against the GitHub Actions
+workflow identity:
+
+```bash
+cosign verify \
+  --certificate-identity-regexp "^https://github\.com/ThoTischner/observability-mcp/\.github/workflows/docker-publish\.yml@refs/" \
+  --certificate-oidc-issuer    "https://token.actions.githubusercontent.com" \
+  ghcr.io/thotischner/observability-mcp:latest
+```
+
+**SBOM attestations.** CycloneDX-JSON + SPDX-JSON SBOMs (Syft-generated, in
+addition to the buildx-embedded SBOM) are attached as cosign attestations.
+Fetch + verify either format:
+
+```bash
+# CycloneDX
+cosign verify-attestation \
+  --type cyclonedx \
+  --certificate-identity-regexp "^https://github\.com/ThoTischner/observability-mcp/\.github/workflows/docker-publish\.yml@refs/" \
+  --certificate-oidc-issuer    "https://token.actions.githubusercontent.com" \
+  ghcr.io/thotischner/observability-mcp:latest \
+  | jq -r '.payload | @base64d | fromjson | .predicate' > image-sbom.cdx.json
+
+# SPDX
+cosign verify-attestation \
+  --type spdxjson \
+  --certificate-identity-regexp "^https://github\.com/ThoTischner/observability-mcp/\.github/workflows/docker-publish\.yml@refs/" \
+  --certificate-oidc-issuer    "https://token.actions.githubusercontent.com" \
+  ghcr.io/thotischner/observability-mcp:latest \
+  | jq -r '.payload | @base64d | fromjson | .predicate' > image-sbom.spdx.json
+```
+
+> The Syft SBOMs cover the `linux/amd64` variant (GitHub-runner host
+> platform). The `linux/arm64` variant is covered by buildx's
+> embedded SBOM only; a second per-platform Syft attestation is a
+> tracked E9 follow-up.
+
+The raw SBOM files are also uploaded as workflow artifacts on each release
+(90-day retention), so an air-gapped operator can pull them from the
+[GitHub Actions run](https://github.com/ThoTischner/observability-mcp/actions)
+page without round-tripping cosign.
+
+**SLSA provenance attestation.** buildx attaches SLSA-level provenance
+(`mode=max`) to the OCI image; cosign also verifies that:
+
+```bash
+cosign verify-attestation \
+  --type slsaprovenance \
+  --certificate-identity-regexp "^https://github\.com/ThoTischner/observability-mcp/\.github/workflows/docker-publish\.yml@refs/" \
+  --certificate-oidc-issuer    "https://token.actions.githubusercontent.com" \
+  ghcr.io/thotischner/observability-mcp:latest
+```
 
 ### Helm chart — GPG-signed
 
