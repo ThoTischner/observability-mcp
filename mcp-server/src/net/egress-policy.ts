@@ -31,6 +31,7 @@ export const EGRESS_ALLOWLIST: ReadonlyArray<{ prefix: string; reason: string }>
   { prefix: "cli/index.ts", reason: "CLI fetches a source location the operator passed explicitly" },
   { prefix: "index.ts", reason: "connector-hub plugin install of an operator/registry-requested tarball URL" },
   { prefix: "auth/oidc/", reason: "OIDC client calls the operator-configured OMCP_OIDC_ISSUER for discovery, JWKS, and code-exchange" },
+  { prefix: "auth/policy/", reason: "OpaPolicyEngine queries the operator-configured OMCP_OPA_URL on every RBAC decision" },
 ];
 
 /**
