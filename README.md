@@ -103,6 +103,12 @@ The server starts with **zero sources**. Add Prometheus/Loki via the Web UI or `
 > with an example Rego policy + an OPA-backed mcp-server on port **3002**.
 > See [docs/policy-engines.md](docs/policy-engines.md) for the
 > built-in / file / OPA backend trade-offs and migration paths.
+>
+> **Curated MCP Products?** Set `OMCP_PRODUCTS_FILE` to a YAML catalog
+> ([`config/products.yaml.example`](mcp-server/config/products.yaml.example))
+> and ship per-tenant/per-agent tool bundles instead of "everything,
+> all the time". RBAC-gated, audited, hot-editable. Details in
+> [docs/products.md](docs/products.md).
 
 Want the full chaos-engineering demo (Prometheus + Loki + 3 example services + the autonomous agent)? Clone and run:
 

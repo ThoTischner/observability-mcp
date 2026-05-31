@@ -1,0 +1,48 @@
+# MCP Products catalog — copy to products.yaml + set OMCP_PRODUCTS_FILE
+# to its path. See docs/products.md for the field reference.
+#
+# Every entry needs at minimum an id + name. Everything else is
+# optional. The server validates this file at boot via the same
+# parseProductsText pipeline the loader test suite exercises — a
+# typo (e.g. `toolss:` instead of `tools:`) fails the boot loudly
+# rather than silently dropping a grant.
+
+products:
+  - id: ops-bundle
+    name: Operations Bundle
+    description: Incident-response tools for the on-call SRE agent.
+    tools:
+      - query_logs
+      - query_metrics
+      - get_service_health
+    version: "1.0.0"
+    status: published
+    branding:
+      iconUrl: https://example.com/icons/ops.svg
+      color: "#3178c6"
+
+  - id: dev-bundle
+    name: Developer Bundle
+    description: Discovery + topology tools for the coding agent. Read-only.
+    tools:
+      - list_services
+      - get_topology
+    status: published
+
+  - id: experimental-bundle
+    name: Experimental Bundle
+    description: New tools being trialled internally. Hidden from agents.
+    tools:
+      - query_logs
+      - get_topology
+    status: staging                    # admin-only until promoted
+
+  # Multi-tenant example: a product visible only to the "acme" tenant.
+  # Remove the tenant: line (or leave it unset) to land in "default".
+  - id: acme-compliance
+    name: Acme Compliance Read-Only
+    description: Logs query for Acme's compliance team agent.
+    tools:
+      - query_logs
+    status: published
+    tenant: acme

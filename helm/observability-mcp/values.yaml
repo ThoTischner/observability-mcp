@@ -82,6 +82,10 @@ sources:
 #                                  budgets survive restarts; unset →
 #                                  in-memory only (resets on every
 #                                  boot).
+#   - OMCP_PRODUCTS_FILE           YAML catalogue of MCP Products
+#                                  (curated tool bundles per
+#                                  tenant/agent). Empty when unset;
+#                                  see docs/products.md.
 #   - OMCP_REDACTION               on (default) | off — see docs/redaction.md
 #   - OMCP_TRUST_PROXY             true | loopback | <hops> | <ip,ip,...>
 #   - OMCP_AUTH_ALLOW_FALLBACK     true → degrade to anonymous on basic-mode
