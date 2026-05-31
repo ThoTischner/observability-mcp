@@ -144,3 +144,5 @@ The session cookie (`omcp_session`) is:
   reverse-proxy setup, and the investigation playbook.
 - [auth-oidc.md](auth-oidc.md) — the third auth mode, for teams that
   already run an IdP (Keycloak, Authentik, Auth0, Azure AD, ...).
+- [tenancy.md](tenancy.md) — the `tenant` field on user entries
+  drives multi-tenant scoping of audit, quotas, and the catalog.

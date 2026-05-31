@@ -528,6 +528,9 @@ export function buildOpenApiSpec(version: string): OpenAPIV3_1.Document {
         get: {
           tags: ["catalog"],
           summary: "Loaded service catalog (owner / tier / on-call / SLO).",
+          parameters: [
+            { name: "tenant", in: "query", schema: { type: "string" }, description: "Tenant scope. Non-admins silently scoped to their own; admins can pick any (omit → all)." },
+          ],
           responses: {
             "200": {
               description: "Catalog map keyed by service name.",
@@ -539,6 +542,7 @@ export function buildOpenApiSpec(version: string): OpenAPIV3_1.Document {
                       services: { type: "object", additionalProperties: true },
                       count: { type: "integer" },
                       configured: { type: "boolean", description: "true when OMCP_SERVICE_CATALOG_FILE is set." },
+                      scopedTo: { type: ["string", "null"], description: "Tenant name this view is scoped to; null = all tenants (admin)." },
                     },
                   },
                 },
