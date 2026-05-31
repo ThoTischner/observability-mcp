@@ -344,6 +344,47 @@ export function buildOpenApiSpec(version: string): OpenAPIV3_1.Document {
           responses: { "204": { description: "Cookie cleared." } },
         },
       },
+      "/api/auth/oidc/login": {
+        get: {
+          tags: ["auth"],
+          summary: "Redirect to the configured OIDC identity provider's authorization endpoint.",
+          description:
+            "Mounted only when OMCP_AUTH=oidc. Mints a short-lived flow cookie carrying state + nonce + PKCE code-verifier + return_to, then 302s the browser to the IdP.",
+          parameters: [
+            { name: "return_to", in: "query", required: false, schema: { type: "string" }, description: "Same-origin path to redirect to after a successful callback. Absolute URLs or scheme-relative paths are rejected." },
+          ],
+          responses: {
+            "302": { description: "Redirect to the IdP authorize_endpoint." },
+            "502": { description: "OIDC discovery failed (IdP unreachable / misconfigured)." },
+          },
+        },
+      },
+      "/api/auth/oidc/callback": {
+        get: {
+          tags: ["auth"],
+          summary: "OIDC code-flow callback — exchanges code for an id_token and mints an OMCP session cookie.",
+          description:
+            "Verifies the state cookie, the IdP-returned state, the id_token signature (RS256/ES256), iss/aud/exp/nbf/nonce claims, then resolves OMCP roles from OMCP_OIDC_ROLES_CLAIM via OMCP_OIDC_ROLE_MAP and 302s to the cookie's return_to.",
+          parameters: [
+            { name: "code", in: "query", schema: { type: "string" } },
+            { name: "state", in: "query", schema: { type: "string" } },
+            { name: "error", in: "query", required: false, schema: { type: "string" } },
+          ],
+          responses: {
+            "302": { description: "Authentication succeeded; session cookie set and redirected to return_to." },
+            "400": { description: "Bad / expired / missing flow cookie, IdP error parameter present, or token exchange / verification failed." },
+          },
+        },
+      },
+      "/api/auth/oidc/logout": {
+        post: {
+          tags: ["auth"],
+          summary: "Sign out of the OMCP session. Does not perform RP-initiated logout against the IdP.",
+          description:
+            "Clears the OMCP session cookie. To force an IdP-side sign-out, the UI should subsequently navigate to OMCP_OIDC_LOGOUT_REDIRECT (typically the IdP's end_session_endpoint).",
+          responses: { "204": { description: "Cookie cleared." } },
+        },
+      },
       "/api/audit": {
         get: {
           tags: ["audit"],
