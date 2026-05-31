@@ -23,7 +23,38 @@ test("resolveOidcConfig — happy path with required vars only", () => {
     rolesClaim: "groups",
     roleMap: {},
     logoutRedirect: "/",
+    tenantClaim: "",
   });
+});
+
+test("resolveOidcConfig — honours OMCP_OIDC_TENANT_CLAIM", () => {
+  const r = resolveOidcConfig(envOf({
+    OMCP_OIDC_ISSUER: "https://idp.test",
+    OMCP_OIDC_CLIENT_ID: "c-1",
+    OMCP_OIDC_REDIRECT_URI: "https://app.test/cb",
+    OMCP_OIDC_TENANT_CLAIM: "app.tenant_id",
+  }));
+  assert.equal(r.config?.tenantClaim, "app.tenant_id");
+});
+
+test("buildOidcRuntime.resolveTenant — empty claim path → default", () => {
+  const r = resolveOidcConfig(envOf({
+    OMCP_OIDC_ISSUER: "https://idp.test", OMCP_OIDC_CLIENT_ID: "c",
+    OMCP_OIDC_REDIRECT_URI: "https://app.test/cb",
+  }));
+  const rt = buildOidcRuntime(r.config!);
+  assert.equal(rt.resolveTenant({ tenant: "acme" }), "default");
+});
+
+test("buildOidcRuntime.resolveTenant — dotted path", () => {
+  const r = resolveOidcConfig(envOf({
+    OMCP_OIDC_ISSUER: "https://idp.test", OMCP_OIDC_CLIENT_ID: "c",
+    OMCP_OIDC_REDIRECT_URI: "https://app.test/cb",
+    OMCP_OIDC_TENANT_CLAIM: "app.tenant_id",
+  }));
+  const rt = buildOidcRuntime(r.config!);
+  assert.equal(rt.resolveTenant({ app: { tenant_id: "acme" } }), "acme");
+  assert.equal(rt.resolveTenant({ app: { other: "x" } }), "default");
 });
 
 test("resolveOidcConfig — surfaces ALL missing required vars in one message", () => {

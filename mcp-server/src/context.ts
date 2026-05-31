@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+import { DEFAULT_TENANT, normaliseTenant } from "./tenancy/context.js";
+
 /**
  * Request-scoped context threaded from the transport boundary (HTTP `/mcp`,
  * stdio, and the internal REST/dashboard call sites) into every tool handler.
@@ -25,6 +27,10 @@ export interface RequestContext {
    *  tool call ALSO sets `bypass_redaction: true` in its args. Default
    *  false. Configured via OMCP_KEY_BYPASS_REDACTION. */
   allowBypassRedaction?: boolean;
+  /** Tenant the request operates in. ALWAYS set — defaults to
+   *  "default" for anonymous principals + missing-tenant credentials,
+   *  preserving the single-namespace behaviour of pre-E7 deployments. */
+  tenant: string;
   /** Correlates all tool calls within one transport request/session. */
   correlationId: string;
 }
@@ -34,6 +40,7 @@ export function defaultContext(): RequestContext {
   return {
     principalId: "anonymous",
     auth: "anonymous",
+    tenant: DEFAULT_TENANT,
     correlationId: randomUUID(),
   };
 }
@@ -42,13 +49,14 @@ export function defaultContext(): RequestContext {
 export function principalContext(
   principalId: string,
   allowedSources?: string[],
-  opts: { allowBypassRedaction?: boolean } = {},
+  opts: { allowBypassRedaction?: boolean; tenant?: string } = {},
 ): RequestContext {
   return {
     principalId,
     auth: "apikey",
     allowedSources: allowedSources && allowedSources.length > 0 ? allowedSources : undefined,
     allowBypassRedaction: opts.allowBypassRedaction || undefined,
+    tenant: normaliseTenant(opts.tenant),
     correlationId: randomUUID(),
   };
 }

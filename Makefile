@@ -142,7 +142,7 @@ doctor: ## Quick health check — is the mcp-server reachable on $$OMCP_HOST:$$O
 test: ## Run mcp-server unit tests in Docker
 	docker run --rm -w /app -v "$(PWD)/mcp-server:/app" node:20-alpine \
 	  sh -c "npm install --silent --no-audit --no-fund && \
-	         npx tsx --test src/analysis/*.test.ts src/config/*.test.ts src/sdk/*.test.ts src/auth/*.test.ts src/auth/oidc/*.test.ts src/auth/policy/*.test.ts src/audit/*.test.ts src/catalog/*.test.ts src/policy/*.test.ts src/quota/*.test.ts src/tools/*.test.ts src/net/*.test.ts src/openapi.test.ts src/enterprise-gate.test.ts"
+	         npx tsx --test src/analysis/*.test.ts src/config/*.test.ts src/sdk/*.test.ts src/auth/*.test.ts src/auth/oidc/*.test.ts src/auth/policy/*.test.ts src/tenancy/*.test.ts src/audit/*.test.ts src/catalog/*.test.ts src/policy/*.test.ts src/quota/*.test.ts src/tools/*.test.ts src/net/*.test.ts src/openapi.test.ts src/enterprise-gate.test.ts"
 
 lint: ## helm lint + tsc --noEmit
 	docker run --rm -v "$(PWD)/helm:/apps" alpine/helm:3.16.2 lint /apps/observability-mcp

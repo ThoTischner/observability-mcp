@@ -22,6 +22,10 @@ export interface SessionPayload {
    *  local-users-mode sessions usually omit this; OIDC sessions populate
    *  from the `email` claim when present + verified by the IdP. */
   email?: string;
+  /** Tenant the identity belongs to. Omitted when single-tenant — the
+   *  request handler defaults to "default" via normaliseTenant() so
+   *  existing single-tenant deployments need no migration. */
+  tenant?: string;
   /** Optional list of role identifiers — used by later phases for RBAC. */
   roles?: string[];
   /** Issued-at, seconds since epoch. */
@@ -60,7 +64,7 @@ function sign(secret: string, payload: string): string {
 
 /** Create a signed cookie value for the given identity. */
 export function issueSession(
-  identity: Pick<SessionPayload, "sub" | "name" | "roles" | "email">,
+  identity: Pick<SessionPayload, "sub" | "name" | "roles" | "email" | "tenant">,
   cfg: SessionConfig,
   now: number = Math.floor(Date.now() / 1000),
 ): { cookie: string; payload: SessionPayload } {
@@ -70,6 +74,7 @@ export function issueSession(
     sub: identity.sub,
     name: identity.name,
     email: identity.email,
+    tenant: identity.tenant,
     roles: identity.roles,
     iat: now,
     exp: now + ttl,
@@ -123,6 +128,7 @@ function isSessionPayload(v: unknown): v is SessionPayload {
   if (typeof o.iat !== "number" || typeof o.exp !== "number") return false;
   if (o.roles !== undefined && !(Array.isArray(o.roles) && o.roles.every((r) => typeof r === "string"))) return false;
   if (o.email !== undefined && typeof o.email !== "string") return false;
+  if (o.tenant !== undefined && typeof o.tenant !== "string") return false;
   return true;
 }
 
