@@ -63,6 +63,7 @@ import { OpaPolicyEngine } from "./auth/policy/opa.js";
 import { AuditLog } from "./audit/log.js";
 import { buildAuditMiddleware } from "./audit/middleware.js";
 import { readCatalogFile, CatalogStore } from "./catalog/loader.js";
+import { readProductsFile, ProductsStore } from "./products/loader.js";
 import { redactValue } from "./policy/redact.js";
 import { IdentityRateLimiter, resolveToolRatePerMin } from "./quota/limiter.js";
 import { TokenBudget, estimateTokensFor, resolveDailyTokenLimit } from "./quota/token-budget.js";
@@ -915,6 +916,7 @@ async function main() {
   // No file ⇒ empty catalog, enrichment is a no-op (anonymous demos
   // see no behaviour change).
   const catalog = new CatalogStore(await readCatalogFile(process.env.OMCP_SERVICE_CATALOG_FILE));
+  const products = new ProductsStore(await readProductsFile(process.env.OMCP_PRODUCTS_FILE));
   // Protected route prefixes. /api/me, /api/auth/*, /api/info,
   // /api/openapi.json deliberately don't appear here — they stay public.
   for (const prefix of [
@@ -1639,6 +1641,41 @@ async function main() {
       configured: !!process.env.OMCP_SERVICE_CATALOG_FILE,
       scopedTo: tenantFilter || (isAdmin ? null : callerTenant),
     });
+  });
+
+  // --- /api/products — MCP Products catalogue ---------------------------
+  // Same scoping / staging-visibility pattern as /api/catalog. Non-admins
+  // see only their own tenant's PUBLISHED products; admins see all
+  // tenants by default + staging.
+  app.get("/api/products", need("products", "read"), (req, res) => {
+    const sess = (req as AuthedRequest).session;
+    const isAdmin = hasPermission(sess?.roles, "users", "delete");
+    const callerTenant = sess?.tenant || "default";
+    const requestedTenant = qstr(req.query.tenant);
+    const tenantFilter = isAdmin ? requestedTenant : callerTenant;
+    const includeStaging = isAdmin;
+    res.json({
+      products: products.list({ tenant: tenantFilter || undefined, includeStaging }),
+      configured: !!process.env.OMCP_PRODUCTS_FILE,
+      scopedTo: tenantFilter || (isAdmin ? null : callerTenant),
+      includesStaging: includeStaging,
+    });
+  });
+  // Single product by id. Non-admins get a 404 (not 403) on a
+  // cross-tenant probe so the existence of the product isn't leaked
+  // — same posture as the rest of the tenancy layer.
+  app.get("/api/products/:id", need("products", "read"), (req, res) => {
+    const sess = (req as AuthedRequest).session;
+    const isAdmin = hasPermission(sess?.roles, "users", "delete");
+    const callerTenant = sess?.tenant || "default";
+    const tenantFilter = isAdmin ? undefined : callerTenant;
+    const id = String(req.params.id);
+    const p = products.get(id, tenantFilter);
+    if (!p) { res.status(404).json({ error: "not found" }); return; }
+    // Non-admins also don't see staging products even if they happen
+    // to belong to the same tenant.
+    if (!isAdmin && p.status === "staging") { res.status(404).json({ error: "not found" }); return; }
+    res.json(p);
   });
 
   // Health endpoint for UI dashboard

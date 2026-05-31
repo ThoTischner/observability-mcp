@@ -41,7 +41,7 @@ test("DEFAULT_POLICY — operator writes sources + settings but never deletes", 
 });
 
 test("DEFAULT_POLICY — admin can do everything across every resource", () => {
-  for (const resource of ["sources", "services", "health", "topology", "settings", "connectors", "audit", "catalog", "users"] as const) {
+  for (const resource of ["sources", "services", "health", "topology", "settings", "connectors", "audit", "catalog", "users", "products"] as const) {
     for (const action of ["read", "write", "delete"] as const) {
       assert.equal(hasPermission(["admin"], resource, action), true, `admin should ${action} ${resource}`);
     }
@@ -130,9 +130,11 @@ test("listGrantedPermissions — deduplicates across overlapping roles", () => {
 
 test("listGrantedPermissions — admin lists every (resource, action) once", () => {
   const p = listGrantedPermissions(["admin"]);
-  // 9 resources * 3 actions = 27, plus the special redaction:bypass entry = 28.
-  assert.equal(p.length, 28);
+  // 10 resources (added 'products' in the products-RBAC phase) * 3 actions
+  // = 30, plus the special redaction:bypass entry = 31.
+  assert.equal(p.length, 31);
   assert.ok(p.some((g) => g.resource === "redaction" && g.action === "bypass"));
+  assert.ok(p.some((g) => g.resource === "products" && g.action === "delete"));
 });
 
 test("DEFAULT_POLICY shape — has the three built-in roles", () => {
