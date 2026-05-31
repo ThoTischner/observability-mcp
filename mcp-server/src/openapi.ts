@@ -298,6 +298,9 @@ export function buildOpenApiSpec(version: string): OpenAPIV3_1.Document {
                           properties: {
                             resource: { type: "string" },
                             action: { type: "string", enum: ["read", "write", "delete", "bypass"] },
+                            // Resource enum is unconstrained at the OpenAPI level so
+                            // custom policies loaded via OMCP_RBAC_POLICY_FILE that
+                            // (correctly) include all built-in resources still validate.
                           },
                         },
                       },
@@ -463,18 +466,34 @@ export function buildOpenApiSpec(version: string): OpenAPIV3_1.Document {
       "/api/policy": {
         get: {
           tags: ["auth"],
-          summary: "Read-only view of the active RBAC DEFAULT_POLICY (admin-only).",
+          summary: "Read-only view of the active RBAC policy (admin-only). Dry-run probe with ?resource=&action=&roles=.",
+          parameters: [
+            { name: "roles", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated role names to probe. Defaults to none (treated as anonymous → always denied)." },
+            { name: "resource", in: "query", required: false, schema: { type: "string" }, description: "Resource to probe. Pair with `action` to enter dry-run mode." },
+            { name: "action", in: "query", required: false, schema: { type: "string" }, description: "Action to probe. Pair with `resource` to enter dry-run mode." },
+          ],
           responses: {
             "200": {
-              description: "Policy map keyed by role.",
+              description: "Either the full policy map (no probe params) or a dry-run decision (with `resource` + `action`).",
               content: {
                 "application/json": {
                   schema: {
                     type: "object",
                     properties: {
+                      engine: { type: "string", description: "Identifier of the active engine: 'builtin', 'file:<path>', 'opa:<url>'." },
                       policy: { type: "object", additionalProperties: true },
                       roles: { type: "array", items: { type: "string" } },
                       note: { type: "string" },
+                      dryRun: {
+                        type: "object",
+                        properties: {
+                          roles: { type: "array", items: { type: "string" } },
+                          resource: { type: "string" },
+                          action: { type: "string" },
+                          allowed: { type: "boolean" },
+                          reason: { type: "string" },
+                        },
+                      },
                     },
                   },
                 },
