@@ -2224,18 +2224,40 @@ async function omcpSyncIdentity() {
       // tooltip when this is an OIDC session — operators with
       // multiple IdPs can tell at a glance which one they're on.
       const nameEl = badge.querySelector('.user-name');
+      const u = me.user || {};
       if (nameEl) {
-        const u = me.user || {};
         nameEl.textContent = u.email ? (u.name + ' · ' + u.email) : u.name;
       }
-      if (me.mode === 'oidc' && me.idpIssuer) {
-        try { badge.title = 'signed in via ' + new URL(me.idpIssuer).host; } catch (e) { badge.title = 'signed in via ' + me.idpIssuer; }
-      } else {
-        badge.removeAttribute('title');
+      // Surface the tenant when it's not the universal default. A
+      // single-tenant deployment never sees the chip, so the demo
+      // path stays uncluttered; multi-tenant deployments get a
+      // permanent reminder of which tenant the session belongs to.
+      let chip = badge.querySelector('.user-tenant');
+      if (u.tenant && u.tenant !== 'default') {
+        if (!chip) {
+          chip = document.createElement('span');
+          chip.className = 'user-tenant tag';
+          chip.style.marginLeft = 'var(--sp-2)';
+          badge.appendChild(chip);
+        }
+        chip.textContent = u.tenant;
+      } else if (chip) {
+        chip.remove();
       }
+      // body[data-tenant=…] lets per-tenant CSS theming (e.g. a brand
+      // colour bar) hook in without per-tenant builds.
+      document.body.setAttribute('data-tenant', u.tenant || 'default');
+      const tooltip = [];
+      if (me.mode === 'oidc' && me.idpIssuer) {
+        try { tooltip.push('signed in via ' + new URL(me.idpIssuer).host); } catch (e) { tooltip.push('signed in via ' + me.idpIssuer); }
+      }
+      if (u.tenant && u.tenant !== 'default') tooltip.push('tenant: ' + u.tenant);
+      if (tooltip.length) badge.title = tooltip.join(' · ');
+      else badge.removeAttribute('title');
       badge.style.display = '';
     } else if (badge) {
       badge.style.display = 'none';
+      document.body.removeAttribute('data-tenant');
     }
     omcpApplyRbacToDom();
   } catch (e) { if (badge) badge.style.display = 'none'; }
@@ -3037,6 +3059,7 @@ async function loadDashUsage() {
     const ids = (j.identities || [])
       .map((i) => ({
         actor: i.actor,
+        tenant: i.tenant || 'default',
         calls: i.count || 0,
         rateLimit: i.limit || 0,
         tokensUsed: (i.tokens && i.tokens.used) || 0,
@@ -3047,6 +3070,11 @@ async function loadDashUsage() {
       .slice(0, 5);
     if (ids.length === 0) { card.style.display = 'none'; return; }
     card.style.display = '';
+    // Header chip: which tenant the view is scoped to (admins see
+    // either "all tenants" or a specific name; non-admins always
+    // see their own).
+    const scope = j.scopedTo === null ? 'all tenants' : (j.scopedTo || 'default');
+    const showTenantCol = j.scopedTo === null; // only admins unscoped see multiple
     const rows = ids.map((i) => {
       const pct = i.tokenLimit > 0 ? Math.min(100, Math.round((i.tokensUsed / i.tokenLimit) * 100)) : null;
       const tokenCell = i.tokenLimit > 0
@@ -3055,9 +3083,12 @@ async function loadDashUsage() {
       const bar = pct !== null
         ? `<div style="background: var(--surface-2); height: 6px; border-radius: 3px; overflow:hidden; margin-top: 2px;"><div style="width:${pct}%; height:100%; background: ${pct >= 90 ? 'var(--danger)' : pct >= 70 ? 'var(--warning)' : 'var(--success)'};"></div></div>`
         : '';
-      return `<tr><td><code>${escHtml(i.actor)}</code></td><td>${i.calls.toLocaleString()} / ${i.rateLimit.toLocaleString()}</td><td>${tokenCell}${bar}</td></tr>`;
+      const tenantCell = showTenantCol ? `<td><span class="tag">${escHtml(i.tenant)}</span></td>` : '';
+      return `<tr><td><code>${escHtml(i.actor)}</code></td>${tenantCell}<td>${i.calls.toLocaleString()} / ${i.rateLimit.toLocaleString()}</td><td>${tokenCell}${bar}</td></tr>`;
     }).join('');
-    box.innerHTML = `<table class="data-table" style="width:100%"><thead><tr><th>Identity</th><th>Calls (rate-limit/min)</th><th>Tokens (24h)</th></tr></thead><tbody>${rows}</tbody></table>`;
+    const tenantHeader = showTenantCol ? '<th>Tenant</th>' : '';
+    const scopeNote = `<div class="form-hint" style="padding: var(--sp-1) var(--sp-4) var(--sp-2); opacity:.7">scope: ${escHtml(scope)}</div>`;
+    box.innerHTML = scopeNote + `<table class="data-table" style="width:100%"><thead><tr><th>Identity</th>${tenantHeader}<th>Calls (rate-limit/min)</th><th>Tokens (24h)</th></tr></thead><tbody>${rows}</tbody></table>`;
   } catch (e) { card.style.display = 'none'; }
 }
 async function loadServices() { try { const d=await(await fetch('/api/services')).json(); servicesData=d.services||[]; renderServices(); updateStats(); } catch(e){} }
