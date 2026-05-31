@@ -50,11 +50,14 @@ import {
   buildRequirePermission,
   listGrantedPermissions,
   DEFAULT_POLICY,
+  type Permission,
   type Resource,
   type Action,
 } from "./auth/rbac.js";
 import { resolveOidcConfig, buildOidcRuntime } from "./auth/oidc/runtime.js";
 import { registerOidcRoutes } from "./auth/oidc/endpoints.js";
+import { BuiltinPolicyEngine, type PolicyEngine } from "./auth/policy/engine.js";
+import { loadPolicyFromFile, PolicyLoadError, VALID_RESOURCES, VALID_ACTIONS } from "./auth/policy/loader.js";
 import { AuditLog } from "./audit/log.js";
 import { buildAuditMiddleware } from "./audit/middleware.js";
 import { readCatalogFile, CatalogStore } from "./catalog/loader.js";
@@ -134,6 +137,20 @@ function emitBypassEvent(
     correlationId: ctx.correlationId,
     ...(event === "redaction_bypass_denied" ? { reason: "credential_not_in_OMCP_KEY_BYPASS_REDACTION" } : {}),
   }));
+}
+
+/** Bridge from the new PolicyEngine to the existing
+ *  hasPermission/buildRequirePermission signatures (which still take
+ *  a plain {role: Permission[]} map). Built-in engine exposes the
+ *  raw map directly; engines that don't (slice 4's OPA) will fall
+ *  back to a synthesized one via .list(). */
+function policyEngineToMap(engine: PolicyEngine): Record<string, Permission[]> {
+  if (engine instanceof BuiltinPolicyEngine) return engine.raw();
+  const out: Record<string, Permission[]> = {};
+  for (const role of engine.roles()) {
+    out[role] = engine.list([role]);
+  }
+  return out;
 }
 
 function applyConfigToRuntime(config: Config, registry: ConnectorRegistry) {
@@ -434,15 +451,27 @@ async function main() {
       const allowed = ctx.allowBypassRedaction === true;
       const bypass = wantsBypass && allowed;
       if (bypass || (wantsBypass && !allowed)) {
-        // Forensic breadcrumb. We log a short SHA-256 prefix of the
-        // principal id rather than the id itself so the log line
-        // (a) doesn't carry the operator-chosen credential name into
-        // log aggregators that don't share the same trust boundary,
-        // and (b) doesn't trip static-analysis taint trackers that
-        // can't tell the credential `name` apart from its `token`
-        // (OMCP_API_KEYS is the shared source). The hash is
-        // deterministic per principal so SIEM correlations still work.
+        // Forensic trail:
+        //   1. stderr breadcrumb for SIEM tail-and-forward setups (the
+        //      log channel keeps no identifying credential reference
+        //      to avoid CodeQL taint findings — correlation goes via
+        //      the audit chain entry below).
+        //   2. management-plane audit chain entry so the bypass
+        //      invocation is tamper-evident alongside the rest of
+        //      /api/*. Persists if OMCP_MGMT_AUDIT_FILE is set.
         emitBypassEvent(bypass ? "redaction_bypass_engaged" : "redaction_bypass_denied", ctx, args);
+        void mgmtAudit.record({
+          actor: { sub: ctx.principalId },
+          resource: "redaction",
+          action: "bypass",
+          method: "MCP",
+          path: "/mcp/query_logs",
+          status: bypass ? 200 : 403,
+          target: (args as { service?: string })?.service ?? undefined,
+        }).catch(() => {
+          // Audit record is best-effort — losing one entry must not
+          // crash the tool call. The chain itself remains intact.
+        });
       }
       return redactToolText(result, { bypass });
     }
@@ -733,8 +762,31 @@ async function main() {
   // there is no string-match-based "is this public?" branch anywhere.
   app.use(buildSessionAttacher(authRuntime));
   const requireSession = buildRequireSession(authRuntime);
+
+  // Active policy engine — built-in DEFAULT_POLICY by default. When
+  // OMCP_RBAC_POLICY_FILE is set we load it and ALWAYS abort on
+  // failure: OMCP_AUTH_ALLOW_FALLBACK is for *auth-mode* fallback
+  // (basic → anonymous), not for the policy file. An operator who
+  // deployed a restrictive policy to TIGHTEN the default would be
+  // worse off silently inheriting the broader built-in
+  // (DEFAULT_POLICY grants admin → redaction:bypass) than crashing
+  // with a clear error. Policy file errors are unconditionally
+  // fatal so the configured intent always wins.
+  let policyEngine: PolicyEngine = new BuiltinPolicyEngine(DEFAULT_POLICY);
+  const policyFile = process.env.OMCP_RBAC_POLICY_FILE?.trim();
+  if (policyFile) {
+    try {
+      policyEngine = loadPolicyFromFile(policyFile);
+      console.log(`[auth] RBAC policy loaded from ${policyFile} (${policyEngine.roles().join(", ")})`);
+    } catch (e) {
+      const reason = e instanceof PolicyLoadError ? e.message : String(e);
+      console.error(`[auth] OMCP_RBAC_POLICY_FILE=${policyFile}: ${reason} — refusing to start (a malformed policy file would silently revert to the more permissive built-in default, defeating the point of the override)`);
+      process.exit(1);
+    }
+  }
+
   const need = (resource: Resource, action: Action) =>
-    buildRequirePermission(authRuntime, resource, action);
+    buildRequirePermission(authRuntime, resource, action, policyEngineToMap(policyEngine));
 
   // Management-plane audit log. Records one entry per mutating /api/*
   // request. Writes JSONL to disk when OMCP_MGMT_AUDIT_FILE is set;
@@ -907,7 +959,7 @@ async function main() {
         email: sess.email,
         roles: sess.roles ?? [],
       },
-      permissions: listGrantedPermissions(sess.roles),
+      permissions: listGrantedPermissions(sess.roles, policyEngineToMap(policyEngine)),
       exp: sess.exp,
       // When the user signed in via OIDC, surface the IdP issuer
       // URL so the UI can render an appropriate badge or link to
@@ -921,11 +973,36 @@ async function main() {
   // doesn't have a checkout to read DEFAULT_POLICY from source. Gated
   // by admin-only delete-on-users so the policy schema isn't visible
   // to non-admin sessions.
-  app.get("/api/policy", need("users", "delete"), (_req, res) => {
+  app.get("/api/policy", need("users", "delete"), (req, res) => {
+    const map = policyEngineToMap(policyEngine);
+    // Optional dry-run: ?roles=admin,operator&resource=sources&action=delete
+    // returns { allowed, reason } so operators can probe the active
+    // engine without writing tests against a checkout.
+    const q = req.query as Record<string, string | undefined>;
+    if (q.resource && q.action) {
+      const dryRoles = typeof q.roles === "string" ? q.roles.split(",").map((r) => r.trim()).filter(Boolean) : undefined;
+      // Validate the probe values against the active vocabulary so
+      // an operator typo doesn't get a misleading "allowed:false
+      // reason: roles do not grant <typo>" reply.
+      if (!VALID_RESOURCES.has(q.resource as Resource)) {
+        res.json({ dryRun: { roles: dryRoles ?? [], resource: q.resource, action: q.action, allowed: false, reason: `unknown resource '${q.resource}' (valid: ${[...VALID_RESOURCES].join(", ")})` } });
+        return;
+      }
+      if (!VALID_ACTIONS.has(q.action as Action)) {
+        res.json({ dryRun: { roles: dryRoles ?? [], resource: q.resource, action: q.action, allowed: false, reason: `unknown action '${q.action}' (valid: ${[...VALID_ACTIONS].join(", ")})` } });
+        return;
+      }
+      const result = policyEngine.evaluate(dryRoles, q.resource as Resource, q.action as Action);
+      res.json({ dryRun: { roles: dryRoles ?? [], resource: q.resource, action: q.action, ...result } });
+      return;
+    }
     res.json({
-      policy: DEFAULT_POLICY,
-      roles: Object.keys(DEFAULT_POLICY),
-      note: "DEFAULT_POLICY shipped with this build. Custom policies are not yet hot-reloadable.",
+      engine: policyEngine.kind(),
+      policy: map,
+      roles: policyEngine.roles(),
+      note: policyEngine.kind() === "builtin"
+        ? "DEFAULT_POLICY shipped with this build. Set OMCP_RBAC_POLICY_FILE to override."
+        : `policy loaded from ${policyEngine.kind()}; restart to reload.`,
     });
   });
 
