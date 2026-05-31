@@ -1070,6 +1070,7 @@ async function main() {
         sub: sess.sub,
         name: sess.name,
         email: sess.email,
+        tenant: sess.tenant || "default",
         roles: sess.roles ?? [],
       },
       permissions: listGrantedPermissions(sess.roles, policyEngineToMap(policyEngine)),
