@@ -50,6 +50,35 @@ test("OpaPolicyEngine — unrecognised shape denies with a clear reason", async 
   assert.match(r.reason!, /unrecognised result shape/);
 });
 
+test("OpaPolicyEngine — second evaluate() after the short failure cache reads the fresh OPA verdict", async () => {
+  // End-to-end recovery: failure → cache stale → next evaluate() hits
+  // the populated success result. We can't sleep in unit tests, so
+  // we drive the cache state directly: first warm hits OPA and
+  // caches the failure with an expired-ish timestamp (see opa.ts:
+  // failure cache stamped now - TTL + 1s = effectively expired in
+  // ~1s); second warm hits OPA again and caches a real success;
+  // third evaluate() returns the success synchronously from cache.
+  // This proves the engine never gets stuck denying after OPA recovers.
+  let calls = 0;
+  const fetcher = (async (_u: string) => {
+    calls++;
+    if (calls === 1) return new Response("nope", { status: 503 });
+    return new Response(JSON.stringify({ result: true }), { status: 200 });
+  }) as unknown as typeof fetch;
+  const e = new OpaPolicyEngine({ url: "http://opa.test", packagePath: "p", fetcher });
+  const denied = await e.warmEvaluate(["admin"], "sources" as never, "read" as never);
+  assert.equal(denied.allowed, false, "first call failure surfaces");
+  const recovered = await e.warmEvaluate(["admin"], "sources" as never, "read" as never);
+  assert.equal(recovered.allowed, true, "second warm re-queries and gets the recovered verdict");
+  // The success populated the cache; a subsequent evaluate() must
+  // return synchronously WITHOUT another fetch — this is the
+  // "engine doesn't loop forever in warming-deny after OPA recovers"
+  // invariant the user-facing gate cares about.
+  const cached = e.evaluate(["admin"], "sources" as never, "read" as never);
+  assert.equal(cached.allowed, true, "cached success served synchronously");
+  assert.equal(calls, 2, "evaluate() must reuse the cached success, no extra OPA call");
+});
+
 test("OpaPolicyEngine — http error caches a denial briefly so flapping OPA doesn't hammer", async () => {
   let calls = 0;
   const fetcher = (async (_u: string) => {

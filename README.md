@@ -94,6 +94,11 @@ The server starts with **zero sources**. Add Prometheus/Loki via the Web UI or `
 > (`admin` / `operator` / `viewer`, password = username, DEMO ONLY).
 > See [docs/auth-oidc.md](docs/auth-oidc.md) for production Keycloak /
 > Authentik / Auth0 / Azure AD setups.
+>
+> **External RBAC via OPA?** `make demo-opa` boots an Open Policy Agent
+> with an example Rego policy + an OPA-backed mcp-server on port **3002**.
+> See [docs/policy-engines.md](docs/policy-engines.md) for the
+> built-in / file / OPA backend trade-offs and migration paths.
 
 Want the full chaos-engineering demo (Prometheus + Loki + 3 example services + the autonomous agent)? Clone and run:
 
