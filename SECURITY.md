@@ -165,6 +165,12 @@ curl -sS https://raw.githubusercontent.com/ThoTischner/observability-mcp/main/do
 helm verify ./observability-mcp-<version>.tgz
 ```
 
+> **Roadmap.** A cosign-signed OCI chart variant is on the deferred
+> list — once the chart is also pushed as an OCI artifact to GHCR
+> via `helm push`, the same `cosign verify --certificate-identity-…`
+> pattern that covers the image will apply to the chart. Until then,
+> the GPG signature above is the authoritative verification path.
+
 ### MCP tool surface — `tools/list` is the contract
 
 The server only advertises tools it actually implements. The integration
