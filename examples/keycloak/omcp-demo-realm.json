@@ -1,0 +1,92 @@
+{
+  "realm": "omcp-demo",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "groups": [
+    { "name": "omcp-admin" },
+    { "name": "omcp-ops" },
+    { "name": "omcp-viewers" }
+  ],
+  "users": [
+    {
+      "username": "admin",
+      "enabled": true,
+      "email": "admin@omcp.test",
+      "emailVerified": true,
+      "firstName": "Demo",
+      "lastName": "Admin",
+      "credentials": [{ "type": "password", "value": "admin", "temporary": false }],
+      "groups": ["/omcp-admin"]
+    },
+    {
+      "username": "operator",
+      "enabled": true,
+      "email": "operator@omcp.test",
+      "emailVerified": true,
+      "firstName": "Demo",
+      "lastName": "Operator",
+      "credentials": [{ "type": "password", "value": "operator", "temporary": false }],
+      "groups": ["/omcp-ops"]
+    },
+    {
+      "username": "viewer",
+      "enabled": true,
+      "email": "viewer@omcp.test",
+      "emailVerified": true,
+      "firstName": "Demo",
+      "lastName": "Viewer",
+      "credentials": [{ "type": "password", "value": "viewer", "temporary": false }],
+      "groups": ["/omcp-viewers"]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "observability-mcp",
+      "name": "observability-mcp (demo)",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "frontchannelLogout": false,
+      "rootUrl": "http://localhost:3001",
+      "baseUrl": "http://localhost:3001/",
+      "redirectUris": [
+        "http://localhost:3001/api/auth/oidc/callback"
+      ],
+      "webOrigins": [
+        "http://localhost:3001"
+      ],
+      "protocol": "openid-connect",
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:3001/"
+      },
+      "defaultClientScopes": ["web-origins", "profile", "roles", "email"],
+      "optionalClientScopes": ["address", "phone", "offline_access", "microprofile-jwt"],
+      "protocolMappers": [
+        {
+          "name": "groups-claim",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "full.path": "false",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "claim.name": "groups"
+          }
+        }
+      ]
+    }
+  ]
+}

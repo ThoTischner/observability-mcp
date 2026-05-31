@@ -224,6 +224,84 @@ services:
         required: false
 
   # ============================================================
+  # AUTH PROFILE — `docker compose --profile auth up` adds a Keycloak
+  # with the omcp-demo realm pre-imported. The mcp-server boot env
+  # under this profile flips OMCP_AUTH to "oidc" so visiting
+  # http://localhost:3000 redirects to the IdP for sign-in.
+  #
+  # Demo credentials (DO NOT USE IN PROD) live in
+  #   examples/keycloak/omcp-demo-realm.json
+  # admin/admin, operator/operator, viewer/viewer.
+  # ============================================================
+
+  keycloak:
+    profiles: ["auth"]
+    image: quay.io/keycloak/keycloak:26.3.5
+    command: ["start-dev", "--import-realm", "--http-port=8080"]
+    environment:
+      - KEYCLOAK_ADMIN=keycloak
+      - KEYCLOAK_ADMIN_PASSWORD=keycloak
+      - KC_HEALTH_ENABLED=true
+      - KC_HOSTNAME_STRICT=false
+      # Pin the advertised issuer so the discovery doc and OMCP's
+      # OMCP_OIDC_ISSUER match deterministically, independent of the
+      # Host header on the discovery request.
+      - KC_HOSTNAME=http://localhost:8088
+    ports:
+      - "8088:8080"
+    volumes:
+      - ./examples/keycloak/omcp-demo-realm.json:/opt/keycloak/data/import/omcp-demo-realm.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && head -n1 <&3 | grep -q '200'"]
+      interval: 10s
+      timeout: 5s
+      retries: 24
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - observability
+
+  # OIDC-flavored mcp-server. Binds host port 3001 so it doesn't fight
+  # the default mcp-server's 3000 binding when both profiles are active
+  # (also lets you run `--profile demo --profile auth` to compare). All
+  # of the OIDC URLs reference :3001 accordingly.
+  mcp-server-oidc:
+    profiles: ["auth"]
+    build:
+      context: ./mcp-server
+    ports:
+      - "3001:3000"
+    environment:
+      - OMCP_AUTH=oidc
+      # Inside the docker network keycloak is reachable by hostname;
+      # from the browser it's localhost:8088. Both URLs MUST match what
+      # Keycloak advertises in the discovery doc — Keycloak emits the
+      # issuer from KC_HOSTNAME so we use the localhost form throughout.
+      - OMCP_OIDC_ISSUER=http://localhost:8088/realms/omcp-demo
+      - OMCP_OIDC_CLIENT_ID=observability-mcp
+      - OMCP_OIDC_REDIRECT_URI=http://localhost:3001/api/auth/oidc/callback
+      - OMCP_OIDC_ROLES_CLAIM=groups
+      - OMCP_OIDC_ROLE_MAP={"omcp-admin":"admin","omcp-ops":"operator","omcp-viewers":"viewer"}
+      # 32-char demo secret — stable across restarts so demo sessions
+      # survive. DO NOT use this value in production.
+      - OMCP_SESSION_SECRET=demo-omcp-session-secret-32chars
+    extra_hosts:
+      - "localhost:host-gateway"
+    healthcheck:
+      # /healthz is anonymous-readable in every auth mode; /api/sources
+      # would 401 under OMCP_AUTH=oidc and trip `--wait` indefinitely.
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - observability
+    depends_on:
+      keycloak:
+        condition: service_healthy
+
+  # ============================================================
   # BENCHMARK PROFILE — `docker compose --profile benchmark up` adds:
   #   * Tempo (single-binary) with the metrics-generator enabled, so
   #     trace-derived service-graph signals are visible to the topology

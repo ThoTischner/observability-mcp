@@ -1968,14 +1968,19 @@ window.fetch = async function omcpAuthedFetch(input, init) {
   await omcpEnsureLoggedIn();
   return _omcpRawFetch(input, init);
 };
-function omcpEnsureLoggedIn() {
+async function omcpEnsureLoggedIn() {
   if (_omcpLoginInflight) return _omcpLoginInflight;
   _omcpLoginInflight = new Promise((resolve) => { _omcpLoginResolve = resolve; });
+  // Race fix (deferred from #290 reviewer): when a protected fetch
+  // 401s before omcpSyncIdentity() has run, __omcpMe defaults to
+  // anonymous and the basic-mode form would flash for one paint
+  // even in OIDC mode. Force a sync before deciding which block to
+  // show so the operator never sees the wrong form.
+  if ((window.__omcpMe || {}).mode === 'anonymous') {
+    try { await omcpSyncIdentity(); } catch (e) {}
+  }
   const m = document.getElementById('login-modal');
   if (m) m.classList.add('open');
-  // Toggle SSO vs basic mode form based on what the server told us.
-  // OIDC mode hides the basic-mode submit button entirely — the SSO
-  // button is the only path.
   const me = window.__omcpMe || {};
   const isOidc = me.mode === 'oidc';
   const ssoBlock = document.getElementById('login-oidc');

@@ -13,6 +13,25 @@ that frame it:
   modes plus RBAC, audit, redaction, quotas.
 - [auth-basic.md](auth-basic.md) — the local-users-file mode.
 
+## Try it locally
+
+The repo ships a one-command Keycloak demo with three pre-provisioned
+users so you can verify the round-trip without configuring a real IdP:
+
+```bash
+make demo-oidc
+# UI:        http://localhost:3001  ("Sign in with SSO")
+# Keycloak:  http://localhost:8088  (keycloak / keycloak)
+# Users (password = username, DEMO ONLY):
+#   admin    → omcp-admin    → role admin
+#   operator → omcp-ops      → role operator
+#   viewer   → omcp-viewers  → role viewer
+```
+
+The realm export lives at
+[`examples/keycloak/omcp-demo-realm.json`](../examples/keycloak/omcp-demo-realm.json);
+its README documents the client / mappers / groups.
+
 ## When to use OIDC mode
 
 - You already run an IdP and want OMCP users + groups to come from

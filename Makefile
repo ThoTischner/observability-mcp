@@ -1,4 +1,4 @@
-.PHONY: help build up demo down logs test lint smoke ui-smoke clean release-dryrun benchmark-up benchmark-down benchmark-run benchmark-deps connect-claude-code connect-cursor doctor
+.PHONY: help build up demo demo-oidc down logs test lint smoke ui-smoke clean release-dryrun benchmark-up benchmark-down benchmark-run benchmark-deps connect-claude-code connect-cursor doctor
 
 # Print every target with its leading-comment description.
 help: ## Show this help
@@ -14,6 +14,22 @@ up: ## Start only mcp-server (point at external Prometheus/Loki)
 
 demo: ## Full demo stack: mcp-server + Prometheus + Loki + example services + agent
 	docker compose --profile demo up --build --wait
+
+demo-oidc: ## OIDC demo: Keycloak + mcp-server in OMCP_AUTH=oidc mode (port 3001)
+	@echo "==> Booting Keycloak + OIDC-flavored mcp-server"
+	docker compose --profile auth up --build --wait
+	@echo
+	@echo "OIDC demo ready:"
+	@echo "  UI:         http://localhost:3001/   ('Sign in with SSO')"
+	@echo "  Keycloak:   http://localhost:8088/   (keycloak / keycloak)"
+	@echo "  Realm:      omcp-demo"
+	@echo
+	@echo "Demo users (passwords match username; DEMO ONLY):"
+	@echo "  admin      → group omcp-admin    → OMCP role admin"
+	@echo "  operator   → group omcp-ops      → OMCP role operator"
+	@echo "  viewer     → group omcp-viewers  → OMCP role viewer"
+	@echo
+	@echo "Tear down with: docker compose --profile auth down"
 
 # One command, fully on-prem, zero external calls: starts the stack, injects
 # a real incident, and shows raw-vs-analyzed side by side. KEEP_UP=1 to keep
