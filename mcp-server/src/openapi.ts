@@ -565,6 +565,41 @@ export function buildOpenApiSpec(version: string): OpenAPIV3_1.Document {
             "403": { description: "Missing products:read permission." },
           },
         },
+        put: {
+          tags: ["products"],
+          summary: "Upsert a product (admin + operator). Body must match the OMCP_PRODUCTS_FILE entry shape.",
+          parameters: [
+            { name: "id", in: "path", required: true, schema: { type: "string" } },
+          ],
+          requestBody: {
+            required: true,
+            content: { "application/json": { schema: { type: "object", additionalProperties: true } } },
+          },
+          responses: {
+            "200": {
+              description: "Upsert succeeded; returns the validated product + a persisted flag.",
+              content: { "application/json": { schema: { type: "object", properties: {
+                product: { type: "object", additionalProperties: true },
+                persisted: { type: "boolean", description: "True when OMCP_PRODUCTS_FILE was set and the file was rewritten." },
+              } } } },
+            },
+            "400": { description: "Body shape invalid (validateProduct rejected — typo, unknown key, wrong type, ...)." },
+            "403": { description: "Missing products:write permission, or non-admin attempting to write into another tenant." },
+            "404": { description: "Existing product belongs to a different tenant (non-admin)." },
+          },
+        },
+        delete: {
+          tags: ["products"],
+          summary: "Delete a product by id (admin only).",
+          parameters: [
+            { name: "id", in: "path", required: true, schema: { type: "string" } },
+          ],
+          responses: {
+            "204": { description: "Deleted." },
+            "403": { description: "Missing products:delete permission." },
+            "404": { description: "Not found (or hidden by tenant scope)." },
+          },
+        },
       },
       "/api/catalog": {
         get: {

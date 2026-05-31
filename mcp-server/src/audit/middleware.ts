@@ -32,7 +32,13 @@ export function buildAuditMiddleware(cfg: AuditMiddlewareConfig): RequestHandler
     }
     res.on("finish", () => {
       const sess = (req as AuthedRequest).session;
-      const target = typeof req.params?.name === "string" ? req.params.name : undefined;
+      // Pick the most-likely identifier from the route params so the
+      // audit entry's `target` lines up with what the operator
+      // typed. Most routes use `:name`; products use `:id`; fall
+      // through if neither (the entry still records method+path).
+      const target = typeof req.params?.name === "string"
+        ? req.params.name
+        : typeof req.params?.id === "string" ? req.params.id : undefined;
       cfg.audit
         .record({
           actor: sess

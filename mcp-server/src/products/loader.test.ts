@@ -117,6 +117,72 @@ test("ProductsStore — staging hidden by default within a tenant filter", () =>
   assert.equal(store.list({ tenant: "acme", includeStaging: true }).length, 2);
 });
 
+test("ProductsStore.upsert — replaces existing, appends new", () => {
+  const store = new ProductsStore({
+    products: [
+      { id: "a", name: "Original" },
+      { id: "b", name: "Second" },
+    ],
+  });
+  // Replace existing
+  store.upsert({ id: "a", name: "Replaced" });
+  assert.equal(store.get("a")?.name, "Replaced");
+  assert.equal(store.count(), 2);
+  // Append new
+  store.upsert({ id: "c", name: "New" });
+  assert.equal(store.count(), 3);
+  assert.equal(store.get("c")?.name, "New");
+});
+
+test("ProductsStore.delete — returns removed flag + survivors", () => {
+  const store = new ProductsStore({
+    products: [{ id: "a", name: "A" }, { id: "b", name: "B" }],
+  });
+  const r1 = store.delete("a");
+  assert.equal(r1.removed, true);
+  assert.equal(store.count(), 1);
+  // Re-delete is a no-op
+  const r2 = store.delete("a");
+  assert.equal(r2.removed, false);
+  // Unknown id
+  const r3 = store.delete("nope");
+  assert.equal(r3.removed, false);
+});
+
+test("validateProduct — accepts a valid entry, rejects bad shape via same parser", async () => {
+  // Happy path
+  const p = await import("./loader.js").then((m) => m.validateProduct({ id: "x", name: "X" }));
+  assert.equal(p.name, "X");
+  // Bad shape uses the loader's strict rules
+  const { validateProduct } = await import("./loader.js");
+  assert.throws(() => validateProduct({ id: "x", name: "X", unknownKey: 1 }), /unexpected key 'unknownKey'/);
+  assert.throws(() => validateProduct({ id: "..bad", name: "X" }), /id must be a string matching/);
+});
+
+test("writeProductsFile + readProductsFile — atomic round-trip", async () => {
+  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { writeProductsFile, readProductsFile } = await import("./loader.js");
+  const dir = await mkdtemp(join(tmpdir(), "omcp-products-"));
+  try {
+    const file = join(dir, "products.yaml");
+    await writeProductsFile(file, {
+      products: [
+        { id: "a", name: "A", status: "published" },
+        { id: "b", name: "B", tools: ["query_logs"], tenant: "acme" },
+      ],
+    });
+    const reloaded = await readProductsFile(file);
+    assert.equal(reloaded.products.length, 2);
+    assert.equal(reloaded.products[0].status, "published");
+    assert.equal(reloaded.products[1].tenant, "acme");
+    assert.deepEqual(reloaded.products[1].tools, ["query_logs"]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("ProductsLoadError is the throw class", () => {
   try { parseProductsText("not-json", "t"); }
   catch (e) {
