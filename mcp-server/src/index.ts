@@ -54,6 +54,7 @@ import {
   type Action,
 } from "./auth/rbac.js";
 import { resolveOidcConfig, buildOidcRuntime } from "./auth/oidc/runtime.js";
+import { registerOidcRoutes } from "./auth/oidc/endpoints.js";
 import { AuditLog } from "./audit/log.js";
 import { buildAuditMiddleware } from "./audit/middleware.js";
 import { readCatalogFile, CatalogStore } from "./catalog/loader.js";
@@ -986,7 +987,7 @@ async function main() {
   // Same per-IP cap as login — defends against logout-as-disruption
   // (an attacker spamming logouts at a forged session for another tab).
   app.post("/api/auth/logout", loginRateLimit, (req, res) => {
-    if (authRuntime.mode !== "basic" || !sessionCfg) {
+    if (authRuntime.mode === "anonymous" || !sessionCfg) {
       res.status(204).end();
       return;
     }
@@ -994,6 +995,15 @@ async function main() {
     res.setHeader("Set-Cookie", clearCookieHeader(sessionCfg, { secure }));
     res.status(204).end();
   });
+
+  // OIDC code-flow endpoints (login redirect, callback, logout) — only
+  // mounted when OMCP_AUTH=oidc resolved cleanly. registerOidcRoutes is
+  // a no-op at the type level when oidcRuntime is undefined; we guard
+  // here so we don't even define the routes in basic/anonymous mode.
+  if (authRuntime.mode === "oidc" && oidcRuntime && sessionCfg) {
+    registerOidcRoutes(app, { sessionCfg, oidc: oidcRuntime });
+    console.log("[auth] OIDC endpoints registered: /api/auth/oidc/{login,callback,logout}");
+  }
 
   // Connectors currently loaded into this server (builtin + filesystem
   // plugins), with manifest metadata — drives the UI "Connectors" page.
