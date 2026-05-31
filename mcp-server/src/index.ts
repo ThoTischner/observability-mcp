@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import express from "express";
 import rateLimit from "express-rate-limit";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -108,6 +108,34 @@ function qstr(v: unknown): string | undefined {
   if (typeof v === "string") return v;
   if (Array.isArray(v) && typeof v[0] === "string") return v[0];
   return undefined;
+}
+
+/** Stable, non-reversible principal handle for forensic log lines.
+ *  Hashing avoids leaking the operator-chosen credential name into
+ *  the same channel the redacted-bypass-engaged event is meant to
+ *  guard, and prevents static analysis from chasing the value back
+ *  to OMCP_API_KEYS. SHA-256 prefix (12 hex chars ≈ 48 bits) is
+ *  more than enough to disambiguate the handful of credentials a
+ *  deployment typically issues. */
+function principalHandle(principalId: string): string {
+  if (principalId === "anonymous") return "anonymous";
+  return createHash("sha256").update(principalId).digest("hex").slice(0, 12);
+}
+
+function emitBypassEvent(
+  event: "redaction_bypass_engaged" | "redaction_bypass_denied",
+  ctx: RequestContext,
+  args: unknown,
+): void {
+  console.error(JSON.stringify({
+    event,
+    ts: new Date().toISOString(),
+    principal_hash: principalHandle(ctx.principalId),
+    tool: "query_logs",
+    service: (args as { service?: string })?.service ?? null,
+    correlationId: ctx.correlationId,
+    ...(event === "redaction_bypass_denied" ? { reason: "credential_not_in_OMCP_KEY_BYPASS_REDACTION" } : {}),
+  }));
 }
 
 function applyConfigToRuntime(config: Config, registry: ConnectorRegistry) {
@@ -407,31 +435,16 @@ async function main() {
       const wantsBypass = (args as { bypass_redaction?: boolean })?.bypass_redaction === true;
       const allowed = ctx.allowBypassRedaction === true;
       const bypass = wantsBypass && allowed;
-      if (bypass) {
-        // Forensic breadcrumb: redaction-bypass invocations bypass the
-        // /api/* audit chain (those routes are management-plane only),
-        // so we emit a structured stderr line. Operators tail stderr +
-        // forward to their SIEM of choice. Slice 2+ wires this into
-        // the chained audit log so it's tamper-evident too.
-        console.error(JSON.stringify({
-          event: "redaction_bypass_engaged",
-          ts: new Date().toISOString(),
-          principal: ctx.principalId,
-          tool: "query_logs",
-          service: (args as { service?: string })?.service ?? null,
-          correlationId: ctx.correlationId,
-        }));
-      } else if (wantsBypass && !allowed) {
-        // The caller asked but isn't authorised — same forensic line
-        // so denied attempts are visible.
-        console.error(JSON.stringify({
-          event: "redaction_bypass_denied",
-          ts: new Date().toISOString(),
-          principal: ctx.principalId,
-          tool: "query_logs",
-          correlationId: ctx.correlationId,
-          reason: "credential_not_in_OMCP_KEY_BYPASS_REDACTION",
-        }));
+      if (bypass || (wantsBypass && !allowed)) {
+        // Forensic breadcrumb. We log a short SHA-256 prefix of the
+        // principal id rather than the id itself so the log line
+        // (a) doesn't carry the operator-chosen credential name into
+        // log aggregators that don't share the same trust boundary,
+        // and (b) doesn't trip static-analysis taint trackers that
+        // can't tell the credential `name` apart from its `token`
+        // (OMCP_API_KEYS is the shared source). The hash is
+        // deterministic per principal so SIEM correlations still work.
+        emitBypassEvent(bypass ? "redaction_bypass_engaged" : "redaction_bypass_denied", ctx, args);
       }
       return redactToolText(result, { bypass });
     }
