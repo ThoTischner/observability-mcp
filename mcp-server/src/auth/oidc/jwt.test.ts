@@ -94,10 +94,19 @@ test("verifyIdToken — bad signature is rejected", () => {
   const { jwk, privateKeyPem } = rsaKeypair();
   const now = 1_700_000_000;
   const jwt = signRs256({ iss: "https://idp.test", aud: "c", exp: now + 60 }, privateKeyPem, jwk.kid!);
-  // Flip a bit in the signature segment
+  // Flip the FIRST char of the signature. Every bit of position-0
+  // contributes to the decoded bytes; the LAST char of a 342-char
+  // signature (RSA-2048 → 256 bytes = 4·85+2) shares a 12-bit
+  // window encoding only 8 useful bits, so its bottom 4 bits are
+  // discarded — flipping A↔B there preserved the decoded byte and
+  // the signature still verified, making the test flaky.
   const parts = jwt.split(".");
-  const bad = parts[2].replace(/.$/, (c) => (c === "A" ? "B" : "A"));
-  const tampered = `${parts[0]}.${parts[1]}.${bad}`;
+  const sig = parts[2];
+  const first = sig.charAt(0);
+  const flipped = first >= "A" && first <= "Z" ? first.toLowerCase()
+    : first >= "a" && first <= "z" ? first.toUpperCase()
+    : first === "_" ? "-" : "_";
+  const tampered = `${parts[0]}.${parts[1]}.${flipped}${sig.slice(1)}`;
   assert.throws(
     () => verifyIdToken(tampered, [jwk], { issuer: "https://idp.test", audience: "c", now: () => now * 1000 }),
     /signature verification failed/,
