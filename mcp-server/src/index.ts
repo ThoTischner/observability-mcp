@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import express from "express";
 import rateLimit from "express-rate-limit";
-import { randomUUID, createHash } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -110,18 +110,16 @@ function qstr(v: unknown): string | undefined {
   return undefined;
 }
 
-/** Stable, non-reversible principal handle for forensic log lines.
- *  Hashing avoids leaking the operator-chosen credential name into
- *  the same channel the redacted-bypass-engaged event is meant to
- *  guard, and prevents static analysis from chasing the value back
- *  to OMCP_API_KEYS. SHA-256 prefix (12 hex chars ≈ 48 bits) is
- *  more than enough to disambiguate the handful of credentials a
- *  deployment typically issues. */
-function principalHandle(principalId: string): string {
-  if (principalId === "anonymous") return "anonymous";
-  return createHash("sha256").update(principalId).digest("hex").slice(0, 12);
-}
-
+/** Forensic breadcrumb for redaction-bypass tool invocations.
+ *
+ * Deliberately omits the principal identifier: the credential name
+ * lives in OMCP_API_KEYS, and threading any derivative of it into the
+ * log channel re-introduces a leak surface that static analysers
+ * (rightly) flag. SIEM cross-correlation goes via the correlationId
+ * UUID — slice 2 will wire the management-plane audit chain to carry
+ * the same correlationId alongside the (chain-protected) principal,
+ * so a downstream investigator can join the two channels there.
+ */
 function emitBypassEvent(
   event: "redaction_bypass_engaged" | "redaction_bypass_denied",
   ctx: RequestContext,
@@ -130,7 +128,7 @@ function emitBypassEvent(
   console.error(JSON.stringify({
     event,
     ts: new Date().toISOString(),
-    principal_hash: principalHandle(ctx.principalId),
+    auth: ctx.auth,
     tool: "query_logs",
     service: (args as { service?: string })?.service ?? null,
     correlationId: ctx.correlationId,
