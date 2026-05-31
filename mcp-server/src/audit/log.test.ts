@@ -63,6 +63,20 @@ test("AuditLog — list filters by actor + action + window", async () => {
   assert.equal(log.list({ from: "2099-01-01", to: "2099-12-31" }).length, 0);
 });
 
+test("AuditLog — tenant filter scopes results; entries with no tenant treated as 'default'", async () => {
+  const log = new AuditLog();
+  await log.record({ actor: { sub: "alice" }, tenant: "acme", resource: "sources", action: "write", method: "POST", path: "/api/sources", status: 200 });
+  await log.record({ actor: { sub: "bob" },   tenant: "bigco", resource: "sources", action: "write", method: "POST", path: "/api/sources", status: 200 });
+  // No tenant on this entry → treated as "default" when filtering
+  await log.record({ actor: { sub: "carol" }, resource: "sources", action: "write", method: "POST", path: "/api/sources", status: 200 });
+
+  assert.equal(log.list({ tenant: "acme" }).length, 1);
+  assert.equal(log.list({ tenant: "bigco" }).length, 1);
+  assert.equal(log.list({ tenant: "default" }).length, 1);
+  // No tenant filter → all three visible
+  assert.equal(log.list({}).length, 3);
+});
+
 test("AuditLog — in-memory ring honours cap", async () => {
   const log = new AuditLog({ inMemoryCap: 3 });
   for (let i = 0; i < 10; i++) {

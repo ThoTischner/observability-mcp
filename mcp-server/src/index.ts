@@ -48,6 +48,7 @@ import {
 } from "./auth/middleware.js";
 import {
   buildRequirePermission,
+  hasPermission,
   listGrantedPermissions,
   DEFAULT_POLICY,
   type Permission,
@@ -290,7 +291,7 @@ async function main() {
     if (ctx.auth !== "apikey") return result;
     const text = result.content[0]?.text ?? "";
     const tokens = estimateTokensFor(text);
-    const decision = tokenBudget.check(ctx.principalId, tokens);
+    const decision = tokenBudget.check(identityKey(ctx), tokens);
     if (decision.allowed || decision.limit === 0) return result;
     // A single request larger than the entire daily cap can never
     // succeed by waiting — surface a distinct error code so the
@@ -523,6 +524,7 @@ async function main() {
         emitBypassEvent(bypass ? "redaction_bypass_engaged" : "redaction_bypass_denied", ctx, args);
         void mgmtAudit.record({
           actor: { sub: ctx.principalId },
+          tenant: ctx.tenant,
           resource: "redaction",
           action: "bypass",
           method: "MCP",
@@ -1120,14 +1122,33 @@ async function main() {
   // policy) can pull it. Supports optional ?from, ?to (RFC-3339), ?actor,
   // ?action, ?limit (default 100, capped to ring size).
   app.get("/api/audit", need("audit", "read"), (req, res) => {
+    // Tenant scoping: a non-admin caller (no `users:delete`) sees
+    // only their own tenant's entries. Admins see everything by
+    // default but can ?tenant=acme to filter. This avoids leaking
+    // other tenants' actor / target / path bytes through the audit
+    // surface — the chain-hash protected ground truth is still
+    // process-wide; the API view is per-tenant.
+    const sess = (req as AuthedRequest).session;
+    const isAdmin = hasPermission(sess?.roles, "users", "delete");
+    const callerTenant = sess?.tenant || "default";
+    const requestedTenant = qstr(req.query.tenant);
+    const tenantFilter = isAdmin ? requestedTenant : callerTenant;
     const entries = mgmtAudit.list({
       from: qstr(req.query.from),
       to: qstr(req.query.to),
       actor: qstr(req.query.actor),
       action: qstr(req.query.action),
+      tenant: tenantFilter || undefined,
       limit: qstr(req.query.limit) ? parseInt(qstr(req.query.limit)!, 10) : undefined,
     });
-    res.json({ entries, tipHash: mgmtAudit.tipHash, persisted: !!process.env.OMCP_MGMT_AUDIT_FILE });
+    res.json({
+      entries,
+      tipHash: mgmtAudit.tipHash,
+      persisted: !!process.env.OMCP_MGMT_AUDIT_FILE,
+      // Tell the UI which tenant scope the view is currently showing
+      // so a cross-tenant admin sees an explicit "(all tenants)" hint.
+      scopedTo: tenantFilter || (isAdmin ? null : callerTenant),
+    });
   });
 
   // --- /api/usage — per-identity MCP rate-limit snapshot -----------------
@@ -1136,27 +1157,37 @@ async function main() {
   // audit log can see who is calling what. Anonymous /mcp traffic
   // never enters a bucket so it doesn't show up here.
   app.get("/api/usage", need("audit", "read"), (req, res) => {
-    const actor = qstr(req.query.actor);
-    // Union of identities known to either tracker — an identity might
-    // only show in the budget tracker (no recent calls but historical
-    // tokens still inside the 24h window) or vice versa.
+    const sess = (req as AuthedRequest).session;
+    const isAdmin = hasPermission(sess?.roles, "users", "delete");
+    const callerTenant = sess?.tenant || "default";
+    const requestedTenant = qstr(req.query.tenant);
+    const tenantFilter = isAdmin ? requestedTenant : callerTenant;
+    const actorFilter = qstr(req.query.actor);
+    // Union of identities known to either tracker. The tracker keys
+    // are composite "<tenant> <name>"; we split them back out for the
+    // response shape so the UI sees clean tenant + actor columns.
     const idSet = new Set<string>([
-      ...(actor ? [actor] : toolRateLimiter.knownIdentities()),
-      ...(actor ? [actor] : tokenBudget.knownIdentities()),
+      ...toolRateLimiter.knownIdentities(),
+      ...tokenBudget.knownIdentities(),
     ]);
-    const ids = [...idSet];
     const now = Date.now();
-    const identities = ids.map((id) => {
-      const r = toolRateLimiter.inspect(id, now);
-      const b = tokenBudget.inspect(id, now);
-      return {
-        actor: id,
-        count: r.count,
-        limit: r.limit,
-        windowMs: r.windowMs,
-        tokens: { used: b.used, limit: b.limit, windowMs: b.windowMs },
-      };
-    });
+    const identities = [...idSet]
+      .map((id) => {
+        const split = splitIdentityKey(id);
+        if (tenantFilter && split.tenant !== tenantFilter) return null;
+        if (actorFilter && split.actor !== actorFilter) return null;
+        const r = toolRateLimiter.inspect(id, now);
+        const b = tokenBudget.inspect(id, now);
+        return {
+          actor: split.actor,
+          tenant: split.tenant,
+          count: r.count,
+          limit: r.limit,
+          windowMs: r.windowMs,
+          tokens: { used: b.used, limit: b.limit, windowMs: b.windowMs },
+        };
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null);
     res.json({
       identities,
       defaultLimit: resolveToolRatePerMin(process.env.OMCP_TOOL_RATE_PER_MIN),
@@ -1165,6 +1196,9 @@ async function main() {
         defaultLimit: resolveDailyTokenLimit(process.env.OMCP_TOOL_DAILY_TOKENS),
         windowMs: 24 * 60 * 60 * 1000,
       },
+      // Same scoping breadcrumb /api/audit returns: which tenant
+      // window the response is showing. null = "all tenants" (admin).
+      scopedTo: tenantFilter || (isAdmin ? null : callerTenant),
     });
   });
 
@@ -1779,6 +1813,18 @@ async function main() {
   const toolRateLimiter = new IdentityRateLimiter({
     limit: resolveToolRatePerMin(process.env.OMCP_TOOL_RATE_PER_MIN),
   });
+  // Per-identity tracker key. Composes tenant + principalId so two
+  // credentials of the same name in different tenants don't share
+  // a bucket. Surface-level fields in /api/usage are still split
+  // back out (see the row builder there) so the UI shows clean
+  // actor + tenant columns.
+  const identityKey = (ctx: RequestContext): string =>
+    `${ctx.tenant} ${ctx.principalId}`;
+  function splitIdentityKey(key: string): { tenant: string; actor: string } {
+    const i = key.indexOf(" ");
+    if (i < 0) return { tenant: "default", actor: key };
+    return { tenant: key.slice(0, i), actor: key.slice(i + 1) };
+  }
 
   // Token-budget: per-identity 24h rolling daily cap on tokens pulled
   // through the MCP tool layer. Off by default (OMCP_TOOL_DAILY_TOKENS
@@ -1822,7 +1868,10 @@ async function main() {
         .json({ error: "unauthorized: valid Bearer token or X-API-Key required" });
       return null;
     }
-    const decision = toolRateLimiter.check(cred.name);
+    // Composite tenant:cred-name key so two creds with the same
+    // name in different tenants don't share a bucket.
+    const credTenant = (cred.tenant || "default");
+    const decision = toolRateLimiter.check(`${credTenant} ${cred.name}`);
     // Standard RateLimit response headers — let well-behaved clients
     // self-pace before they hit a 429. Emitted on BOTH allowed and
     // denied paths so the caller always sees the live state.

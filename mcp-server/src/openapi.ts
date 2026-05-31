@@ -402,6 +402,7 @@ export function buildOpenApiSpec(version: string): OpenAPIV3_1.Document {
             { name: "to", in: "query", schema: { type: "string", format: "date-time" } },
             { name: "actor", in: "query", schema: { type: "string" } },
             { name: "action", in: "query", schema: { type: "string" } },
+            { name: "tenant", in: "query", schema: { type: "string" }, description: "Tenant scope. Non-admins are silently scoped to their own tenant; admins can pass any value (omit → all tenants)." },
             { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 500, default: 100 } },
           ],
           responses: {
@@ -415,6 +416,7 @@ export function buildOpenApiSpec(version: string): OpenAPIV3_1.Document {
                       entries: { type: "array", items: { type: "object", additionalProperties: true } },
                       tipHash: { type: "string" },
                       persisted: { type: "boolean" },
+                      scopedTo: { type: ["string", "null"], description: "Tenant name this view is scoped to; null = all tenants (admin)." },
                     },
                   },
                 },
@@ -431,6 +433,7 @@ export function buildOpenApiSpec(version: string): OpenAPIV3_1.Document {
           summary: "Per-identity windowed call count for /mcp callers.",
           parameters: [
             { name: "actor", in: "query", schema: { type: "string" }, description: "Narrow to a single identity." },
+            { name: "tenant", in: "query", schema: { type: "string" }, description: "Tenant scope. Non-admins silently scoped to their own; admins can pick any (omit → all)." },
           ],
           responses: {
             "200": {
@@ -446,6 +449,7 @@ export function buildOpenApiSpec(version: string): OpenAPIV3_1.Document {
                           type: "object",
                           properties: {
                             actor: { type: "string" },
+                            tenant: { type: "string", description: "Tenant the identity belongs to. 'default' when single-tenant." },
                             count: { type: "integer" },
                             limit: { type: "integer" },
                             windowMs: { type: "integer" },
