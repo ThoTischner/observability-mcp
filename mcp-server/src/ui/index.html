@@ -1221,6 +1221,7 @@
         <button class="rail-grp-hd" onclick="toggleNavGroup('governance')">Governance<span class="chev">▾</span></button>
         <div class="rail-grp-body">
           <button class="nav-btn" data-page="access" title="Access Control" onclick="showPage('access')"><span class="nav-ico">⛨</span><span class="nav-label">Access Control</span></button>
+          <button class="nav-btn" data-page="policies" title="Policies" onclick="showPage('policies')" data-rbac="users:delete"><span class="nav-ico">≣</span><span class="nav-label">Policies</span></button>
           <button class="nav-btn" data-page="audit" title="Audit Log" onclick="showPage('audit')"><span class="nav-ico">❒</span><span class="nav-label">Audit Log</span></button>
         </div>
       </div>
@@ -1763,6 +1764,50 @@ curl -X PUT http://localhost:3000/api/enterprise/catalog \
       </div>
     </div>
 
+    <!-- ===== Governance: Policies (PolicyEngine snapshot + dry-run) ===== -->
+    <div class="page" id="page-policies">
+      <div class="page-head">
+        <div class="ph-left">
+          <div class="breadcrumb">Console / Governance / <b>Policies</b></div>
+          <h1>Policies</h1>
+        </div>
+        <div class="ph-actions"><span id="pol-engine" class="badge"></span></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h2>Active policy
+          <button class="info" aria-label="About the active policy"
+            data-title="Active policy"
+            data-info="Read-only view of the RBAC policy this build is running. When OMCP_RBAC_POLICY_FILE is set the file replaces the built-in defaults; the badge above identifies which is active. Use the dry-run panel below to probe specific role/resource/action combinations without writing a test."
+            onclick="infoPop(this)">?</button>
+        </h2></div>
+        <div id="pol-roles" class="content"><div class="empty">Loading…</div></div>
+        <div class="form-hint" style="padding: var(--sp-3) var(--sp-4)">
+          File source: read-only here. To change, edit <code>OMCP_RBAC_POLICY_FILE</code> on the server and restart.
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h2>Dry-run probe</h2></div>
+        <div class="content" style="display:grid; gap: var(--sp-3); grid-template-columns: 1fr 1fr 1fr auto;">
+          <div class="form-group" style="margin:0">
+            <label>Roles <span class="form-hint">comma-separated</span></label>
+            <input id="pol-dry-roles" placeholder="admin, operator">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>Resource</label>
+            <input id="pol-dry-resource" placeholder="sources">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>Action</label>
+            <input id="pol-dry-action" placeholder="write">
+          </div>
+          <div class="form-group" style="margin:0; align-self:end">
+            <button class="btn btn-primary" onclick="polDryRun()">Evaluate</button>
+          </div>
+        </div>
+        <div id="pol-dry-out" style="padding: 0 var(--sp-4) var(--sp-4)"></div>
+      </div>
+    </div>
+
     <!-- ===== Governance: Audit Log ===== -->
     <div class="page" id="page-audit">
       <div class="page-head">
@@ -1934,6 +1979,77 @@ function showPage(name) {
   if(name==='topology') loadTopology();
   if(name==='connectors') loadConnectors();
   if(name==='access'||name==='products'||name==='audit'||name==='entitlement') loadEnterprise();
+  if(name==='policies') loadPolicies();
+}
+
+// --- Policies tab (PolicyEngine snapshot + dry-run) ---
+async function loadPolicies() {
+  const engineEl = document.getElementById('pol-engine');
+  const rolesEl = document.getElementById('pol-roles');
+  try {
+    const r = await fetch('/api/policy');
+    if (!r.ok) {
+      rolesEl.innerHTML = '<div class="empty">Policy view requires the <code>users:delete</code> permission (admin role).</div>';
+      engineEl.textContent = '';
+      return;
+    }
+    const j = await r.json();
+    engineEl.textContent = 'engine: ' + (j.engine || 'unknown');
+    engineEl.className = 'badge ' + (j.engine === 'builtin' ? 'badge-ok' : '');
+    const blocks = [];
+    for (const role of (j.roles || [])) {
+      const grants = (j.policy && j.policy[role]) || [];
+      // Group grants by resource for compact rendering.
+      const byRes = {};
+      for (const g of grants) {
+        (byRes[g.resource] = byRes[g.resource] || []).push(g.action);
+      }
+      const rows = Object.entries(byRes).map(([res, actions]) =>
+        `<tr><td><code>${escHtml(res)}</code></td><td>${actions.map(a => `<span class="pill">${escHtml(a)}</span>`).join(' ')}</td></tr>`
+      ).join('');
+      blocks.push(`
+        <div style="padding: var(--sp-3) var(--sp-4)">
+          <h3 style="margin: 0 0 var(--sp-2); display:flex; gap: var(--sp-2); align-items:baseline;">
+            <span>${escHtml(role)}</span>
+            <span class="t-sm" style="opacity:.7">${grants.length} permission${grants.length===1?'':'s'}</span>
+          </h3>
+          <table class="data-table" style="width:100%"><thead><tr><th>Resource</th><th>Actions</th></tr></thead><tbody>${rows || '<tr><td colspan="2" class="empty">no grants</td></tr>'}</tbody></table>
+        </div>`);
+    }
+    rolesEl.innerHTML = blocks.join('') || '<div class="empty">No roles defined.</div>';
+    if (j.note) {
+      rolesEl.insertAdjacentHTML('beforeend', `<div class="form-hint" style="padding: var(--sp-2) var(--sp-4) var(--sp-3)">${escHtml(j.note)}</div>`);
+    }
+  } catch (e) {
+    rolesEl.innerHTML = '<div class="empty">Policy unavailable: ' + escHtml(String(e && e.message || e)) + '</div>';
+  }
+}
+async function polDryRun() {
+  const out = document.getElementById('pol-dry-out');
+  const roles = document.getElementById('pol-dry-roles').value.trim();
+  const resource = document.getElementById('pol-dry-resource').value.trim();
+  const action = document.getElementById('pol-dry-action').value.trim();
+  if (!resource || !action) {
+    out.innerHTML = '<div class="form-banner show error" style="margin-top: var(--sp-3)">Resource and action are required.</div>';
+    return;
+  }
+  const params = new URLSearchParams({ resource, action });
+  if (roles) params.set('roles', roles);
+  try {
+    const r = await fetch('/api/policy?' + params.toString());
+    const j = await r.json();
+    const d = j.dryRun || {};
+    const cls = d.allowed ? 'badge-ok' : 'badge-err';
+    const verdict = d.allowed ? 'allowed' : 'denied';
+    out.innerHTML = `
+      <div style="margin-top: var(--sp-3); display:flex; gap: var(--sp-2); align-items:center;">
+        <span class="badge ${cls}">${verdict}</span>
+        <code>${escHtml(Array.isArray(d.roles) ? d.roles.join(',') : '')} → ${escHtml(resource)}:${escHtml(action)}</code>
+      </div>
+      <div class="form-hint" style="margin-top: var(--sp-2)">${escHtml(d.reason || '')}</div>`;
+  } catch (e) {
+    out.innerHTML = '<div class="form-banner show error" style="margin-top: var(--sp-3)">Probe failed: ' + escHtml(String(e && e.message || e)) + '</div>';
+  }
 }
 
 // --- Theme (light / dark) ---
