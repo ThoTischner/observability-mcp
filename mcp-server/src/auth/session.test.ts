@@ -29,6 +29,26 @@ test("issueSession + verifySession — round-trips identity", () => {
   assert.deepEqual(verified.roles, ["operator"]);
 });
 
+test("issueSession + verifySession — round-trips email when present", () => {
+  const now = 1_700_000_000;
+  const { cookie } = issueSession(
+    { sub: "alice", name: "Alice", email: "alice@example.test", roles: ["operator"] },
+    { secret },
+    now,
+  );
+  const verified = verifySession(cookie, { secret }, now + 1);
+  assert.ok(verified);
+  assert.equal(verified.email, "alice@example.test");
+});
+
+test("issueSession + verifySession — omits email when caller doesn't supply one", () => {
+  const now = 1_700_000_000;
+  const { cookie } = issueSession({ sub: "alice", name: "Alice", roles: ["operator"] }, { secret }, now);
+  const verified = verifySession(cookie, { secret }, now + 1);
+  assert.ok(verified);
+  assert.equal(verified.email, undefined);
+});
+
 test("verifySession — rejects an expired cookie", () => {
   const now = 1_700_000_000;
   const { cookie } = issueSession(

@@ -220,6 +220,61 @@ test("GET /api/auth/oidc/callback — surfaces IdP-side error parameter", async 
   } finally { await close(); }
 });
 
+test("GET /api/auth/oidc/callback — persists verified email; drops unverified email", async () => {
+  // Build two end-to-end runs against the same setup, varying only
+  // the `email_verified` claim. Inspect the resulting session cookie
+  // payload by parsing it client-side (the cookie shape is documented
+  // in src/auth/session.ts).
+  async function runWith(emailVerified: boolean | undefined): Promise<Record<string, unknown>> {
+    const { jwk, privateKeyPem } = rsaKey();
+    const now = Math.floor(Date.now() / 1000);
+    let mintedFlow: { state: string; nonce: string; codeVerifier: string } | null = null;
+    const cfg = configForTest();
+    const fetcher = async (url: string) => {
+      if (url.endsWith("/.well-known/openid-configuration")) return new Response(JSON.stringify(discoveryDoc()), { status: 200 });
+      if (url === `${ISSUER}/jwks`) return new Response(JSON.stringify({ keys: [jwk] }), { status: 200 });
+      if (url === `${ISSUER}/token`) {
+        const claims: Record<string, unknown> = {
+          iss: ISSUER, aud: CLIENT_ID, sub: "alice", name: "Alice",
+          email: "alice@example.test", exp: now + 60, iat: now, nonce: mintedFlow!.nonce,
+        };
+        if (emailVerified !== undefined) claims.email_verified = emailVerified;
+        const idToken = signRs256(claims, privateKeyPem, jwk.kid!);
+        return new Response(JSON.stringify({ id_token: idToken }), { status: 200 });
+      }
+      return new Response("nf", { status: 404 });
+    };
+    const baseClient = new OidcClient({ issuer: cfg.issuer, clientId: cfg.clientId, redirectUri: cfg.redirectUri, fetcher });
+    const wrapped = Object.create(baseClient);
+    wrapped.start = async () => { const o = await baseClient.start(); mintedFlow = o.flow; return o; };
+    const oidc = buildOidcRuntime(cfg, { client: wrapped });
+    const app = express();
+    registerOidcRoutes(app, { sessionCfg: { secret: SECRET }, oidc });
+    const { base, close } = await listen(app);
+    try {
+      const login = await fetch(`${base}/api/auth/oidc/login`, { redirect: "manual" });
+      const flowCookie = (login.headers.get("set-cookie") ?? "").split(";")[0];
+      const state = new URL(login.headers.get("location")!).searchParams.get("state")!;
+      const cb = await fetch(`${base}/api/auth/oidc/callback?code=ABC&state=${state}`, { redirect: "manual", headers: { cookie: flowCookie } });
+      const setCookies = (cb.headers as unknown as { getSetCookie: () => string[] }).getSetCookie();
+      const session = setCookies.find((c) => c.startsWith("omcp_session="))!;
+      const value = session.slice("omcp_session=".length).split(";")[0];
+      const payloadB64 = value.split(".")[0];
+      const pad = payloadB64.length % 4 === 0 ? "" : "=".repeat(4 - (payloadB64.length % 4));
+      return JSON.parse(Buffer.from(payloadB64.replace(/-/g, "+").replace(/_/g, "/") + pad, "base64").toString("utf8"));
+    } finally { await close(); }
+  }
+  // email_verified absent → trust the email
+  const absent = await runWith(undefined);
+  assert.equal(absent.email, "alice@example.test");
+  // email_verified=true → persist
+  const verified = await runWith(true);
+  assert.equal(verified.email, "alice@example.test");
+  // email_verified=false → drop
+  const unverified = await runWith(false);
+  assert.equal(unverified.email, undefined);
+});
+
 test("POST /api/auth/oidc/logout — 204 and clears the session cookie", async () => {
   const cfg = configForTest();
   const fetcher = async (_url: string) => new Response("nf", { status: 404 });

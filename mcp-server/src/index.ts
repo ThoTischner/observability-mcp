@@ -849,9 +849,18 @@ async function main() {
     res.json({
       authenticated: true,
       mode: authRuntime.mode,
-      user: { sub: sess.sub, name: sess.name, roles: sess.roles ?? [] },
+      user: {
+        sub: sess.sub,
+        name: sess.name,
+        email: sess.email,
+        roles: sess.roles ?? [],
+      },
       permissions: listGrantedPermissions(sess.roles),
       exp: sess.exp,
+      // When the user signed in via OIDC, surface the IdP issuer
+      // URL so the UI can render an appropriate badge or link to
+      // an IdP-side profile page. Empty / absent in basic mode.
+      idpIssuer: authRuntime.mode === "oidc" ? (oidcRuntime?.cfg.issuer ?? "") : undefined,
     });
   });
 

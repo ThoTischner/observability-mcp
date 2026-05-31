@@ -18,6 +18,10 @@ export interface SessionPayload {
   sub: string;
   /** Display name shown in the UI. May equal `sub`. */
   name: string;
+  /** Email address when the identity provider supplied one. Optional —
+   *  local-users-mode sessions usually omit this; OIDC sessions populate
+   *  from the `email` claim when present + verified by the IdP. */
+  email?: string;
   /** Optional list of role identifiers — used by later phases for RBAC. */
   roles?: string[];
   /** Issued-at, seconds since epoch. */
@@ -56,7 +60,7 @@ function sign(secret: string, payload: string): string {
 
 /** Create a signed cookie value for the given identity. */
 export function issueSession(
-  identity: Pick<SessionPayload, "sub" | "name" | "roles">,
+  identity: Pick<SessionPayload, "sub" | "name" | "roles" | "email">,
   cfg: SessionConfig,
   now: number = Math.floor(Date.now() / 1000),
 ): { cookie: string; payload: SessionPayload } {
@@ -65,6 +69,7 @@ export function issueSession(
   const payload: SessionPayload = {
     sub: identity.sub,
     name: identity.name,
+    email: identity.email,
     roles: identity.roles,
     iat: now,
     exp: now + ttl,
@@ -117,6 +122,7 @@ function isSessionPayload(v: unknown): v is SessionPayload {
   if (typeof o.sub !== "string" || typeof o.name !== "string") return false;
   if (typeof o.iat !== "number" || typeof o.exp !== "number") return false;
   if (o.roles !== undefined && !(Array.isArray(o.roles) && o.roles.every((r) => typeof r === "string"))) return false;
+  if (o.email !== undefined && typeof o.email !== "string") return false;
   return true;
 }
 
