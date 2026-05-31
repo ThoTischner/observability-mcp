@@ -16,7 +16,7 @@
  *     reload trigger; for now the file is read once at boot).
  */
 
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile, rename } from "node:fs/promises";
 import yaml from "js-yaml";
 
 export interface Product {
@@ -184,4 +184,51 @@ export class ProductsStore {
   replace(file: ProductsFile): void {
     this.file = file;
   }
+
+  /** Upsert (replace if id exists, else append). Returns the new
+   *  ProductsFile so the caller can persist it. */
+  upsert(product: Product): ProductsFile {
+    const i = this.file.products.findIndex((p) => p.id === product.id);
+    const next: Product[] = this.file.products.slice();
+    if (i >= 0) next[i] = product;
+    else next.push(product);
+    this.file = { products: next };
+    return this.file;
+  }
+
+  /** Remove by id. Returns true when the product existed, false
+   *  otherwise. Caller persists the resulting file. */
+  delete(id: string): { removed: boolean; file: ProductsFile } {
+    const i = this.file.products.findIndex((p) => p.id === id);
+    if (i < 0) return { removed: false, file: this.file };
+    const next = this.file.products.slice();
+    next.splice(i, 1);
+    this.file = { products: next };
+    return { removed: true, file: this.file };
+  }
+
+  /** Snapshot of the current file (for tests / persistence). */
+  snapshot(): ProductsFile {
+    return { products: this.file.products.slice() };
+  }
+}
+
+/** Validate a single product entry by routing it through the same
+ *  parser as the file format. Throws ProductsLoadError on any
+ *  shape problem. Used by PUT /api/products/:id so a typo / wrong
+ *  type / unknown key gets the same loud rejection a malformed
+ *  file would. */
+export function validateProduct(input: unknown, origin = "input"): Product {
+  const wrapped = parseProductsText(yaml.dump({ products: [input] }), origin);
+  return wrapped.products[0];
+}
+
+/** Atomic write of the products file. Same tmp+rename pattern as
+ *  the audit-chain + token-budget snapshot, so a crash mid-write
+ *  leaves the previous file intact. */
+export async function writeProductsFile(path: string, file: ProductsFile): Promise<void> {
+  const text = yaml.dump(file, { sortKeys: false, lineWidth: 100 });
+  const tmp = path + ".tmp";
+  await writeFile(tmp, text, "utf8");
+  await rename(tmp, path);
 }

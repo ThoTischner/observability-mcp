@@ -63,7 +63,7 @@ import { OpaPolicyEngine } from "./auth/policy/opa.js";
 import { AuditLog } from "./audit/log.js";
 import { buildAuditMiddleware } from "./audit/middleware.js";
 import { readCatalogFile, CatalogStore } from "./catalog/loader.js";
-import { readProductsFile, ProductsStore } from "./products/loader.js";
+import { readProductsFile, ProductsStore, validateProduct, writeProductsFile, ProductsLoadError } from "./products/loader.js";
 import { redactValue } from "./policy/redact.js";
 import { IdentityRateLimiter, resolveToolRatePerMin } from "./quota/limiter.js";
 import { TokenBudget, estimateTokensFor, resolveDailyTokenLimit } from "./quota/token-budget.js";
@@ -1660,6 +1660,77 @@ async function main() {
       scopedTo: tenantFilter || (isAdmin ? null : callerTenant),
       includesStaging: includeStaging,
     });
+  });
+  // Upsert a product. Body is the same shape as a single entry
+  // in OMCP_PRODUCTS_FILE. The URL-path id must match the body id
+  // (defence-in-depth: the gate keys on body, the path keys the
+  // audit entry). When OMCP_PRODUCTS_FILE is set we also write the
+  // updated catalogue back to disk so the change survives a
+  // restart; without the file, the upsert is in-memory only.
+  app.put("/api/products/:id", need("products", "write"), audit("products", "write"), async (req, res) => {
+    const id = String(req.params.id);
+    const sess = (req as AuthedRequest).session;
+    const isAdmin = hasPermission(sess?.roles, "users", "delete");
+    const callerTenant = sess?.tenant || "default";
+    const body = req.body as Record<string, unknown> | undefined;
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      res.status(400).json({ error: "body must be a product object" });
+      return;
+    }
+    if (typeof body.id === "string" && body.id !== id) {
+      res.status(400).json({ error: `body.id '${body.id}' does not match URL path '${id}'` });
+      return;
+    }
+    // Force the id from the URL so the audit entry's target matches
+    // the persisted record even if the operator omitted it from the
+    // body.
+    const payload = { ...body, id };
+    let validated;
+    try { validated = validateProduct(payload, `PUT /api/products/${id}`); }
+    catch (e) {
+      if (e instanceof ProductsLoadError) { res.status(400).json({ error: e.message }); return; }
+      throw e;
+    }
+    // Tenant gate: non-admins can only write into their own tenant.
+    if (!isAdmin && (validated.tenant || "default") !== callerTenant) {
+      res.status(403).json({ error: "cannot write product into another tenant" });
+      return;
+    }
+    // If an existing product belongs to a different tenant, a non-
+    // admin overwrite would re-parent it — same 404-not-403 posture
+    // as cross-tenant gets.
+    const existing = products.get(id);
+    if (existing && !isAdmin && (existing.tenant || "default") !== callerTenant) {
+      res.status(404).json({ error: "not found" });
+      return;
+    }
+    const next = products.upsert(validated);
+    if (process.env.OMCP_PRODUCTS_FILE) {
+      try { await writeProductsFile(process.env.OMCP_PRODUCTS_FILE, next); }
+      catch (e) {
+        console.warn(`[products] PUT ${id}: failed to persist to ${process.env.OMCP_PRODUCTS_FILE}: ${(e as Error).message} — in-memory state is still updated`);
+      }
+    }
+    res.json({ product: validated, persisted: !!process.env.OMCP_PRODUCTS_FILE });
+  });
+  app.delete("/api/products/:id", need("products", "delete"), audit("products", "delete"), async (req, res) => {
+    const id = String(req.params.id);
+    const sess = (req as AuthedRequest).session;
+    const isAdmin = hasPermission(sess?.roles, "users", "delete");
+    const callerTenant = sess?.tenant || "default";
+    const existing = products.get(id);
+    if (!existing) { res.status(404).json({ error: "not found" }); return; }
+    if (!isAdmin && (existing.tenant || "default") !== callerTenant) {
+      res.status(404).json({ error: "not found" }); return;
+    }
+    const { file: next } = products.delete(id);
+    if (process.env.OMCP_PRODUCTS_FILE) {
+      try { await writeProductsFile(process.env.OMCP_PRODUCTS_FILE, next); }
+      catch (e) {
+        console.warn(`[products] DELETE ${id}: failed to persist to ${process.env.OMCP_PRODUCTS_FILE}: ${(e as Error).message} — in-memory state is still updated`);
+      }
+    }
+    res.status(204).end();
   });
   // Single product by id. Non-admins get a 404 (not 403) on a
   // cross-tenant probe so the existence of the product isn't leaked
