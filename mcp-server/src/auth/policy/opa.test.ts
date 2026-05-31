@@ -33,19 +33,19 @@ test("OpaPolicyEngine — evaluate returns warming-deny on first call, real verd
 
 test("OpaPolicyEngine — accepts boolean and rich result shapes", async () => {
   const e1 = new OpaPolicyEngine({ url: "http://opa.test", packagePath: "p", fetcher: mockFetcher(() => true) });
-  assert.equal((await e1.warmEvaluate(["admin"], "x", "y")).allowed, true);
+  assert.equal((await e1.warmEvaluate(["admin"], "sources" as never, "read" as never)).allowed, true);
   const e2 = new OpaPolicyEngine({
     url: "http://opa.test", packagePath: "p",
     fetcher: mockFetcher(() => ({ allowed: false, reason: "blocked: not in office hours" })),
   });
-  const r = await e2.warmEvaluate(["admin"], "x", "y");
+  const r = await e2.warmEvaluate(["admin"], "sources" as never, "read" as never);
   assert.equal(r.allowed, false);
   assert.match(r.reason!, /office hours/);
 });
 
 test("OpaPolicyEngine — unrecognised shape denies with a clear reason", async () => {
   const e = new OpaPolicyEngine({ url: "http://opa.test", packagePath: "p", fetcher: mockFetcher(() => 42) });
-  const r = await e.warmEvaluate(["admin"], "x", "y");
+  const r = await e.warmEvaluate(["admin"], "sources" as never, "read" as never);
   assert.equal(r.allowed, false);
   assert.match(r.reason!, /unrecognised result shape/);
 });
@@ -57,11 +57,11 @@ test("OpaPolicyEngine — http error caches a denial briefly so flapping OPA doe
     return new Response("nope", { status: 503 });
   }) as unknown as typeof fetch;
   const e = new OpaPolicyEngine({ url: "http://opa.test", packagePath: "p", fetcher });
-  const r1 = await e.warmEvaluate(["admin"], "x", "y");
+  const r1 = await e.warmEvaluate(["admin"], "sources" as never, "read" as never);
   assert.equal(r1.allowed, false);
   assert.match(r1.reason!, /HTTP 503/);
   // The next sync evaluate within ~1s uses the cached denial.
-  const r2 = e.evaluate(["admin"], "x", "y");
+  const r2 = e.evaluate(["admin"], "sources" as never, "read" as never);
   assert.equal(r2.allowed, false);
   assert.equal(calls, 1);
 });
@@ -106,7 +106,7 @@ test("OpaPolicyEngine — sends Bearer token when configured", async () => {
     return new Response(JSON.stringify({ result: true }), { status: 200 });
   }) as unknown as typeof fetch;
   const e = new OpaPolicyEngine({ url: "http://opa.test", packagePath: "p", bearerToken: "shh", fetcher });
-  await e.warmEvaluate(["admin"], "x", "y");
+  await e.warmEvaluate(["admin"], "sources" as never, "read" as never);
   assert.equal(seenAuth, "Bearer shh");
 });
 
@@ -118,8 +118,8 @@ test("OpaPolicyEngine — cache key delimiter prevents role-name collision (\"a,
     return new Response(JSON.stringify({ result: calls.length === 1 }), { status: 200 });
   }) as unknown as typeof fetch;
   const e = new OpaPolicyEngine({ url: "http://opa.test", packagePath: "p", fetcher });
-  const r1 = await e.warmEvaluate(["a,b"], "x", "y");
-  const r2 = await e.warmEvaluate(["a", "b"], "x", "y");
+  const r1 = await e.warmEvaluate(["a,b"], "sources" as never, "read" as never);
+  const r2 = await e.warmEvaluate(["a", "b"], "sources" as never, "read" as never);
   assert.equal(r1.allowed, true);
   assert.equal(r2.allowed, false);
   assert.equal(calls.length, 2, "the two role-sets must not collide on the cache key");
@@ -132,8 +132,11 @@ test("OpaPolicyEngine — sort-stable cache key (role-set order doesn't matter)"
     return new Response(JSON.stringify({ result: true }), { status: 200 });
   }) as unknown as typeof fetch;
   const e = new OpaPolicyEngine({ url: "http://opa.test", packagePath: "p", fetcher });
-  await e.warmEvaluate(["b", "a", "c"], "x", "y");
-  // Same role-set in different order → same cache key → no additional fetch
-  await e.warmEvaluate(["c", "b", "a"], "x", "y");
-  assert.equal(calls, 1);
+  // Warm with one order; evaluate with another. The cache hit path
+  // (evaluate, not warmEvaluate — warm always re-queries) proves the
+  // key is order-independent: one OPA call, second is a cache hit.
+  await e.warmEvaluate(["b", "a", "c"], "sources" as never, "read" as never);
+  const cached = e.evaluate(["c", "b", "a"], "sources" as never, "read" as never);
+  assert.equal(calls, 1, "second evaluate (reordered roles) must reuse the cache, no extra fetch");
+  assert.equal(cached.allowed, true);
 });
