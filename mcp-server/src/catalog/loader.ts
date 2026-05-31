@@ -38,6 +38,10 @@ export interface ServiceCatalogEntry {
   runbooks?: string[];
   /** Optional list of free-form tags. */
   tags?: string[];
+  /** Tenant the entry belongs to. Omitted → "default". Used by
+   *  multi-tenant deployments to scope what /api/catalog and the
+   *  list_services / get_service_health tools surface per session. */
+  tenant?: string;
 }
 
 export interface ServiceCatalog {
@@ -98,6 +102,7 @@ export function validateCatalog(input: unknown): ServiceCatalog {
     if (Array.isArray(e.tags)) {
       entry.tags = e.tags.filter((x): x is string => typeof x === "string");
     }
+    if (typeof e.tenant === "string") entry.tenant = e.tenant;
     out[name] = entry;
   }
   return { services: out };
@@ -106,14 +111,29 @@ export function validateCatalog(input: unknown): ServiceCatalog {
 /** Lookup wrapper used by the enricher / API handlers. */
 export class CatalogStore {
   constructor(private catalog: ServiceCatalog = EMPTY_CATALOG) {}
-  get(serviceName: string): ServiceCatalogEntry | undefined {
-    return this.catalog.services[serviceName];
+  /** Lookup. When `tenant` is set, returns undefined for entries
+   *  belonging to a different tenant — so a cross-tenant
+   *  enrichment never leaks owner / on-call / SLO bytes. Entries
+   *  without a tenant field are treated as `"default"`. */
+  get(serviceName: string, tenant?: string): ServiceCatalogEntry | undefined {
+    const e = this.catalog.services[serviceName];
+    if (!e) return undefined;
+    if (!tenant) return e;
+    const entryTenant = e.tenant || "default";
+    return entryTenant === tenant ? e : undefined;
   }
-  list(): Record<string, ServiceCatalogEntry> {
-    return this.catalog.services;
+  /** Snapshot. When `tenant` is set, filters down to entries in that
+   *  tenant; entries without a tenant field counted as `"default"`. */
+  list(tenant?: string): Record<string, ServiceCatalogEntry> {
+    if (!tenant) return this.catalog.services;
+    const out: Record<string, ServiceCatalogEntry> = {};
+    for (const [k, v] of Object.entries(this.catalog.services)) {
+      if ((v.tenant || "default") === tenant) out[k] = v;
+    }
+    return out;
   }
-  count(): number {
-    return Object.keys(this.catalog.services).length;
+  count(tenant?: string): number {
+    return Object.keys(this.list(tenant)).length;
   }
   replace(catalog: ServiceCatalog): void {
     this.catalog = catalog;

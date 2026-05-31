@@ -97,3 +97,28 @@ test("CatalogStore — get / list / count / replace", () => {
   assert.equal(store.count(), 1);
   assert.equal(store.get("x")?.owner, "team-x");
 });
+
+test("CatalogStore — tenant filter scopes get / list / count", () => {
+  const store = new CatalogStore({
+    services: {
+      "acme-payments": { owner: "team-a", tenant: "acme" },
+      "bigco-payments": { owner: "team-b", tenant: "bigco" },
+      "shared-cdn": { owner: "team-c" }, // no tenant → "default"
+    },
+  });
+  // No tenant filter → see everything (admin-style read)
+  assert.equal(store.count(), 3);
+
+  // Tenant-scoped: each sees its own entries + nothing else
+  assert.equal(store.count("acme"), 1);
+  assert.equal(store.get("acme-payments", "acme")?.owner, "team-a");
+  assert.equal(store.get("bigco-payments", "acme"), undefined, "cross-tenant get must return undefined");
+  assert.equal(Object.keys(store.list("acme"))[0], "acme-payments");
+
+  // Default tenant includes entries with no tenant field
+  assert.equal(store.count("default"), 1);
+  assert.equal(store.get("shared-cdn", "default")?.owner, "team-c");
+
+  // Unknown tenant → empty
+  assert.equal(store.count("unknown"), 0);
+});
