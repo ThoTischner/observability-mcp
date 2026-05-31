@@ -88,6 +88,12 @@ The server starts with **zero sources**. Add Prometheus/Loki via the Web UI or `
 > **Multi-user / production?** See [docs/access-control.md](docs/access-control.md)
 > for the opt-in basic-mode login + RBAC + audit log + per-identity rate limit
 > setup. All off by default; the demo above is unchanged.
+>
+> **SSO via OIDC?** `make demo-oidc` boots a Keycloak + an OIDC-flavored
+> mcp-server on port **3001** with three pre-provisioned users
+> (`admin` / `operator` / `viewer`, password = username, DEMO ONLY).
+> See [docs/auth-oidc.md](docs/auth-oidc.md) for production Keycloak /
+> Authentik / Auth0 / Azure AD setups.
 
 Want the full chaos-engineering demo (Prometheus + Loki + 3 example services + the autonomous agent)? Clone and run:
 

@@ -61,7 +61,12 @@ sources:
 # Use the list-of-{name, value | valueFrom} shape Kubernetes expects.
 # Common knobs:
 #   - MCP_LOG_LEVEL  — runtime log verbosity (info / debug)
-#   - OMCP_AUTH      — anonymous (default) | basic; see docs/auth-basic.md
+#   - OMCP_AUTH      — anonymous (default) | basic | oidc
+#                        anonymous → demo / single-operator
+#                        basic     → see docs/auth-basic.md
+#                        oidc      → see docs/auth-oidc.md
+#   - OMCP_OIDC_ISSUER / _CLIENT_ID / _REDIRECT_URI / _CLIENT_SECRET
+#   - OMCP_OIDC_SCOPES / _ROLES_CLAIM / _ROLE_MAP / _LOGOUT_REDIRECT
 #   - OMCP_USERS_FILE              path to the local-users JSON file (basic mode)
 #   - OMCP_SESSION_SECRET          ≥32-char HMAC key for signing session cookies
 #   - OMCP_API_KEYS                bearer tokens for the /mcp transport
