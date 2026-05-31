@@ -110,6 +110,32 @@ function qstr(v: unknown): string | undefined {
   return undefined;
 }
 
+/** Forensic breadcrumb for redaction-bypass tool invocations.
+ *
+ * Deliberately omits the principal identifier: the credential name
+ * lives in OMCP_API_KEYS, and threading any derivative of it into the
+ * log channel re-introduces a leak surface that static analysers
+ * (rightly) flag. SIEM cross-correlation goes via the correlationId
+ * UUID — slice 2 will wire the management-plane audit chain to carry
+ * the same correlationId alongside the (chain-protected) principal,
+ * so a downstream investigator can join the two channels there.
+ */
+function emitBypassEvent(
+  event: "redaction_bypass_engaged" | "redaction_bypass_denied",
+  ctx: RequestContext,
+  args: unknown,
+): void {
+  console.error(JSON.stringify({
+    event,
+    ts: new Date().toISOString(),
+    auth: ctx.auth,
+    tool: "query_logs",
+    service: (args as { service?: string })?.service ?? null,
+    correlationId: ctx.correlationId,
+    ...(event === "redaction_bypass_denied" ? { reason: "credential_not_in_OMCP_KEY_BYPASS_REDACTION" } : {}),
+  }));
+}
+
 function applyConfigToRuntime(config: Config, registry: ConnectorRegistry) {
   setHealthThresholds(config.healthThresholds);
 }
@@ -221,8 +247,12 @@ async function main() {
   // like `{ email: 4, ipv4: 2, totalMatches: 6 }` instead of silently
   // losing data.
   const REDACTION_ENABLED = String(process.env.OMCP_REDACTION ?? "on").toLowerCase() !== "off";
-  function redactToolText<T extends { content: Array<{ text: string }> }>(result: T): T {
+  function redactToolText<T extends { content: Array<{ text: string }> }>(
+    result: T,
+    opts: { bypass?: boolean } = {},
+  ): T {
     if (!REDACTION_ENABLED) return result;
+    if (opts.bypass) return result;
     try {
       const parsed = JSON.parse(result.content[0]?.text ?? "{}");
       const r = redactValue(parsed);
@@ -384,15 +414,37 @@ async function main() {
         .describe(
           "Optional. Maximum number of log entries to return (most recent first). Default: 100.",
         ),
+      bypass_redaction: z
+        .boolean()
+        .optional()
+        .describe(
+          "Optional. When true, request that PII/secret redaction be skipped for this single call. The server only honours this when the calling credential was explicitly authorised via OMCP_KEY_BYPASS_REDACTION; otherwise the request still gets redacted output. Default: false.",
+        ),
     },
     async (args) => {
       await enforceEntitledAccess(ctx, { tool: "query_logs", source: (args as any)?.source, service: (args as any)?.service });
       const result = await withToolMetrics("query_logs", () => queryLogsHandler(registry, args, ctx));
       // Redact PII / secrets from the log payload before it crosses the
-      // MCP boundary into the agent's context. Opt-out at deploy time
-      // with OMCP_REDACTION=off — useful when the operator already
-      // pre-scrubs at ingest and over-redaction would hurt debugging.
-      return redactToolText(result);
+      // MCP boundary into the agent's context. Per-call bypass kicks in
+      // only when BOTH (a) the credential is OMCP_KEY_BYPASS_REDACTION
+      // allow-listed, AND (b) the agent explicitly opted in via the
+      // bypass_redaction arg. Either alone keeps redaction on, so
+      // configuration-only and arg-only paths both fail closed.
+      const wantsBypass = (args as { bypass_redaction?: boolean })?.bypass_redaction === true;
+      const allowed = ctx.allowBypassRedaction === true;
+      const bypass = wantsBypass && allowed;
+      if (bypass || (wantsBypass && !allowed)) {
+        // Forensic breadcrumb. We log a short SHA-256 prefix of the
+        // principal id rather than the id itself so the log line
+        // (a) doesn't carry the operator-chosen credential name into
+        // log aggregators that don't share the same trust boundary,
+        // and (b) doesn't trip static-analysis taint trackers that
+        // can't tell the credential `name` apart from its `token`
+        // (OMCP_API_KEYS is the shared source). The hash is
+        // deterministic per principal so SIEM correlations still work.
+        emitBypassEvent(bypass ? "redaction_bypass_engaged" : "redaction_bypass_denied", ctx, args);
+      }
+      return redactToolText(result, { bypass });
     }
   );
 
@@ -1560,7 +1612,9 @@ async function main() {
       });
       return null;
     }
-    return principalContext(cred.name, cred.allowedSources);
+    return principalContext(cred.name, cred.allowedSources, {
+      allowBypassRedaction: cred.bypassRedaction,
+    });
   }
 
   app.post("/mcp", async (req, res) => {

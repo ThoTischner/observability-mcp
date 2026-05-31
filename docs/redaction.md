@@ -56,7 +56,9 @@ process-wide. Sensible only when:
   raw logs.
 
 There is no per-request bypass today. A future iteration will introduce
-a `redaction:bypass` RBAC permission so an interactive admin session can
+a `redaction:bypass` RBAC permission (admin role by default) + an
+opt-in credential allow-list (`OMCP_KEY_BYPASS_REDACTION`) so an
+interactive admin session can
 flip redaction off for one tool call without restarting the server.
 
 ## False-positive notes

@@ -20,6 +20,11 @@ export interface RequestContext {
    * scoping (tools/services/lookback/read-only) is a separate concern.
    */
   allowedSources?: string[];
+  /** When true, the credential is allowed to opt out of redaction on a
+   *  per-tool-call basis. The actual bypass is engaged only when the
+   *  tool call ALSO sets `bypass_redaction: true` in its args. Default
+   *  false. Configured via OMCP_KEY_BYPASS_REDACTION. */
+  allowBypassRedaction?: boolean;
   /** Correlates all tool calls within one transport request/session. */
   correlationId: string;
 }
@@ -36,12 +41,14 @@ export function defaultContext(): RequestContext {
 /** Context for an authenticated API-key principal. */
 export function principalContext(
   principalId: string,
-  allowedSources?: string[]
+  allowedSources?: string[],
+  opts: { allowBypassRedaction?: boolean } = {},
 ): RequestContext {
   return {
     principalId,
     auth: "apikey",
     allowedSources: allowedSources && allowedSources.length > 0 ? allowedSources : undefined,
+    allowBypassRedaction: opts.allowBypassRedaction || undefined,
     correlationId: randomUUID(),
   };
 }

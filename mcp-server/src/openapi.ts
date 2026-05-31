@@ -297,7 +297,7 @@ export function buildOpenApiSpec(version: string): OpenAPIV3_1.Document {
                           type: "object",
                           properties: {
                             resource: { type: "string" },
-                            action: { type: "string", enum: ["read", "write", "delete"] },
+                            action: { type: "string", enum: ["read", "write", "delete", "bypass"] },
                           },
                         },
                       },
