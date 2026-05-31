@@ -58,6 +58,7 @@ import { resolveOidcConfig, buildOidcRuntime } from "./auth/oidc/runtime.js";
 import { registerOidcRoutes } from "./auth/oidc/endpoints.js";
 import { BuiltinPolicyEngine, type PolicyEngine } from "./auth/policy/engine.js";
 import { loadPolicyFromFile, PolicyLoadError, VALID_RESOURCES, VALID_ACTIONS } from "./auth/policy/loader.js";
+import { OpaPolicyEngine } from "./auth/policy/opa.js";
 import { AuditLog } from "./audit/log.js";
 import { buildAuditMiddleware } from "./audit/middleware.js";
 import { readCatalogFile, CatalogStore } from "./catalog/loader.js";
@@ -774,7 +775,52 @@ async function main() {
   // fatal so the configured intent always wins.
   let policyEngine: PolicyEngine = new BuiltinPolicyEngine(DEFAULT_POLICY);
   const policyFile = process.env.OMCP_RBAC_POLICY_FILE?.trim();
-  if (policyFile) {
+  const opaUrl = process.env.OMCP_OPA_URL?.trim();
+  // OPA takes precedence over a file: an operator who wired both
+  // probably wants OPA as the live engine and uses the file as a
+  // local fallback only via OMCP_POLICY_ENGINE=builtin.
+  const enginePref = (process.env.OMCP_POLICY_ENGINE || "").toLowerCase();
+  if (opaUrl && enginePref !== "builtin") {
+    const declared = (process.env.OMCP_OPA_ROLES || "").split(",").map((s) => s.trim()).filter(Boolean);
+    policyEngine = new OpaPolicyEngine({
+      url: opaUrl,
+      packagePath: process.env.OMCP_OPA_PACKAGE || "observability/authz",
+      declaredRoles: declared.length > 0 ? declared : undefined,
+      bearerToken: process.env.OMCP_OPA_TOKEN || undefined,
+    });
+    console.log(`[auth] RBAC policy engine = OPA at ${opaUrl} (package ${process.env.OMCP_OPA_PACKAGE || "observability/authz"})`);
+    // Pre-warm: the sync RBAC gate denies on a cache miss while the
+    // first async OPA call is in flight. Hit every (role, resource,
+    // action) combination from the declared role set so the very
+    // first user request gets a real decision instead of a warming-
+    // deny. With 3 roles × 10 resources × 4 actions = 120 calls,
+    // OPA handles this in <1s and we keep it best-effort (any
+    // failure surfaces in the OPA logs, the engine retries on the
+    // first user-facing call anyway).
+    const opaEngine = policyEngine as OpaPolicyEngine;
+    void (async () => {
+      const roles = opaEngine.roles();
+      if (roles.length === 0) return;
+      const resources = [...VALID_RESOURCES];
+      const actions = [...VALID_ACTIONS];
+      const tasks: Promise<unknown>[] = [];
+      for (const role of roles) {
+        for (const resource of resources) for (const action of actions) {
+          tasks.push(opaEngine.warmEvaluate([role], resource, action));
+        }
+        tasks.push(opaEngine.warmList([role]));
+      }
+      try {
+        const settled = await Promise.allSettled(tasks);
+        const failed = settled.filter((s) => s.status === "rejected").length;
+        if (failed === 0) {
+          console.log(`[auth] OPA cache pre-warmed: ${settled.length} decisions cached for ${roles.length} role(s)`);
+        } else {
+          console.warn(`[auth] OPA cache pre-warmed: ${settled.length - failed}/${settled.length} ok, ${failed} failed (gates will retry on first user call)`);
+        }
+      } catch { /* best-effort */ }
+    })();
+  } else if (policyFile) {
     try {
       policyEngine = loadPolicyFromFile(policyFile);
       console.log(`[auth] RBAC policy loaded from ${policyFile} (${policyEngine.roles().join(", ")})`);
