@@ -26,6 +26,7 @@ the README quickstart promises.
 | **Web UI SSO via OIDC** | `OMCP_AUTH=oidc` + `OMCP_OIDC_*` | anonymous | [auth-oidc.md](auth-oidc.md) |
 | **Role-based permissions** on the management API | (built-in `viewer` / `operator` / `admin`; role assigned via the user file's `roles` field) | only meaningful in basic mode | this doc, "Roles & permissions" |
 | **Policy engine** for RBAC decisions | `OMCP_RBAC_POLICY_FILE` (YAML) or `OMCP_OPA_URL` (OPA HTTP) | built-in | [policy-engines.md](policy-engines.md) |
+| **Multi-tenancy** (per-identity scope across audit / quotas / catalog) | `OMCP_KEY_TENANTS` + `OMCP_OIDC_TENANT_CLAIM` + user-file `tenant` field | single-tenant (`default`) | [tenancy.md](tenancy.md) |
 | **Audit log** of mutating `/api/*` requests | `OMCP_MGMT_AUDIT_FILE` | in-memory ring (500 entries) | this doc, "Audit log" |
 
 Two adjacent controls fall under the same umbrella:

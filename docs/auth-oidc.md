@@ -234,3 +234,5 @@ issue: ensure the OMCP redirect URI and the UI URL share an origin
 - [auth-basic.md](auth-basic.md) — local-users-file alternative.
 - [auth-and-tls.md](auth-and-tls.md) — TLS termination + the `/mcp`
   bearer-token gate.
+- [tenancy.md](tenancy.md) — multi-tenant deployments (`OMCP_OIDC_TENANT_CLAIM`
+  is the OIDC-side wiring).
