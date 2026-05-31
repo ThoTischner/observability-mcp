@@ -16,16 +16,23 @@ import type { NextFunction, Request, RequestHandler, Response } from "express";
 
 import { readCookie, verifySession, type SessionPayload, type SessionConfig } from "./session.js";
 
-export type AuthMode = "anonymous" | "basic";
+export type AuthMode = "anonymous" | "basic" | "oidc";
 
 export interface AuthRuntime {
   mode: AuthMode;
-  /** Present only when mode === "basic". */
+  /** Present when mode is "basic" or "oidc" — both mint OMCP session
+   *  cookies the same way, just sourced from local creds vs. an IdP. */
   session?: SessionConfig;
   /** When true and `secret` not provided, the server generated one for this
    * process — sessions will not survive a restart. The wire-up code logs a
    * warning once when this happens. */
   secretEphemeral?: boolean;
+  /** OIDC runtime, present only when mode === "oidc". Opaque to this
+   *  module — the OIDC HTTP endpoints in src/index.ts consume it.
+   *  Typed as `unknown` here to avoid importing the OIDC sub-module
+   *  and pulling its node:crypto dependency into the middleware
+   *  surface. The OIDC wire-up casts on the way in. */
+  oidc?: unknown;
 }
 
 export interface AuthedRequest extends Request {

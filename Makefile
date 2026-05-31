@@ -100,7 +100,9 @@ doctor: ## Quick health check — is the mcp-server reachable on $$OMCP_HOST:$$O
 	  redaction=$$(echo "$$info" | jq -r '.governance.redaction // false'); \
 	  auditPersisted=$$(echo "$$info" | jq -r '.governance.auditPersisted // false'); \
 	  rate=$$(echo "$$info" | jq -r '.governance.toolRatePerMin // "?"'); \
-	  echo "ok (authMode=$$authMode redaction=$$redaction auditPersisted=$$auditPersisted rate=$$rate/min)"; \
+	  oidc=$$(echo "$$info" | jq -r '.governance.oidcIssuer // ""'); \
+	  oidcSfx=""; [ -n "$$oidc" ] && oidcSfx=" oidcIssuer=$$oidc"; \
+	  echo "ok (authMode=$$authMode redaction=$$redaction auditPersisted=$$auditPersisted rate=$$rate/min$$oidcSfx)"; \
 	fi
 	@echo
 	@echo "All good. Wire your agent up with:"

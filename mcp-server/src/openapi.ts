@@ -229,10 +229,14 @@ export function buildOpenApiSpec(version: string): OpenAPIV3_1.Document {
                         type: "object",
                         description: "Active management-plane posture; booleans + rate-limit number only.",
                         properties: {
-                          authMode: { type: "string", enum: ["anonymous", "basic"] },
+                          authMode: { type: "string", enum: ["anonymous", "basic", "oidc"] },
                           authSecretEphemeral: {
                             type: "boolean",
                             description: "True when OMCP_SESSION_SECRET is unset and the server minted an in-memory secret at boot. Sessions don't survive a restart.",
+                          },
+                          oidcIssuer: {
+                            type: "string",
+                            description: "Active OIDC issuer URL. Empty string when authMode is not 'oidc'. Never includes the client_secret.",
                           },
                           auditPersisted: {
                             type: "boolean",

@@ -53,6 +53,7 @@ import {
   type Resource,
   type Action,
 } from "./auth/rbac.js";
+import { resolveOidcConfig, buildOidcRuntime } from "./auth/oidc/runtime.js";
 import { AuditLog } from "./audit/log.js";
 import { buildAuditMiddleware } from "./audit/middleware.js";
 import { readCatalogFile, CatalogStore } from "./catalog/loader.js";
@@ -542,6 +543,7 @@ async function main() {
   let sessionCfg: SessionConfig | undefined;
   let usersStore: LocalUsersFile | null = null;
   let secretEphemeral = false;
+  let oidcRuntime: ReturnType<typeof buildOidcRuntime> | undefined;
   if (requestedAuthMode === "basic") {
     const usersPath = process.env.OMCP_USERS_FILE;
     if (!usersPath) {
@@ -569,10 +571,30 @@ async function main() {
         console.log(`[auth] basic mode active — ${usersStore.users.length} user(s) loaded`);
       }
     }
+  } else if (requestedAuthMode === "oidc") {
+    const r = resolveOidcConfig(process.env);
+    if (r.error || !r.config) {
+      authMisconfig(r.error ?? "OIDC misconfigured");
+    } else {
+      let secret = process.env.OMCP_SESSION_SECRET;
+      if (!secret || secret.length < 32) {
+        secret = generateSecret();
+        secretEphemeral = true;
+        console.warn(
+          "[auth] OMCP_SESSION_SECRET not set (or < 32 chars) in OIDC mode. " +
+            "Generated an ephemeral secret — sessions and OIDC state cookies " +
+            "will be invalidated on restart. Set OMCP_SESSION_SECRET in production.",
+        );
+      }
+      sessionCfg = { secret };
+      authMode = "oidc";
+      oidcRuntime = buildOidcRuntime(r.config);
+      console.log(`[auth] OIDC mode active — issuer=${r.config.issuer} clientId=${r.config.clientId} rolesClaim=${r.config.rolesClaim} mappedRoles=${Object.keys(r.config.roleMap).length}`);
+    }
   } else if (requestedAuthMode !== "anonymous") {
     authMisconfig(`unknown OMCP_AUTH=${requestedAuthMode}`);
   }
-  const authRuntime: AuthRuntime = { mode: authMode, session: sessionCfg, secretEphemeral };
+  const authRuntime: AuthRuntime = { mode: authMode, session: sessionCfg, secretEphemeral, oidc: oidcRuntime };
 
   // --- HTTP server ---
   const app = express();
@@ -779,6 +801,10 @@ async function main() {
       governance: {
         authMode: authRuntime.mode,
         authSecretEphemeral: !!authRuntime.secretEphemeral,
+        // OIDC issuer (URL only — never the client_secret) is the
+        // single piece of state external discovery needs to know
+        // *where* the IdP lives. Empty string when mode != "oidc".
+        oidcIssuer: oidcRuntime?.cfg.issuer ?? "",
         auditPersisted: !!process.env.OMCP_MGMT_AUDIT_FILE,
         catalogConfigured: catalog.count() > 0 || !!process.env.OMCP_SERVICE_CATALOG_FILE,
         redaction: REDACTION_ENABLED,
