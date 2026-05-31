@@ -142,3 +142,5 @@ The session cookie (`omcp_session`) is:
 - [access-control.md](access-control.md) — the one-stop runbook covering
   basic-mode auth alongside RBAC, audit log, redaction, rate limits,
   reverse-proxy setup, and the investigation playbook.
+- [auth-oidc.md](auth-oidc.md) — the third auth mode, for teams that
+  already run an IdP (Keycloak, Authentik, Auth0, Azure AD, ...).

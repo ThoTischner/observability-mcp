@@ -23,6 +23,7 @@ the README quickstart promises.
 |---|---|---|---|
 | **MCP bearer auth** for the agent transport | `OMCP_API_KEYS` | anonymous | [auth-and-tls.md](auth-and-tls.md) |
 | **Web UI session login** | `OMCP_AUTH=basic` + `OMCP_USERS_FILE` | anonymous | [auth-basic.md](auth-basic.md) |
+| **Web UI SSO via OIDC** | `OMCP_AUTH=oidc` + `OMCP_OIDC_*` | anonymous | [auth-oidc.md](auth-oidc.md) |
 | **Role-based permissions** on the management API | (built-in `viewer` / `operator` / `admin`; role assigned via the user file's `roles` field) | only meaningful in basic mode | this doc, "Roles & permissions" |
 | **Audit log** of mutating `/api/*` requests | `OMCP_MGMT_AUDIT_FILE` | in-memory ring (500 entries) | this doc, "Audit log" |
 
