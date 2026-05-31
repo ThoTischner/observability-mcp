@@ -30,6 +30,8 @@ export interface LocalUser {
   username: string;
   name: string;
   roles?: string[];
+  /** Optional tenant assignment. Missing → DEFAULT_TENANT. */
+  tenant?: string;
   passwordHash: string;
 }
 
@@ -126,6 +128,7 @@ function isUsersFile(v: unknown): v is LocalUsersFile {
     if (typeof r.name !== "string") return false;
     if (typeof r.passwordHash !== "string") return false;
     if (r.roles !== undefined && !(Array.isArray(r.roles) && r.roles.every((x) => typeof x === "string"))) return false;
+    if (r.tenant !== undefined && typeof r.tenant !== "string") return false;
     return true;
   });
 }

@@ -1238,7 +1238,7 @@ async function main() {
       return;
     }
     const { cookie } = issueSession(
-      { sub: user.username, name: user.name, roles: user.roles },
+      { sub: user.username, name: user.name, roles: user.roles, tenant: user.tenant },
       sessionCfg,
     );
     const secure = req.secure || (req.headers["x-forwarded-proto"] === "https");
@@ -1842,6 +1842,7 @@ async function main() {
     }
     return principalContext(cred.name, cred.allowedSources, {
       allowBypassRedaction: cred.bypassRedaction,
+      tenant: cred.tenant,
     });
   }
 

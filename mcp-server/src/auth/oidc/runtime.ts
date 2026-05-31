@@ -23,6 +23,7 @@
  */
 
 import { OidcClient, type OidcConfig } from "./client.js";
+import { DEFAULT_TENANT, tenantFromClaim } from "../../tenancy/context.js";
 
 export interface OidcRuntimeConfig {
   issuer: string;
@@ -33,6 +34,9 @@ export interface OidcRuntimeConfig {
   rolesClaim: string;
   roleMap: Record<string, string>;
   logoutRedirect: string;
+  /** Dotted claim path to read the tenant from. Empty / missing → all
+   *  OIDC sessions land in the "default" tenant. */
+  tenantClaim: string;
 }
 
 export interface ResolveOidcResult {
@@ -92,6 +96,7 @@ export function resolveOidcConfig(env: NodeJS.ProcessEnv = process.env): Resolve
       rolesClaim: nonEmpty(env.OMCP_OIDC_ROLES_CLAIM) ?? "groups",
       roleMap,
       logoutRedirect: nonEmpty(env.OMCP_OIDC_LOGOUT_REDIRECT) ?? "/",
+      tenantClaim: nonEmpty(env.OMCP_OIDC_TENANT_CLAIM) ?? "",
     },
   };
 }
@@ -105,6 +110,10 @@ export interface OidcRuntime {
    *  return the OMCP role names the user inherits via roleMap.
    *  Unknown claim values are silently dropped (least-privilege). */
   resolveRoles(claims: Record<string, unknown>): string[];
+  /** Walk a JWT claim set, follow the configured tenant claim path,
+   *  and return a normalised tenant id. Empty / missing / invalid →
+   *  DEFAULT_TENANT. */
+  resolveTenant(claims: Record<string, unknown>): string;
 }
 
 export function buildOidcRuntime(cfg: OidcRuntimeConfig, opts: { client?: OidcClient } = {}): OidcRuntime {
@@ -131,6 +140,9 @@ export function buildOidcRuntime(cfg: OidcRuntimeConfig, opts: { client?: OidcCl
         if (mapped) roles.add(mapped);
       }
       return [...roles];
+    },
+    resolveTenant(claims) {
+      return cfg.tenantClaim ? tenantFromClaim(claims, cfg.tenantClaim) : DEFAULT_TENANT;
     },
   };
 }

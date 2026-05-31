@@ -105,7 +105,8 @@ export function registerOidcRoutes(app: Application, deps: OidcEndpointDeps): vo
     const emailVerified = claims.email_verified === undefined || claims.email_verified === true;
     const email = emailVerified ? sanitiseClaim(claims.email) : undefined;
     const roles = oidc.resolveRoles(claims);
-    const { cookie } = issueSession({ sub, name, email, roles }, sessionCfg);
+    const tenant = oidc.resolveTenant(claims);
+    const { cookie } = issueSession({ sub, name, email, roles, tenant }, sessionCfg);
     // Two cookies: clear the now-spent flow cookie, set the long-lived
     // session cookie. The browser accepts both in a single response.
     res.setHeader("Set-Cookie", [

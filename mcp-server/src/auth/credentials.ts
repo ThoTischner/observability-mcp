@@ -16,11 +16,18 @@
  *                  # via the bypass_redaction tool arg. Off by default
  *                  # for every key — pair with the redaction:bypass
  *                  # RBAC permission for the management-plane angle.
+ *   OMCP_KEY_TENANTS="agent=acme;ci=bigco"
+ *                  # optional per-key tenant assignment. Unlisted keys
+ *                  # land in the "default" tenant — identical to the
+ *                  # pre-E7 single-namespace world. See docs/tenancy.md
+ *                  # (slice 5) for the cross-cutting model.
  *
  * Rich role-based access control (tools/services/lookback/read-only, the
  * full governance object) is intentionally NOT here — this is only the
  * authentication + identity + coarse source-scoping primitive.
  */
+
+import { parseKeyTenants } from "../tenancy/context.js";
 
 export interface Credential {
   name: string;
@@ -31,6 +38,8 @@ export interface Credential {
    *  to explicitly set `bypass_redaction: true` in the tool args —
    *  this flag only authorises it; it never auto-disables redaction. */
   bypassRedaction?: boolean;
+  /** Tenant this credential belongs to. Omitted → DEFAULT_TENANT. */
+  tenant?: string;
 }
 
 function parseKeySources(raw: string | undefined): Map<string, string[]> {
@@ -58,6 +67,7 @@ export function loadCredentials(env: NodeJS.ProcessEnv = process.env): Credentia
   if (!raw) return [];
   const keySources = parseKeySources(env.OMCP_KEY_SOURCES);
   const bypassNames = parseBypassSet(env.OMCP_KEY_BYPASS_REDACTION);
+  const keyTenants = parseKeyTenants(env.OMCP_KEY_TENANTS);
   const creds: Credential[] = [];
   for (const part of raw.split(",").map((s) => s.trim()).filter(Boolean)) {
     const idx = part.indexOf(":");
@@ -69,6 +79,7 @@ export function loadCredentials(env: NodeJS.ProcessEnv = process.env): Credentia
       token,
       allowedSources: keySources.get(name),
       bypassRedaction: bypassNames.has(name) || undefined,
+      tenant: keyTenants.get(name) || undefined,
     });
   }
   return creds;
