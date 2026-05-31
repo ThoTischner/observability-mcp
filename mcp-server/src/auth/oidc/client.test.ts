@@ -10,20 +10,26 @@ function b64u(s: string | Buffer): string {
   return b.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-function signRs256(payload: Record<string, unknown>, privateKey: import("node:crypto").KeyObject, kid: string): string {
+// PEM-encoded sign — see jwt.test.ts for the Node-version-stability
+// reason this avoids the raw KeyObject destructure path.
+function signRs256(payload: Record<string, unknown>, privateKeyPem: string, kid: string): string {
   const header = b64u(JSON.stringify({ alg: "RS256", typ: "JWT", kid }));
   const body = b64u(JSON.stringify(payload));
   const signer = createSign("RSA-SHA256");
   signer.update(`${header}.${body}`);
   signer.end();
-  return `${header}.${body}.${b64u(signer.sign(privateKey))}`;
+  return `${header}.${body}.${b64u(signer.sign(privateKeyPem))}`;
 }
 
-function rsaKey(): { jwk: Jwk; privateKey: import("node:crypto").KeyObject } {
-  const { publicKey, privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+function rsaKey(): { jwk: Jwk; privateKeyPem: string } {
+  const { publicKey, privateKey } = generateKeyPairSync("rsa", {
+    modulusLength: 2048,
+    publicKeyEncoding: { type: "spki", format: "pem" },
+    privateKeyEncoding: { type: "pkcs8", format: "pem" },
+  });
   const jwk = createPublicKey(publicKey).export({ format: "jwk" }) as Jwk;
   jwk.kid = "test-kid";
-  return { jwk, privateKey };
+  return { jwk, privateKeyPem: privateKey };
 }
 
 function makeFetcher(handlers: Record<string, (init?: RequestInit) => Response | Promise<Response>>) {
@@ -62,10 +68,10 @@ test("OidcClient.start — builds authorize URL with PKCE + nonce + state", asyn
 });
 
 test("OidcClient.complete — verifies state, exchanges code, verifies id_token", async () => {
-  const { jwk, privateKey } = rsaKey();
+  const { jwk, privateKeyPem } = rsaKey();
   const now = 1_700_000_000;
   const flow = { state: "S", nonce: "N", codeVerifier: "V_43charsminimum_______________________________________________" };
-  const idToken = signRs256({ iss: ISSUER, aud: "c-1", sub: "alice", exp: now + 60, iat: now, nonce: "N" }, privateKey, jwk.kid!);
+  const idToken = signRs256({ iss: ISSUER, aud: "c-1", sub: "alice", exp: now + 60, iat: now, nonce: "N" }, privateKeyPem, jwk.kid!);
   const fetcher = makeFetcher({
     [`${ISSUER}/.well-known/openid-configuration`]: () => new Response(JSON.stringify(DISCOVERY), { status: 200 }),
     [`${ISSUER}/jwks`]: () => new Response(JSON.stringify({ keys: [jwk] }), { status: 200 }),
@@ -113,9 +119,9 @@ test("OidcClient.complete — rejects missing id_token in token response", async
 });
 
 test("OidcClient.complete — uses Basic auth when clientSecret set", async () => {
-  const { jwk, privateKey } = rsaKey();
+  const { jwk, privateKeyPem } = rsaKey();
   const now = 1_700_000_000;
-  const idToken = signRs256({ iss: ISSUER, aud: "c-1", sub: "alice", exp: now + 60, iat: now, nonce: "n" }, privateKey, jwk.kid!);
+  const idToken = signRs256({ iss: ISSUER, aud: "c-1", sub: "alice", exp: now + 60, iat: now, nonce: "n" }, privateKeyPem, jwk.kid!);
   let captured: string | undefined;
   const fetcher = async (url: string, init?: RequestInit) => {
     if (url === `${ISSUER}/.well-known/openid-configuration`) return new Response(JSON.stringify(DISCOVERY), { status: 200 });
