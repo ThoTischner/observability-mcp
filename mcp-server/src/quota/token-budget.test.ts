@@ -64,19 +64,48 @@ test("TokenBudget — 24h rolling: buckets older than 24h drop off", () => {
   assert.equal(b.check("alice", 1000).allowed, true);
 });
 
-test("TokenBudget — denied request returns retryAfter ≈ time until oldest bucket drops", () => {
+test("TokenBudget — denied request returns retryAfter ≈ time until enough buckets drop to fit the request", () => {
   let now = 1_700_000_000_000;
   const b = new TokenBudget({ dailyLimit: 100, now: () => now });
-  b.check("alice", 100); // fully consumed
+  b.check("alice", 100); // fully consumed at hour 0
   now += 60 * 60 * 1000; // +1h
   const denied = b.check("alice", 1);
   assert.equal(denied.allowed, false);
-  // Oldest bucket at hour 0 drops at hour 24; we're at hour 1 → ~23h
+  // Need 1 free; oldest bucket (100 tokens) drops at hour 24 → ~23h wait.
   const expectedSeconds = 23 * 60 * 60;
   assert.ok(
     Math.abs(denied.retryAfterSeconds - expectedSeconds) < 3600,
     `expected ~${expectedSeconds}s, got ${denied.retryAfterSeconds}s`,
   );
+  // freedAtRetry exposes how much will be available
+  assert.equal(denied.freedAtRetry, 100);
+});
+
+test("TokenBudget — retryAfter walks enough buckets to fit a LARGER request", () => {
+  let now = 1_700_000_000_000;
+  const HOUR = 60 * 60 * 1000;
+  const b = new TokenBudget({ dailyLimit: 1000, now: () => now });
+  // Three 300-token calls spread across 3 different hours.
+  b.check("alice", 300, now);              // bucket hour 0
+  b.check("alice", 300, now + HOUR);       // bucket hour 1
+  b.check("alice", 400, now + 2 * HOUR);   // bucket hour 2 — total 1000
+  now += 3 * HOUR;
+  // Now request 700 more. Need 700 free. Dropping bucket@hour0 (300)
+  // only frees 300 — not enough. Dropping bucket@hour1 (300 more)
+  // gets to 600 — still not enough. Dropping bucket@hour2 (400 more)
+  // gets to 1000 — fits 700 with headroom.
+  const denied = b.check("alice", 700);
+  assert.equal(denied.allowed, false);
+  // Must wait until bucket@hour1 drops (at hour 1 + 24 = hour 25),
+  // we are at hour 3 → 22h wait? No — we need bucket@hour1 to drop to
+  // get freed=600, still not enough. Need bucket@hour2 → drops at
+  // hour 26, we're at hour 3 → 23h wait, with 1000 freed by then.
+  const expectedSeconds = 23 * 60 * 60;
+  assert.ok(
+    Math.abs(denied.retryAfterSeconds - expectedSeconds) < 3600,
+    `expected ~${expectedSeconds}s, got ${denied.retryAfterSeconds}s`,
+  );
+  assert.equal(denied.freedAtRetry, 1000, "all three buckets must have dropped to fit the 700 request");
 });
 
 test("TokenBudget — per-identity isolation (alice's bucket doesn't affect bob)", () => {

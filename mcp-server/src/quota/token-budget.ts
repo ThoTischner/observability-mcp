@@ -62,9 +62,15 @@ export interface CheckResult {
   used: number;
   /** Configured daily cap. 0 means uncapped. */
   limit: number;
-  /** Seconds until the oldest bucket's worth of tokens drops off,
-   *  rounded up. 0 when allowed. */
+  /** Seconds until ENOUGH buckets drop off to fit the denied request.
+   *  Walks the bucket list oldest-first and stops at the first
+   *  timestamp where dropping every bucket older would free
+   *  >= (used + tokens - limit) tokens. Rounded up. 0 when allowed
+   *  (or when uncapped). */
   retryAfterSeconds: number;
+  /** How many tokens will be available again at retryAfterSeconds.
+   *  Useful for HTTP 429 bodies + Retry-After hints. 0 when allowed. */
+  freedAtRetry: number;
 }
 
 interface Bucket {
@@ -93,17 +99,19 @@ export class TokenBudget {
     if (this.limit <= 0) {
       // Uncapped → always allow, still track usage for /api/usage.
       this.record(identity, tokens, now);
-      return { allowed: true, used: this.usedInWindow(identity, now), limit: 0, retryAfterSeconds: 0 };
+      return { allowed: true, used: this.usedInWindow(identity, now), limit: 0, retryAfterSeconds: 0, freedAtRetry: 0 };
     }
     const safeTokens = tokens > 0 ? Math.floor(tokens) : 0;
     const existing = this.usedInWindow(identity, now);
     if (existing + safeTokens > this.limit) {
-      const next = this.nextSlotMs(identity, now);
+      const needed = existing + safeTokens - this.limit;
+      const { waitMs, freed } = this.nextEnoughHeadroom(identity, now, needed);
       return {
         allowed: false,
         used: existing,
         limit: this.limit,
-        retryAfterSeconds: Math.max(1, Math.ceil(next / 1000)),
+        retryAfterSeconds: waitMs > 0 ? Math.max(1, Math.ceil(waitMs / 1000)) : 1,
+        freedAtRetry: freed,
       };
     }
     this.record(identity, safeTokens, now);
@@ -112,6 +120,7 @@ export class TokenBudget {
       used: existing + safeTokens,
       limit: this.limit,
       retryAfterSeconds: 0,
+      freedAtRetry: 0,
     };
   }
 
@@ -164,14 +173,29 @@ export class TokenBudget {
     return total;
   }
 
-  /** Time in ms until the oldest in-window bucket drops off, freeing
-   *  its share of the budget. Returns 0 when the bucket list is empty. */
-  private nextSlotMs(identity: string, now: number): number {
+  /** Walk the bucket list oldest-first until enough tokens would have
+   *  dropped off to fit a request needing `needed` extra headroom.
+   *  Returns the wait in ms + the cumulative freed tokens at that
+   *  point. When `needed` exceeds the entire window's content (the
+   *  caller wants more than the cap), returns the time until the
+   *  newest bucket drops + everything freed. */
+  private nextEnoughHeadroom(identity: string, now: number, needed: number): { waitMs: number; freed: number } {
     const fresh = this.pruneOld(identity, now);
-    if (fresh.length === 0) return 0;
-    const oldest = fresh[0];
-    const dropAt = oldest.at + WINDOW_MS;
-    return Math.max(0, dropAt - now);
+    if (fresh.length === 0) return { waitMs: 0, freed: 0 };
+    let freed = 0;
+    for (const b of fresh) {
+      freed += b.tokens;
+      if (freed >= needed) {
+        const dropAt = b.at + WINDOW_MS;
+        return { waitMs: Math.max(0, dropAt - now), freed };
+      }
+    }
+    // Even dropping every bucket isn't enough — the request alone
+    // exceeds the daily cap. Return the time until the newest bucket
+    // drops so the caller knows the window will be empty by then; the
+    // request will still get rejected on size if it exceeds limit.
+    const newest = fresh[fresh.length - 1];
+    return { waitMs: Math.max(0, newest.at + WINDOW_MS - now), freed };
   }
 }
 

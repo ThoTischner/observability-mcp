@@ -449,11 +449,28 @@ export function buildOpenApiSpec(version: string): OpenAPIV3_1.Document {
                             count: { type: "integer" },
                             limit: { type: "integer" },
                             windowMs: { type: "integer" },
+                            tokens: {
+                              type: "object",
+                              description: "Per-identity 24h-rolling token usage. `limit: 0` means uncapped (OMCP_TOOL_DAILY_TOKENS unset).",
+                              properties: {
+                                used: { type: "integer" },
+                                limit: { type: "integer" },
+                                windowMs: { type: "integer" },
+                              },
+                            },
                           },
                         },
                       },
                       defaultLimit: { type: "integer" },
                       windowMs: { type: "integer" },
+                      tokens: {
+                        type: "object",
+                        description: "Process-wide defaults for the token-budget tracker.",
+                        properties: {
+                          defaultLimit: { type: "integer" },
+                          windowMs: { type: "integer" },
+                        },
+                      },
                     },
                   },
                 },
