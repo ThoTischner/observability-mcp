@@ -102,12 +102,14 @@ export function verifyIdToken(jwt: string, keys: Jwk[], opts: VerifyOpts): JwtPa
     throw new JwtVerifyError(`unsupported alg: ${header.alg}`);
   }
 
-  // Pick the key — match by kid if present in either header or JWK,
-  // otherwise fall back to "the only key of the right kty" which
-  // covers single-key JWKS endpoints.
+  // Pick the key by (kty, kid). When the header has a kid we require
+  // a matching JWK kid — accepting a kid-less JWK here would let a
+  // misconfigured JWKS with one untagged key validate tokens claiming
+  // any kid. The kid-less fallback only applies when the header
+  // itself doesn't carry one (single-key IdP / very old tokens).
   const wantedKty = header.alg === "RS256" ? "RSA" : "EC";
   let candidates = keys.filter((k) => k.kty === wantedKty);
-  if (header.kid) candidates = candidates.filter((k) => !k.kid || k.kid === header.kid);
+  if (header.kid) candidates = candidates.filter((k) => k.kid === header.kid);
   if (candidates.length === 0) throw new JwtVerifyError(`no JWK matches kid=${header.kid ?? "?"} kty=${wantedKty}`);
 
   const signingInput = Buffer.from(`${headerB64}.${payloadB64}`, "utf8");

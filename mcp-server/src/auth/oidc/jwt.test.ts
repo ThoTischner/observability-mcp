@@ -95,6 +95,39 @@ test("verifyIdToken — bad signature is rejected", () => {
   );
 });
 
+test("verifyIdToken — happy path on ES256 (P-256 EC key)", () => {
+  const { publicKey, privateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+  const jwk = createPublicKey(publicKey).export({ format: "jwk" }) as Jwk;
+  jwk.kid = "ec-key-1";
+  const now = 1_700_000_000;
+  const header = b64u(JSON.stringify({ alg: "ES256", typ: "JWT", kid: jwk.kid }));
+  const body = b64u(JSON.stringify({ iss: "https://idp.test", aud: "client-1", sub: "bob", exp: now + 60 }));
+  // Node's default ECDSA signature is DER; convert to raw R||S 64-byte
+  // ieee-p1363 for JWS spec compliance.
+  const signer = createSign("SHA256");
+  signer.update(`${header}.${body}`);
+  signer.end();
+  const sig = signer.sign({ key: privateKey, dsaEncoding: "ieee-p1363" });
+  assert.equal(sig.length, 64, "ES256 raw signature must be 64 bytes");
+  const jwt = `${header}.${body}.${b64u(sig)}`;
+  const out = verifyIdToken(jwt, [jwk], { issuer: "https://idp.test", audience: "client-1", now: () => now * 1000 });
+  assert.equal(out.sub, "bob");
+});
+
+test("verifyIdToken — strict kid match: header kid does not silently match kid-less JWK", () => {
+  const { jwk, privateKey } = rsaKeypair();
+  // JWK with NO kid in the keyset
+  const untagged: Jwk = { ...jwk };
+  delete untagged.kid;
+  const now = 1_700_000_000;
+  // Token claims kid=ghost — JWK doesn't have one, must reject.
+  const jwt = signRs256({ iss: "i", aud: "c", exp: now + 60 }, privateKey, "ghost-kid");
+  assert.throws(
+    () => verifyIdToken(jwt, [untagged], { issuer: "i", audience: "c", now: () => now * 1000 }),
+    /no JWK matches kid=ghost-kid/,
+  );
+});
+
 test("verifyIdToken — picks key by kid when JWKS has multiple", () => {
   const a = rsaKeypair(); a.jwk.kid = "k-a";
   const b = rsaKeypair(); b.jwk.kid = "k-b";
