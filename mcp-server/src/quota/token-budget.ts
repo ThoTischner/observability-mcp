@@ -28,6 +28,8 @@
  * requires the persistence layer.
  */
 
+import { readFile, writeFile, rename } from "node:fs/promises";
+
 const HOUR_MS = 60 * 60 * 1000;
 const WINDOW_MS = 24 * HOUR_MS;
 
@@ -53,6 +55,15 @@ export interface TokenBudgetConfig {
   dailyLimit?: number;
   /** Override Date.now for tests. */
   now?: () => number;
+  /** Optional path to a JSON snapshot file. When set, the tracker
+   *  loads buckets on bootstrap() and atomically rewrites the
+   *  snapshot on a debounced timer after each charge — so a server
+   *  restart picks up the rolling 24h window where it left off.
+   *  Unset → in-memory only (fine for demo / single-instance). */
+  filePath?: string;
+  /** Debounce window in ms for snapshot writes; default 1000. Tests
+   *  pass 0 to flush synchronously between assertions. */
+  flushDebounceMs?: number;
 }
 
 export interface CheckResult {
@@ -84,10 +95,65 @@ export class TokenBudget {
   private readonly limit: number;
   private readonly now: () => number;
   private readonly buckets = new Map<string, Bucket[]>();
+  private readonly filePath: string | undefined;
+  private readonly debounceMs: number;
+  private flushTimer: NodeJS.Timeout | null = null;
+  private writeQueue: Promise<void> = Promise.resolve();
+  private bootstrapped: Promise<void> | null = null;
 
   constructor(cfg: TokenBudgetConfig = {}) {
     this.limit = cfg.dailyLimit && cfg.dailyLimit > 0 ? Math.floor(cfg.dailyLimit) : 0;
     this.now = cfg.now ?? Date.now;
+    this.filePath = cfg.filePath;
+    this.debounceMs = cfg.flushDebounceMs ?? 1000;
+  }
+
+  /** Load a prior snapshot from disk (when filePath is set).
+   *  Safe to call multiple times — bootstraps once and caches. */
+  async bootstrap(): Promise<void> {
+    if (!this.filePath) return;
+    if (this.bootstrapped) return this.bootstrapped;
+    this.bootstrapped = (async () => {
+      let raw: string;
+      try { raw = await readFile(this.filePath!, "utf8"); }
+      catch (e) {
+        // ENOENT on a first run is fine; everything else is worth a
+        // warning so an operator notices a missing-mount / perms
+        // issue immediately rather than discovering quotas reset
+        // silently on next restart.
+        if ((e as NodeJS.ErrnoException).code !== "ENOENT") {
+          console.warn(`[token-budget] could not read snapshot ${this.filePath}: ${(e as Error).message} — starting fresh`);
+        }
+        return;
+      }
+      let parsed: unknown;
+      try { parsed = JSON.parse(raw); }
+      catch (e) {
+        console.warn(`[token-budget] snapshot ${this.filePath} is not valid JSON (${(e as Error).message}) — starting fresh, prior 24h charges are lost`);
+        return;
+      }
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        console.warn(`[token-budget] snapshot ${this.filePath} root is not a JSON object — starting fresh`);
+        return;
+      }
+      const now = this.now();
+      const cutoff = now - WINDOW_MS;
+      for (const [identity, raw] of Object.entries(parsed as Record<string, unknown>)) {
+        if (!Array.isArray(raw)) continue;
+        const kept: Bucket[] = [];
+        for (const b of raw) {
+          if (!b || typeof b !== "object") continue;
+          const at = (b as { at?: unknown }).at;
+          const tokens = (b as { tokens?: unknown }).tokens;
+          if (typeof at !== "number" || typeof tokens !== "number" || tokens <= 0) continue;
+          if (at < cutoff) continue;
+          kept.push({ at, tokens });
+        }
+        kept.sort((a, b) => a.at - b.at);
+        if (kept.length > 0) this.buckets.set(identity, kept);
+      }
+    })();
+    return this.bootstrapped;
   }
 
   /** Record-and-test: does adding `tokens` keep `identity` under the
@@ -152,6 +218,53 @@ export class TokenBudget {
       fresh.push({ at: hourAt, tokens });
     }
     this.buckets.set(identity, fresh);
+    this.scheduleFlush();
+  }
+
+  /** Debounce a snapshot write. No-op when filePath isn't configured. */
+  private scheduleFlush(): void {
+    if (!this.filePath) return;
+    if (this.flushTimer) return;
+    if (this.debounceMs === 0) {
+      // Tests pass 0 so the write happens before the next assertion.
+      void this.flushNow();
+      return;
+    }
+    this.flushTimer = setTimeout(() => {
+      this.flushTimer = null;
+      void this.flushNow();
+    }, this.debounceMs);
+    // Don't keep the event loop alive for the snapshot flush —
+    // the in-memory state is the truth; the file is a recovery
+    // aid. Process shutdown without one final flush loses at
+    // most one debounce window of charge data.
+    if (typeof this.flushTimer.unref === "function") this.flushTimer.unref();
+  }
+
+  /** Write the current bucket state to disk atomically (tmp + rename).
+   *  Public so a graceful shutdown can `await tokenBudget.flushNow()`. */
+  async flushNow(): Promise<void> {
+    if (!this.filePath) return;
+    const path = this.filePath;
+    // Build the snapshot synchronously so we capture a consistent
+    // point-in-time view of the map, then write asynchronously.
+    const snapshot: Record<string, Bucket[]> = {};
+    for (const [id, buckets] of this.buckets) {
+      if (buckets.length > 0) snapshot[id] = buckets;
+    }
+    const body = JSON.stringify(snapshot);
+    this.writeQueue = this.writeQueue.then(async () => {
+      try {
+        const tmp = path + ".tmp";
+        await writeFile(tmp, body, "utf8");
+        await rename(tmp, path);
+      } catch {
+        // Best-effort: persistence is recovery insurance, not the
+        // source of truth. A failed write doesn't poison in-memory
+        // state.
+      }
+    });
+    return this.writeQueue;
   }
 
   /** Internal: drop buckets older than 24h and return the remainder. */
