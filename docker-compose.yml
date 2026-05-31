@@ -302,6 +302,53 @@ services:
         condition: service_healthy
 
   # ============================================================
+  # OPA PROFILE — `docker compose --profile opa up` adds an Open
+  # Policy Agent server with the example Rego policy mounted, and
+  # an OMCP server that consults OPA for every RBAC decision.
+  # Binds host port 3002 so it doesn't fight the default mcp-server
+  # (3000) or the OIDC variant (3001).
+  # ============================================================
+
+  opa:
+    profiles: ["opa"]
+    image: openpolicyagent/opa:1.7.1
+    command: ["run", "--server", "--addr", "0.0.0.0:8181", "/policy.rego"]
+    ports:
+      - "8181:8181"
+    volumes:
+      - ./examples/opa/policy.rego:/policy.rego:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8181/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    networks:
+      - observability
+
+  mcp-server-opa:
+    profiles: ["opa"]
+    build:
+      context: ./mcp-server
+    ports:
+      - "3002:3000"
+    environment:
+      - OMCP_OPA_URL=http://opa:8181
+      - OMCP_OPA_PACKAGE=observability/authz
+      - OMCP_OPA_ROLES=admin,operator,viewer
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - observability
+    depends_on:
+      opa:
+        condition: service_healthy
+
+  # ============================================================
   # BENCHMARK PROFILE — `docker compose --profile benchmark up` adds:
   #   * Tempo (single-binary) with the metrics-generator enabled, so
   #     trace-derived service-graph signals are visible to the topology

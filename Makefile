@@ -1,4 +1,4 @@
-.PHONY: help build up demo demo-oidc down logs test lint smoke ui-smoke clean release-dryrun benchmark-up benchmark-down benchmark-run benchmark-deps connect-claude-code connect-cursor doctor
+.PHONY: help build up demo demo-oidc demo-opa down logs test lint smoke ui-smoke clean release-dryrun benchmark-up benchmark-down benchmark-run benchmark-deps connect-claude-code connect-cursor doctor
 
 # Print every target with its leading-comment description.
 help: ## Show this help
@@ -14,6 +14,17 @@ up: ## Start only mcp-server (point at external Prometheus/Loki)
 
 demo: ## Full demo stack: mcp-server + Prometheus + Loki + example services + agent
 	docker compose --profile demo up --build --wait
+
+demo-opa: ## OPA demo: Open Policy Agent + OPA-backed mcp-server (port 3002)
+	@echo "==> Booting OPA + OPA-flavored mcp-server"
+	docker compose --profile opa up --build --wait
+	@echo
+	@echo "OPA demo ready:"
+	@echo "  UI:        http://localhost:3002/   (Policies tab → engine: opa:http://opa:8181)"
+	@echo "  OPA:       http://localhost:8181/v1/data/observability/authz"
+	@echo "  Policy:    examples/opa/policy.rego  (mounted read-only)"
+	@echo
+	@echo "Tear down with: docker compose --profile opa down"
 
 demo-oidc: ## OIDC demo: Keycloak + mcp-server in OMCP_AUTH=oidc mode (port 3001)
 	@echo "==> Booting Keycloak + OIDC-flavored mcp-server"
