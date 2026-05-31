@@ -77,6 +77,7 @@ function configForTest(): OidcRuntimeConfig {
     rolesClaim: "groups",
     roleMap: { "omcp-admin": "admin", "omcp-ops": "operator" },
     logoutRedirect: "/",
+    tenantClaim: "",
   };
 }
 
