@@ -46,6 +46,7 @@ test("openapi — /api/info governance block schema documents every field the ha
   for (const field of [
     "authMode",
     "authSecretEphemeral",
+    "oidcIssuer",
     "auditPersisted",
     "catalogConfigured",
     "redaction",
