@@ -30,6 +30,7 @@ export const EGRESS_ALLOWLIST: ReadonlyArray<{ prefix: string; reason: string }>
   { prefix: "connectors/", reason: "connectors query operator-configured source backends" },
   { prefix: "cli/index.ts", reason: "CLI fetches a source location the operator passed explicitly" },
   { prefix: "index.ts", reason: "connector-hub plugin install of an operator/registry-requested tarball URL" },
+  { prefix: "auth/oidc/", reason: "OIDC client calls the operator-configured OMCP_OIDC_ISSUER for discovery, JWKS, and code-exchange" },
 ];
 
 /**
