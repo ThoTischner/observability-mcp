@@ -12,11 +12,16 @@
  *     (YAML or JSON). Missing/empty file → empty catalog.
  *   - Strict validation: unknown action / unknown resource /
  *     unexpected keys reject loudly.
- *   - Hot-reload on next /api/products call (slice 2 wires the
- *     reload trigger; for now the file is read once at boot).
+ *   - Mtime-poll hot-reload: callers (e.g. each /api/products
+ *     handler) `await store.maybeReload()` before reading. If the
+ *     file mtime advanced since the last load, the store re-parses
+ *     and atomically swaps the in-memory file; parse errors keep
+ *     the previous good state and log loudly. One `stat()` call per
+ *     reload-aware request — too cheap to matter vs. the network
+ *     round-trip, no FSWatcher platform fragility (WSL / NFS).
  */
 
-import { readFile, writeFile, rename } from "node:fs/promises";
+import { readFile, writeFile, rename, stat } from "node:fs/promises";
 import yaml from "js-yaml";
 
 export interface Product {
@@ -152,7 +157,73 @@ export function parseProductsText(text: string, origin: string): ProductsFile {
 
 /** In-memory store with tenant- and status-aware queries. */
 export class ProductsStore {
-  constructor(private file: ProductsFile = EMPTY) {}
+  /** Optional source file path. When set, `maybeReload()` polls its
+   *  mtime and re-parses on change. Mutations via upsert/delete update
+   *  `lastMtimeMs` after the caller persists, so the store does not
+   *  reload its own writes. */
+  private path?: string;
+  private lastMtimeMs = 0;
+
+  constructor(private file: ProductsFile = EMPTY, opts: { path?: string; initialMtimeMs?: number } = {}) {
+    this.path = opts.path;
+    this.lastMtimeMs = opts.initialMtimeMs ?? 0;
+  }
+
+  /** Re-read the source file if its mtime has advanced since the last
+   *  load. No-op when no path was supplied at construction. Parse or
+   *  IO errors are logged and the previous good state is kept — the
+   *  invariant is "the store always reflects a valid catalogue", so a
+   *  broken edit on disk never takes the running server down. */
+  async maybeReload(): Promise<{ reloaded: boolean }> {
+    if (!this.path) return { reloaded: false };
+    let mtimeMs: number;
+    try {
+      const s = await stat(this.path);
+      mtimeMs = s.mtimeMs;
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      // File gone (ENOENT) — keep last good state. Re-creating the
+      // file will land in this branch's else on the next call when
+      // stat succeeds again with a fresh mtime.
+      if (code !== "ENOENT") {
+        console.warn(`[products] hot-reload stat(${this.path}) failed: ${(e as Error).message} — keeping previous catalogue`);
+      }
+      return { reloaded: false };
+    }
+    if (mtimeMs <= this.lastMtimeMs) return { reloaded: false };
+    let next: ProductsFile;
+    try {
+      next = await readProductsFile(this.path);
+    } catch (e) {
+      // readProductsFile downgrades IO errors to EMPTY but lets
+      // parse errors (ProductsLoadError) propagate — so a broken
+      // YAML edit lands here, and we explicitly do NOT swap state.
+      console.warn(`[products] hot-reload of ${this.path} failed: ${(e as Error).message} — keeping previous catalogue`);
+      // Bump the mtime cursor anyway so we don't re-log the same
+      // failure on every subsequent request until the operator fixes
+      // the file (next save advances mtime past this value).
+      this.lastMtimeMs = mtimeMs;
+      return { reloaded: false };
+    }
+    this.file = next;
+    this.lastMtimeMs = mtimeMs;
+    return { reloaded: true };
+  }
+
+  /** Re-stat the source file and pin the mtime cursor to its current
+   *  value. Call this after a successful write so the store does not
+   *  treat its own change as an external reload trigger. Best-effort:
+   *  if the stat fails, the next maybeReload() will simply reload the
+   *  file once and find it identical. */
+  async pinMtimeAfterWrite(): Promise<void> {
+    if (!this.path) return;
+    try {
+      const s = await stat(this.path);
+      this.lastMtimeMs = s.mtimeMs;
+    } catch {
+      // Silent — see method JSDoc.
+    }
+  }
 
   /** Return the product list. When `tenant` is set, filters to that
    *  tenant (entries without a tenant field treated as "default").
