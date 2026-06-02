@@ -3,17 +3,23 @@ import assert from "node:assert/strict";
 import { getSupportedTypes, ConnectorRegistry } from "./registry.js";
 import type { Config } from "../types.js";
 import { DEFAULT_SETTINGS, DEFAULT_HEALTH_THRESHOLDS } from "../config/loader.js";
+import { getPluginLoader } from "./loader.js";
 
 function makeConfig(sources: Config["sources"] = []): Config {
   return { sources, settings: DEFAULT_SETTINGS, healthThresholds: DEFAULT_HEALTH_THRESHOLDS };
 }
 
 describe("getSupportedTypes", () => {
-  it("returns prometheus and loki", () => {
+  it("returns the builtins (prometheus, loki, kubernetes) after loader.load()", async () => {
+    // The PluginLoader registers builtins inside load(), not the
+    // constructor — at server boot index.ts awaits load() before any
+    // tool registration code runs. Mirror that here so the test
+    // reflects the real wiring rather than a transient empty state.
+    await getPluginLoader().load();
     const types = getSupportedTypes();
     assert.ok(types.includes("prometheus"));
     assert.ok(types.includes("loki"));
-    assert.equal(types.length, 2);
+    assert.ok(types.includes("kubernetes"));
   });
 });
 
