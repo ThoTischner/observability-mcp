@@ -154,6 +154,57 @@ test("OpaPolicyEngine — cache key delimiter prevents role-name collision (\"a,
   assert.equal(calls.length, 2, "the two role-sets must not collide on the cache key");
 });
 
+test("OpaPolicyEngine — tenant flows into the OPA input shape on evaluate", async () => {
+  let seenBody: { input?: { tenant?: string; roles?: string[]; resource?: string; action?: string } } | null = null;
+  const fetcher = (async (_url: string, init?: RequestInit) => {
+    seenBody = init?.body ? JSON.parse(String(init.body)) as typeof seenBody : null;
+    return new Response(JSON.stringify({ result: true }), { status: 200 });
+  }) as unknown as typeof fetch;
+  const e = new OpaPolicyEngine({ url: "http://opa.test", packagePath: "p", fetcher });
+  await e.warmEvaluate(["admin"], "sources" as never, "write" as never, "acme");
+  const body = seenBody as { input?: { tenant?: string; roles?: string[]; resource?: string; action?: string } } | null;
+  assert.equal(body?.input?.tenant, "acme", "tenant must reach the Rego input as input.tenant");
+  assert.equal(body?.input?.resource, "sources");
+  assert.equal(body?.input?.action, "write");
+});
+
+test("OpaPolicyEngine — tenant flows into the OPA input shape on list", async () => {
+  let seenBody: { input?: { tenant?: string; roles?: string[]; list?: boolean } } | null = null;
+  const fetcher = (async (_url: string, init?: RequestInit) => {
+    seenBody = init?.body ? JSON.parse(String(init.body)) as typeof seenBody : null;
+    return new Response(JSON.stringify({ result: { permissions: [] } }), { status: 200 });
+  }) as unknown as typeof fetch;
+  const e = new OpaPolicyEngine({ url: "http://opa.test", packagePath: "p", fetcher });
+  await e.warmList(["admin"], "acme");
+  const body = seenBody as { input?: { tenant?: string; roles?: string[]; list?: boolean } } | null;
+  assert.equal(body?.input?.tenant, "acme");
+  assert.equal(body?.input?.list, true);
+});
+
+test("OpaPolicyEngine — cache key isolates tenants (same roles+resource+action, different tenants → two OPA calls)", async () => {
+  let calls = 0;
+  const fetcher = (async (_url: string, init?: RequestInit) => {
+    calls++;
+    const body = init?.body ? JSON.parse(String(init.body)) as { input?: { tenant?: string } } : null;
+    // Return a different verdict per tenant so a cache mix-up would
+    // surface as a wrong allowed value, not just an extra call.
+    const allowed = body?.input?.tenant === "acme";
+    return new Response(JSON.stringify({ result: allowed }), { status: 200 });
+  }) as unknown as typeof fetch;
+  const e = new OpaPolicyEngine({ url: "http://opa.test", packagePath: "p", fetcher });
+  const acme = await e.warmEvaluate(["admin"], "sources" as never, "read" as never, "acme");
+  const bigco = await e.warmEvaluate(["admin"], "sources" as never, "read" as never, "bigco");
+  assert.equal(acme.allowed, true);
+  assert.equal(bigco.allowed, false);
+  assert.equal(calls, 2, "tenants must not share cache slots");
+  // Repeat — both come from cache, no extra OPA hits.
+  const acme2 = e.evaluate(["admin"], "sources" as never, "read" as never, { tenant: "acme" });
+  const bigco2 = e.evaluate(["admin"], "sources" as never, "read" as never, { tenant: "bigco" });
+  assert.equal(acme2.allowed, true);
+  assert.equal(bigco2.allowed, false);
+  assert.equal(calls, 2);
+});
+
 test("OpaPolicyEngine — sort-stable cache key (role-set order doesn't matter)", async () => {
   let calls = 0;
   const fetcher = (async (_u: string) => {
