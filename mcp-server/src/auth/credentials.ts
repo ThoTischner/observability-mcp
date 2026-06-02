@@ -21,6 +21,13 @@
  *                  # land in the "default" tenant — identical to the
  *                  # pre-E7 single-namespace world. See docs/tenancy.md
  *                  # (slice 5) for the cross-cutting model.
+ *   OMCP_KEY_PRODUCTS="agent=ops-bundle;ci=dev-bundle"
+ *                  # optional per-key Product binding. When set, the
+ *                  # /mcp tools/list response is filtered to the named
+ *                  # Product's `tools` allow-list (Product without a
+ *                  # tools list = no restriction). Unlisted keys see
+ *                  # every registered tool — back-compat with the
+ *                  # pre-Products world. See docs/products.md.
  *
  * Rich role-based access control (tools/services/lookback/read-only, the
  * full governance object) is intentionally NOT here — this is only the
@@ -40,6 +47,10 @@ export interface Credential {
   bypassRedaction?: boolean;
   /** Tenant this credential belongs to. Omitted → DEFAULT_TENANT. */
   tenant?: string;
+  /** Product id this credential is bound to. When set, /mcp tools/list
+   *  is filtered to the Product's `tools` allow-list. Resolved against
+   *  the credential's tenant so cross-tenant Products don't leak. */
+  productId?: string;
 }
 
 function parseKeySources(raw: string | undefined): Map<string, string[]> {
@@ -56,6 +67,22 @@ function parseKeySources(raw: string | undefined): Map<string, string[]> {
   return m;
 }
 
+/** Parse OMCP_KEY_PRODUCTS — `name=productId;name2=productId2`. Same
+ *  shape as parseKeyTenants (single id per credential — Products are
+ *  bundles, not bundles-of-bundles). */
+function parseKeyProducts(raw: string | undefined): Map<string, string> {
+  const m = new Map<string, string>();
+  if (!raw) return m;
+  for (const entry of raw.split(";").map((s) => s.trim()).filter(Boolean)) {
+    const eq = entry.indexOf("=");
+    if (eq <= 0) continue;
+    const name = entry.slice(0, eq).trim();
+    const productId = entry.slice(eq + 1).trim();
+    if (name && productId) m.set(name, productId);
+  }
+  return m;
+}
+
 function parseBypassSet(raw: string | undefined): Set<string> {
   if (!raw) return new Set();
   return new Set(raw.split(",").map((s) => s.trim()).filter(Boolean));
@@ -68,6 +95,7 @@ export function loadCredentials(env: NodeJS.ProcessEnv = process.env): Credentia
   const keySources = parseKeySources(env.OMCP_KEY_SOURCES);
   const bypassNames = parseBypassSet(env.OMCP_KEY_BYPASS_REDACTION);
   const keyTenants = parseKeyTenants(env.OMCP_KEY_TENANTS);
+  const keyProducts = parseKeyProducts(env.OMCP_KEY_PRODUCTS);
   const creds: Credential[] = [];
   for (const part of raw.split(",").map((s) => s.trim()).filter(Boolean)) {
     const idx = part.indexOf(":");
@@ -80,6 +108,7 @@ export function loadCredentials(env: NodeJS.ProcessEnv = process.env): Credentia
       allowedSources: keySources.get(name),
       bypassRedaction: bypassNames.has(name) || undefined,
       tenant: keyTenants.get(name) || undefined,
+      productId: keyProducts.get(name) || undefined,
     });
   }
   return creds;

@@ -65,7 +65,7 @@ Validation rules (the loader rejects loudly, ENOENT silently — see
 |---|---|
 | `id` matches `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$` | URL-safe, path-traversal safe |
 | `name` non-empty string | UI display |
-| `tools` optional string-array | `tools/list` filter (slice will wire) |
+| `tools` optional string-array | `/mcp` `tools/list` filter — only the named tools register on a credential bound to this Product. Absent / empty list = no restriction. |
 | `status` ∈ `{published, staging}` | Staging hidden from agents + non-admin viewers |
 | `branding.iconUrl` / `branding.color` must be strings | Type guard |
 | Duplicate `id` rejects loudly | Operator typo catch |
@@ -108,6 +108,38 @@ Custom policies (`OMCP_RBAC_POLICY_FILE`) can redefine any of these
 Cross-tenant probes (GET / DELETE on an id that exists in another
 tenant) return **404** — same posture as the rest of the tenancy
 layer, no existence leak.
+
+## Binding an agent's `/mcp` session to a Product
+
+Set `OMCP_KEY_PRODUCTS` to bind a named credential to one Product id:
+
+```bash
+OMCP_API_KEYS="agent:tok_ops,ci:tok_dev"
+OMCP_KEY_PRODUCTS="agent=ops-bundle;ci=dev-bundle"
+# (optionally pin each credential to a tenant)
+OMCP_KEY_TENANTS="agent=acme;ci=acme"
+```
+
+When the `agent` credential opens an `/mcp` session, only the tools
+listed in the `ops-bundle` Product's `tools` field are registered;
+`tools/list` returns exactly that set. Unrecognised tool names are
+silently skipped at registration time, so a typo in the YAML
+narrows the surface rather than crashing the session.
+
+Resolution is tenant-scoped: a credential bound to `ops-bundle` in
+tenant `acme` cannot pick up a `ops-bundle` Product owned by tenant
+`bigco` — the cross-tenant `get()` returns `undefined` and the
+session falls back to the unrestricted set. This is the same posture
+the rest of the tenancy layer enforces.
+
+Anonymous `/mcp` sessions (no `OMCP_API_KEYS` configured) and
+credentials with no `productId` see every registered tool — the
+back-compat path the open-source default relies on.
+
+The catalogue is read with hot-reload semantics: editing the
+Product's `tools` list and re-saving the file takes effect on the
+**next** `/mcp` session, no server restart needed. Live sessions
+keep the snapshot they were created with.
 
 ## UI
 

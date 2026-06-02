@@ -31,6 +31,12 @@ export interface RequestContext {
    *  "default" for anonymous principals + missing-tenant credentials,
    *  preserving the single-namespace behaviour of pre-E7 deployments. */
   tenant: string;
+  /** When set, the /mcp tools/list response is filtered to this
+   *  allow-list. Resolved from the active credential's bound Product
+   *  (OMCP_KEY_PRODUCTS) against the catalogue at request entry.
+   *  Anonymous + Product-less credentials leave this unset and see
+   *  every registered tool. */
+  allowedTools?: string[];
   /** Correlates all tool calls within one transport request/session. */
   correlationId: string;
 }
@@ -49,7 +55,7 @@ export function defaultContext(): RequestContext {
 export function principalContext(
   principalId: string,
   allowedSources?: string[],
-  opts: { allowBypassRedaction?: boolean; tenant?: string } = {},
+  opts: { allowBypassRedaction?: boolean; tenant?: string; allowedTools?: string[] } = {},
 ): RequestContext {
   return {
     principalId,
@@ -57,6 +63,25 @@ export function principalContext(
     allowedSources: allowedSources && allowedSources.length > 0 ? allowedSources : undefined,
     allowBypassRedaction: opts.allowBypassRedaction || undefined,
     tenant: normaliseTenant(opts.tenant),
+    allowedTools: opts.allowedTools && opts.allowedTools.length > 0 ? opts.allowedTools : undefined,
     correlationId: randomUUID(),
   };
+}
+
+/** Decide whether a given tool name is accessible under the active
+ *  Product binding. Pure helper so the registration site stays
+ *  declarative and the filtering policy is unit-testable in isolation.
+ *
+ *  Semantics:
+ *    - undefined allow-list → no Product binding, every tool allowed
+ *      (anonymous + Product-less credentials — back-compat).
+ *    - empty allow-list → a Product with no `tools` field. The schema
+ *      treats this as "all tools allowed", matching the YAML loader's
+ *      view that an absent / empty list means no restriction.
+ *    - non-empty → the named tool must appear verbatim.
+ *  Tool names are compared case-sensitively; the MCP spec is
+ *  case-sensitive on `name`. */
+export function allowsTool(allowedTools: string[] | undefined, toolName: string): boolean {
+  if (!allowedTools || allowedTools.length === 0) return true;
+  return allowedTools.includes(toolName);
 }
