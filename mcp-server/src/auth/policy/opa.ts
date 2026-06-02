@@ -28,7 +28,7 @@
  */
 
 import type { Permission, Resource, Action } from "../rbac.js";
-import type { PolicyEngine, EvalResult } from "./engine.js";
+import type { PolicyEngine, EvalResult, EvalContext } from "./engine.js";
 
 export type Fetcher = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -76,10 +76,13 @@ export class OpaPolicyEngine implements PolicyEngine {
     this.fetcher = cfg.fetcher ?? ((u, i) => fetch(u, i));
   }
 
-  private cacheKey(roles: string[], resource: string, action: string): string {
+  private cacheKey(roles: string[], resource: string, action: string, tenant?: string): string {
     // NUL-delimited so role names containing "," / "|" can't alias
-// across role sets ({"a,b"} would otherwise collide with {"a","b"}).
-return roles.slice().sort().join("\x00") + "\x01" + resource + "\x01" + action;
+    // across role sets ({"a,b"} would otherwise collide with {"a","b"}).
+    // Tenant is part of the key so cross-tenant decisions don't share
+    // cache slots — required once we thread tenant into the OPA input.
+    const tk = tenant || "";
+    return roles.slice().sort().join("\x00") + "\x01" + resource + "\x01" + action + "\x01" + tk;
   }
 
   private now(): number {
@@ -106,31 +109,38 @@ return roles.slice().sort().join("\x00") + "\x01" + resource + "\x01" + action;
     }
   }
 
-  evaluate(roles: string[] | undefined, resource: Resource, action: Action): EvalResult {
+  evaluate(roles: string[] | undefined, resource: Resource, action: Action, ctx?: EvalContext): EvalResult {
     const rs = roles && roles.length > 0 ? roles : [];
+    const tenant = ctx?.tenant;
     // The PolicyEngine.evaluate contract is sync to keep the hot
     // gate path off the await stack, so we serve from the cache
     // synchronously and warm the cache lazily on miss. Misses fall
     // back to a conservative deny + the cache will be populated for
     // next time.
-    const key = this.cacheKey(rs, resource, action);
+    const key = this.cacheKey(rs, resource, action, tenant);
     const cached = this.cache.get(key);
     if (cached && this.now() - cached.at < this.cacheTtlMs) return cached.result;
     // Fire and forget: populate the cache; this call is racy on
     // first miss (deny while warming) but the next call within the
     // TTL returns the real verdict. For sync-required contracts we
     // accept that trade-off vs. blocking every request handler.
-    void this.warmEvaluate(rs, resource, action);
+    void this.warmEvaluate(rs, resource, action, tenant);
     return { allowed: false, reason: "OPA decision pending (warming cache); request again" };
   }
 
   /** Async warm of the evaluate cache. Public so a long-running
    *  caller can `await engine.warmEvaluate(...)` before the gate
    *  check if it cannot tolerate the warming-deny window. */
-  async warmEvaluate(roles: string[], resource: string, action: string): Promise<EvalResult> {
-    const key = this.cacheKey(roles, resource, action);
+  async warmEvaluate(roles: string[], resource: string, action: string, tenant?: string): Promise<EvalResult> {
+    const key = this.cacheKey(roles, resource, action, tenant);
     try {
-      const out = await this.query<boolean | RichResult>({ input: { roles, resource, action } });
+      // input.tenant is always included (undefined → null in JSON
+      // serialisation, omitted by JSON.stringify default) so Rego
+      // authors can write `input.tenant == "acme"` rules without
+      // tripping on missing-field. When the caller didn't supply
+      // tenant we still include the key with `undefined` value;
+      // JSON.stringify drops it cleanly.
+      const out = await this.query<boolean | RichResult>({ input: { roles, resource, action, tenant } });
       const raw = out.result;
       let result: EvalResult;
       if (raw === true || raw === false) {
@@ -154,19 +164,20 @@ return roles.slice().sort().join("\x00") + "\x01" + resource + "\x01" + action;
     }
   }
 
-  list(roles: string[] | undefined): Permission[] {
+  list(roles: string[] | undefined, ctx?: EvalContext): Permission[] {
     if (!roles || roles.length === 0) return [];
-    const key = roles.slice().sort().join("\x00");
+    const tenant = ctx?.tenant || "";
+    const key = roles.slice().sort().join("\x00") + "\x01" + tenant;
     const cached = this.listCache.get(key);
     if (cached && this.now() - cached.at < this.listCacheTtlMs) return cached.perms;
-    void this.warmList(roles);
+    void this.warmList(roles, ctx?.tenant);
     return [];
   }
 
-  async warmList(roles: string[]): Promise<Permission[]> {
-    const key = roles.slice().sort().join("\x00");
+  async warmList(roles: string[], tenant?: string): Promise<Permission[]> {
+    const key = roles.slice().sort().join("\x00") + "\x01" + (tenant || "");
     try {
-      const out = await this.query<boolean | RichResult>({ input: { roles, list: true } });
+      const out = await this.query<boolean | RichResult>({ input: { roles, list: true, tenant } });
       const raw = out.result;
       let perms: Permission[] = [];
       if (raw && typeof raw === "object" && Array.isArray(raw.permissions)) {

@@ -158,12 +158,16 @@ credential has a unique name.
   documented model is "one Helm release per tenant" if you need full
   network-level isolation; in-process multi-tenancy is for the
   policy / audit / quota / catalog surfaces.
-- **OPA policy package** runs process-wide. The current query
-  input shape is `{ roles, resource, action }` — tenant is NOT
-  passed in. Per-tenant authorisation rules need either a custom
-  package per tenant (one OPA instance per tenant) or an upcoming
-  slice that extends the OPA input shape. Track the gap in the
-  tenancy roadmap before authoring tenant-conditional Rego.
+- **OPA policy package** runs process-wide, but the query input
+  shape is `{ roles, resource, action, tenant }` — the active
+  tenant reaches the Rego evaluator on every decision. Authors can
+  write tenant-conditional rules directly, e.g.
+  `allow { input.tenant == "acme"; input.action == "read" }`.
+  Decisions are cached per `(roles, resource, action, tenant)` so
+  cross-tenant verdicts never share a cache slot. If you want full
+  package-level isolation (separate Rego bundle per tenant) you can
+  still run one OPA instance per tenant; the in-input form is the
+  zero-extra-infra path.
 - **Per-process self-metrics** (`/metrics`) are not labelled by
   tenant. Anyone scraping the Prometheus endpoint sees aggregate
   counts across every tenant. Operators that need per-tenant

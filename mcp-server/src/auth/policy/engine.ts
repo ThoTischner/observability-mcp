@@ -26,11 +26,21 @@ export interface EvalResult {
   reason?: string;
 }
 
+/** Optional context the gate can pass when it has more identity
+ *  info than just the role set — e.g. the active tenant. Engines
+ *  that consult external policy (OPA) thread this into the Rego
+ *  input so tenant-conditional rules can fire. Built-in engines
+ *  ignore it. Adding fields here is additive: future-engine code
+ *  reads what it needs, callers populate what they have. */
+export interface EvalContext {
+  tenant?: string;
+}
+
 export interface PolicyEngine {
   /** One-shot evaluation: does this role-set grant the permission? */
-  evaluate(roles: string[] | undefined, resource: Resource, action: Action): EvalResult;
+  evaluate(roles: string[] | undefined, resource: Resource, action: Action, ctx?: EvalContext): EvalResult;
   /** Enumerate every (resource, action) the role-set grants. */
-  list(roles: string[] | undefined): Permission[];
+  list(roles: string[] | undefined, ctx?: EvalContext): Permission[];
   /** Surface the active role catalogue (for UI tabs / docs). */
   roles(): string[];
   /** Short identifier for logging / /api/info — "builtin", "file:…",
@@ -48,7 +58,8 @@ export class BuiltinPolicyEngine implements PolicyEngine {
     this.origin = origin;
   }
 
-  evaluate(roles: string[] | undefined, resource: Resource, action: Action): EvalResult {
+  evaluate(roles: string[] | undefined, resource: Resource, action: Action, _ctx?: EvalContext): EvalResult {
+    void _ctx; // builtin engine has no tenant-conditional rules
     if (!roles || roles.length === 0) {
       return { allowed: false, reason: "no roles on principal" };
     }
@@ -64,7 +75,8 @@ export class BuiltinPolicyEngine implements PolicyEngine {
     return { allowed: false, reason: `roles [${roles.join(",")}] do not grant ${resource}:${action}` };
   }
 
-  list(roles: string[] | undefined): Permission[] {
+  list(roles: string[] | undefined, _ctx?: EvalContext): Permission[] {
+    void _ctx;
     if (!roles || roles.length === 0) return [];
     const seen = new Set<string>();
     const out: Permission[] = [];
