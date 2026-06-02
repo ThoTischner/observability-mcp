@@ -67,6 +67,7 @@ import { readProductsFile, ProductsStore, validateProduct, writeProductsFile, Pr
 import { redactValue } from "./policy/redact.js";
 import { IdentityRateLimiter, resolveToolRatePerMin } from "./quota/limiter.js";
 import { TokenBudget, estimateTokensFor, resolveDailyTokenLimit } from "./quota/token-budget.js";
+import { applyBudgetDecision } from "./quota/charge.js";
 import { getPluginLoader } from "./connectors/loader.js";
 import {
   resolveHubCatalogUrl,
@@ -296,36 +297,7 @@ async function main() {
     const text = result.content[0]?.text ?? "";
     const tokens = estimateTokensFor(text);
     const decision = tokenBudget.check(identityKey(ctx), tokens);
-    if (decision.allowed || decision.limit === 0) return result;
-    // A single request larger than the entire daily cap can never
-    // succeed by waiting — surface a distinct error code so the
-    // agent doesn't loop. Otherwise the wait-then-retry path is the
-    // right answer (and freedAtRetry tells the agent how much they
-    // can request after the wait).
-    const requestExceedsCap = tokens > decision.limit;
-    const errBody = {
-      error: requestExceedsCap ? "OMCP_TOKEN_REQUEST_EXCEEDS_BUDGET" : "OMCP_TOKEN_BUDGET_EXCEEDED",
-      tool: toolName,
-      used: decision.used,
-      limit: decision.limit,
-      requested: tokens,
-      retryAfterSeconds: requestExceedsCap ? 0 : decision.retryAfterSeconds,
-      freedAtRetry: decision.freedAtRetry,
-      message: requestExceedsCap
-        ? `This single response (~${tokens} tokens) is larger than the entire daily budget (${decision.limit}). Retrying won't help — narrow the query (smaller window / lower limit / more selective filter) or raise OMCP_TOOL_DAILY_TOKENS.`
-        : `Daily token budget exceeded (${decision.used}/${decision.limit} tokens used in the trailing 24h; this call would have added ~${tokens}). Try again in ~${Math.ceil(decision.retryAfterSeconds / 3600)}h or raise OMCP_TOOL_DAILY_TOKENS.`,
-    };
-    // Preserve any additional content entries (e.g. a future
-    // tool returning [text, image]) — only the text payload of the
-    // first entry is replaced with the error JSON; everything after
-    // it passes through.
-    return {
-      ...result,
-      content: [
-        { ...result.content[0], text: JSON.stringify(errBody) },
-        ...result.content.slice(1),
-      ],
-    } as T;
+    return applyBudgetDecision(result, decision, tokens, toolName);
   }
 
   const REDACTION_ENABLED = String(process.env.OMCP_REDACTION ?? "on").toLowerCase() !== "off";
