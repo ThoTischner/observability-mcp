@@ -15,6 +15,11 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 
 import { readCookie, verifySession, type SessionPayload, type SessionConfig } from "./session.js";
+// Type-only import: erased at compile time, so it does NOT pull
+// node:crypto or any other oidc runtime dependency into the
+// middleware surface. Restores type safety on `runtime.oidc`
+// without changing the module graph.
+import type { OidcRuntime } from "./oidc/runtime.js";
 
 export type AuthMode = "anonymous" | "basic" | "oidc";
 
@@ -27,12 +32,12 @@ export interface AuthRuntime {
    * process — sessions will not survive a restart. The wire-up code logs a
    * warning once when this happens. */
   secretEphemeral?: boolean;
-  /** OIDC runtime, present only when mode === "oidc". Opaque to this
-   *  module — the OIDC HTTP endpoints in src/index.ts consume it.
-   *  Typed as `unknown` here to avoid importing the OIDC sub-module
-   *  and pulling its node:crypto dependency into the middleware
-   *  surface. The OIDC wire-up casts on the way in. */
-  oidc?: unknown;
+  /** OIDC runtime, present only when mode === "oidc". The OIDC HTTP
+   *  endpoints in src/index.ts consume it. The import above is
+   *  type-only and erased at compile time, so this typing adds zero
+   *  runtime coupling — middleware.ts still doesn't depend on the
+   *  OIDC sub-module's node:crypto path. */
+  oidc?: OidcRuntime;
 }
 
 export interface AuthedRequest extends Request {
