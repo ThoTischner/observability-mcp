@@ -93,29 +93,48 @@ describe("PrometheusConnector", () => {
   });
 
   describe("buildQuery", () => {
-    it("replaces {{service}} placeholder in known metrics", async () => {
+    // buildQuery is private async and returns `{ promql, label, candidate }`.
+    // To keep these tests off the network, every case uses a user-
+    // override metric — that short-circuits the candidate-probe path
+    // (which would otherwise call Prometheus to pick the best variant
+    // and resolveServiceLabel to discover the right scoping label).
+    // The label / candidate fields are exercised via the public
+    // queryMetrics path elsewhere.
+    const fakeSource = { name: "test", type: "prometheus" as const, url: "http://localhost:9090", enabled: true };
+
+    it("replaces {{service}} placeholder in user-defined metrics", async () => {
       const connector = new PrometheusConnector();
-      await connector.connect({ name: "test", type: "prometheus", url: "http://localhost:9090", enabled: true });
-      const query = proto.buildQuery.call(connector, "payment-service", "cpu");
-      assert.ok(query.includes("payment-service"));
-      assert.ok(!query.includes("{{service}}"));
+      await connector.connect({
+        ...fakeSource,
+        metrics: [{ name: "cpu", query: 'cpu_usage{svc="{{service}}"}', unit: "%", description: "CPU" }],
+      });
+      const { promql } = await proto.buildQuery.call(connector, "payment-service", "cpu");
+      assert.ok(promql.includes("payment-service"));
+      assert.ok(!promql.includes("{{service}}"));
     });
 
-    it("falls back to generic query for unknown metrics", async () => {
+    it("respects an explicit {{service}} substitution outside the {{selector}} sugar", async () => {
+      // Different from the other two: the override here uses {{service}}
+      // directly inside a hand-written selector (no {{selector}} sugar).
+      // Confirms the substitution applies to the raw template, not only
+      // through the label-resolver path.
       const connector = new PrometheusConnector();
-      await connector.connect({ name: "test", type: "prometheus", url: "http://localhost:9090", enabled: true });
-      const query = proto.buildQuery.call(connector, "my-svc", "unknown_metric");
-      assert.equal(query, 'unknown_metric{job="my-svc"}');
+      await connector.connect({
+        ...fakeSource,
+        metrics: [{ name: "explicit_selector", query: 'explicit_metric{job="{{service}}"}', unit: "", description: "" }],
+      });
+      const { promql } = await proto.buildQuery.call(connector, "my-svc", "explicit_selector");
+      assert.equal(promql, 'explicit_metric{job="my-svc"}');
     });
 
     it("uses custom metrics from source config", async () => {
       const connector = new PrometheusConnector();
       await connector.connect({
-        name: "test", type: "prometheus", url: "http://localhost:9090", enabled: true,
+        ...fakeSource,
         metrics: [{ name: "custom", query: 'my_custom_metric{svc="{{service}}"}', unit: "ops", description: "Custom" }],
       });
-      const query = proto.buildQuery.call(connector, "api", "custom");
-      assert.equal(query, 'my_custom_metric{svc="api"}');
+      const { promql } = await proto.buildQuery.call(connector, "api", "custom");
+      assert.equal(promql, 'my_custom_metric{svc="api"}');
     });
   });
 });
