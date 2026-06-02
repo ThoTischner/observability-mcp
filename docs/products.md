@@ -138,9 +138,11 @@ the recommended path is:
 2. Open a PR for any change.
 3. CI runs `parseProductsText` validation (via the loader test
    harness) and fails loudly on typos / unknown keys / duplicates.
-4. Merge → server reads the updated file at next boot (hot-reload
-   on file change is a roadmap item; today the standard restart
-   covers it).
+4. Merge → server picks up the updated file on the next
+   `/api/products*` request (mtime-poll hot-reload). No restart
+   required. Parse errors keep the previous good catalogue in
+   memory and log loudly, so a broken edit on disk never takes
+   the running server down.
 
 This keeps the catalog in the same review loop as code: every
 product change has an author, a reason in the PR body, and a

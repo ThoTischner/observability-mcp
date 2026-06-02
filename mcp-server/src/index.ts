@@ -916,7 +916,16 @@ async function main() {
   // No file ⇒ empty catalog, enrichment is a no-op (anonymous demos
   // see no behaviour change).
   const catalog = new CatalogStore(await readCatalogFile(process.env.OMCP_SERVICE_CATALOG_FILE));
-  const products = new ProductsStore(await readProductsFile(process.env.OMCP_PRODUCTS_FILE));
+  // Hot-reload aware: passing the path lets `products.maybeReload()`
+  // pick up out-of-band edits to OMCP_PRODUCTS_FILE without a restart.
+  // Each /api/products* handler awaits maybeReload() before reading,
+  // so a `kubectl apply` of an updated ConfigMap or a git-ops edit is
+  // visible on the very next request.
+  const productsPath = process.env.OMCP_PRODUCTS_FILE;
+  const products = new ProductsStore(await readProductsFile(productsPath), { path: productsPath });
+  // Seed the mtime cursor from the file we just loaded so the first
+  // maybeReload() call doesn't redundantly re-parse the boot state.
+  await products.pinMtimeAfterWrite();
   // Protected route prefixes. /api/me, /api/auth/*, /api/info,
   // /api/openapi.json deliberately don't appear here — they stay public.
   for (const prefix of [
@@ -1647,7 +1656,9 @@ async function main() {
   // Same scoping / staging-visibility pattern as /api/catalog. Non-admins
   // see only their own tenant's PUBLISHED products; admins see all
   // tenants by default + staging.
-  app.get("/api/products", need("products", "read"), (req, res) => {
+  app.get("/api/products", need("products", "read"), async (req, res) => {
+    // Pick up out-of-band edits before serving — see ProductsStore docs.
+    await products.maybeReload();
     const sess = (req as AuthedRequest).session;
     const isAdmin = hasPermission(sess?.roles, "users", "delete");
     const callerTenant = sess?.tenant || "default";
@@ -1668,6 +1679,9 @@ async function main() {
   // updated catalogue back to disk so the change survives a
   // restart; without the file, the upsert is in-memory only.
   app.put("/api/products/:id", need("products", "write"), audit("products", "write"), async (req, res) => {
+    // Hot-reload before mutating so a concurrent on-disk edit isn't
+    // silently clobbered by our in-memory snapshot.
+    await products.maybeReload();
     const id = String(req.params.id);
     const sess = (req as AuthedRequest).session;
     const isAdmin = hasPermission(sess?.roles, "users", "delete");
@@ -1706,7 +1720,13 @@ async function main() {
     }
     const next = products.upsert(validated);
     if (process.env.OMCP_PRODUCTS_FILE) {
-      try { await writeProductsFile(process.env.OMCP_PRODUCTS_FILE, next); }
+      try {
+        await writeProductsFile(process.env.OMCP_PRODUCTS_FILE, next);
+        // Advance our mtime cursor past this write so the next
+        // maybeReload() doesn't treat our own change as an external
+        // edit and re-read what we just persisted.
+        await products.pinMtimeAfterWrite();
+      }
       catch (e) {
         console.warn(`[products] PUT ${id}: failed to persist to ${process.env.OMCP_PRODUCTS_FILE}: ${(e as Error).message} — in-memory state is still updated`);
       }
@@ -1714,6 +1734,7 @@ async function main() {
     res.json({ product: validated, persisted: !!process.env.OMCP_PRODUCTS_FILE });
   });
   app.delete("/api/products/:id", need("products", "delete"), audit("products", "delete"), async (req, res) => {
+    await products.maybeReload();
     const id = String(req.params.id);
     const sess = (req as AuthedRequest).session;
     const isAdmin = hasPermission(sess?.roles, "users", "delete");
@@ -1725,7 +1746,10 @@ async function main() {
     }
     const { file: next } = products.delete(id);
     if (process.env.OMCP_PRODUCTS_FILE) {
-      try { await writeProductsFile(process.env.OMCP_PRODUCTS_FILE, next); }
+      try {
+        await writeProductsFile(process.env.OMCP_PRODUCTS_FILE, next);
+        await products.pinMtimeAfterWrite();
+      }
       catch (e) {
         console.warn(`[products] DELETE ${id}: failed to persist to ${process.env.OMCP_PRODUCTS_FILE}: ${(e as Error).message} — in-memory state is still updated`);
       }
@@ -1735,7 +1759,8 @@ async function main() {
   // Single product by id. Non-admins get a 404 (not 403) on a
   // cross-tenant probe so the existence of the product isn't leaked
   // — same posture as the rest of the tenancy layer.
-  app.get("/api/products/:id", need("products", "read"), (req, res) => {
+  app.get("/api/products/:id", need("products", "read"), async (req, res) => {
+    await products.maybeReload();
     const sess = (req as AuthedRequest).session;
     const isAdmin = hasPermission(sess?.roles, "users", "delete");
     const callerTenant = sess?.tenant || "default";

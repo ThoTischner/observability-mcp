@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { parseProductsText, ProductsStore, ProductsLoadError } from "./loader.js";
+import { parseProductsText, ProductsStore, ProductsLoadError, readProductsFile } from "./loader.js";
 
 test("parseProductsText — empty/minimal products array", () => {
   const f = parseProductsText("products: []", "test");
@@ -190,4 +190,94 @@ test("ProductsLoadError is the throw class", () => {
     return;
   }
   assert.fail("expected throw");
+});
+
+test("ProductsStore.maybeReload — picks up out-of-band edits on next call", async () => {
+  const { mkdtemp, rm, writeFile, utimes } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = await mkdtemp(join(tmpdir(), "omcp-products-reload-"));
+  try {
+    const file = join(dir, "products.yaml");
+    await writeFile(file, "products:\n  - id: a\n    name: A\n", "utf8");
+    const initial = await readProductsFile(file);
+    const store = new ProductsStore(initial, { path: file });
+    await store.pinMtimeAfterWrite();
+    assert.equal(store.list().length, 1);
+    assert.equal(store.list()[0].id, "a");
+    // Simulate an out-of-band edit. Bump mtime explicitly because
+    // some filesystems (WSL → 9P) round mtime to the second, so a
+    // back-to-back write can land in the same second and look
+    // unchanged to stat().
+    await writeFile(file, "products:\n  - id: a\n    name: A\n  - id: b\n    name: B\n", "utf8");
+    const future = new Date(Date.now() + 5_000);
+    await utimes(file, future, future);
+    const { reloaded } = await store.maybeReload();
+    assert.equal(reloaded, true);
+    assert.equal(store.list().length, 2);
+    // A second call with no further edit is a no-op.
+    const r2 = await store.maybeReload();
+    assert.equal(r2.reloaded, false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("ProductsStore.maybeReload — broken YAML on disk keeps previous good state", async () => {
+  const { mkdtemp, rm, writeFile, utimes } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = await mkdtemp(join(tmpdir(), "omcp-products-broken-"));
+  try {
+    const file = join(dir, "products.yaml");
+    await writeFile(file, "products:\n  - id: a\n    name: A\n", "utf8");
+    const store = new ProductsStore(await readProductsFile(file), { path: file });
+    await store.pinMtimeAfterWrite();
+    // Corrupt the file with an unknown top-level key — fails the
+    // strict typo guard inside parseProductsText.
+    await writeFile(file, "products:\n  - id: a\n    name: A\n    junk: true\n", "utf8");
+    const future = new Date(Date.now() + 5_000);
+    await utimes(file, future, future);
+    const { reloaded } = await store.maybeReload();
+    // We did NOT swap state — caller sees the previous good catalogue.
+    assert.equal(reloaded, false);
+    assert.equal(store.list().length, 1);
+    assert.equal(store.list()[0].name, "A");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("ProductsStore.maybeReload — no path = no-op", async () => {
+  const store = new ProductsStore({ products: [{ id: "a", name: "A" }] });
+  const r = await store.maybeReload();
+  assert.equal(r.reloaded, false);
+  assert.equal(store.list().length, 1);
+});
+
+test("ProductsStore.pinMtimeAfterWrite — own writes do not trigger a redundant reload", async () => {
+  const { mkdtemp, rm, writeFile, utimes } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { writeProductsFile } = await import("./loader.js");
+  const dir = await mkdtemp(join(tmpdir(), "omcp-products-pin-"));
+  try {
+    const file = join(dir, "products.yaml");
+    await writeFile(file, "products:\n  - id: a\n    name: A\n", "utf8");
+    const store = new ProductsStore(await readProductsFile(file), { path: file });
+    await store.pinMtimeAfterWrite();
+    // Simulate the server-side mutate-then-persist path.
+    store.upsert({ id: "b", name: "B" });
+    // Move mtime forward so writeProductsFile genuinely advances it
+    // past our cursor (1-second-resolution FS guard).
+    const future = new Date(Date.now() + 5_000);
+    await writeProductsFile(file, store.snapshot());
+    await utimes(file, future, future);
+    await store.pinMtimeAfterWrite();
+    const { reloaded } = await store.maybeReload();
+    assert.equal(reloaded, false, "own write must not re-trigger maybeReload");
+    assert.equal(store.list().length, 2);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
