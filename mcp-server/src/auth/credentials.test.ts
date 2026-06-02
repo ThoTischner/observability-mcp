@@ -20,7 +20,7 @@ describe("single-tenant auth primitive", () => {
     assert.equal(creds.length, 2);
     assert.deepEqual(
       creds[0],
-      { name: "ci", token: "tok_abc", allowedSources: undefined, bypassRedaction: undefined, tenant: undefined }
+      { name: "ci", token: "tok_abc", allowedSources: undefined, bypassRedaction: undefined, tenant: undefined, productId: undefined }
     );
     assert.equal(creds[1].name, "key");
     assert.equal(creds[1].token, "tok_bare");
@@ -60,6 +60,28 @@ describe("single-tenant auth primitive", () => {
     assert.equal(creds.find((c) => c.name === "agent")?.tenant, "acme");
     assert.equal(creds.find((c) => c.name === "ci")?.tenant, "bigcorp", "lowercased");
     assert.equal(creds.find((c) => c.name === "nobody")?.tenant, undefined);
+  });
+
+  it("parses OMCP_KEY_PRODUCTS → assigns productId to named keys; unlisted stays undefined", () => {
+    const creds = loadCredentials({
+      OMCP_API_KEYS: "agent:tok1,ci:tok2,nobody:tok3",
+      OMCP_KEY_PRODUCTS: "agent=ops-bundle;ci=dev-bundle",
+    });
+    assert.equal(creds.find((c) => c.name === "agent")?.productId, "ops-bundle");
+    assert.equal(creds.find((c) => c.name === "ci")?.productId, "dev-bundle");
+    assert.equal(creds.find((c) => c.name === "nobody")?.productId, undefined);
+  });
+
+  it("OMCP_KEY_PRODUCTS — malformed entries (no =, empty value) silently skipped", () => {
+    const creds = loadCredentials({
+      OMCP_API_KEYS: "agent:tok1,ci:tok2,x:tok3",
+      // "noeq" lacks "=" → skip; "ci=" has empty value → skip;
+      // "agent=ops" parses cleanly.
+      OMCP_KEY_PRODUCTS: "agent=ops;noeq;ci=;x=dev",
+    });
+    assert.equal(creds.find((c) => c.name === "agent")?.productId, "ops");
+    assert.equal(creds.find((c) => c.name === "ci")?.productId, undefined);
+    assert.equal(creds.find((c) => c.name === "x")?.productId, "dev");
   });
 
   it("extractToken handles Bearer and X-API-Key", () => {

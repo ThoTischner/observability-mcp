@@ -85,7 +85,15 @@ sources:
 #   - OMCP_PRODUCTS_FILE           YAML catalogue of MCP Products
 #                                  (curated tool bundles per
 #                                  tenant/agent). Empty when unset;
-#                                  see docs/products.md.
+#                                  see docs/products.md. Hot-reload
+#                                  on file change is automatic — no
+#                                  pod restart needed when the
+#                                  mounted ConfigMap is re-applied.
+#   - OMCP_KEY_PRODUCTS            "name=productId;..." binding of
+#                                  named bearer credentials to MCP
+#                                  Products. /mcp tools/list is
+#                                  filtered to the Product's tools
+#                                  allow-list on each new session.
 #   - OMCP_REDACTION               on (default) | off — see docs/redaction.md
 #   - OMCP_TRUST_PROXY             true | loopback | <hops> | <ip,ip,...>
 #   - OMCP_AUTH_ALLOW_FALLBACK     true → degrade to anonymous on basic-mode

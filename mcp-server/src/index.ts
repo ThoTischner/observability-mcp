@@ -9,7 +9,7 @@ import { z } from "zod";
 import { loadConfig, saveConfig, DEFAULT_HEALTH_THRESHOLDS, DEFAULT_SETTINGS } from "./config/loader.js";
 import { ConnectorRegistry, getSupportedTypes } from "./connectors/registry.js";
 import { isTopologyProvider } from "./connectors/interface.js";
-import { defaultContext, principalContext, type RequestContext } from "./context.js";
+import { defaultContext, principalContext, allowsTool, type RequestContext } from "./context.js";
 import {
   enforceEntitledAccess,
   enterpriseGateStatus,
@@ -368,8 +368,18 @@ async function main() {
     });
 
   // --- Register tools with Zod schemas ---
+  // Product-aware registration: when the active credential is bound
+  // to a Product (OMCP_KEY_PRODUCTS), `ctx.allowedTools` carries that
+  // Product's `tools` allow-list and we skip the registration of any
+  // tool not in it. Anonymous + Product-less sessions leave
+  // allowedTools undefined and see every tool — the bypass is the
+  // back-compat path the open-source default relies on.
+  const registerTool = ((name: string, ...rest: unknown[]) => {
+    if (!allowsTool(ctx.allowedTools, name)) return undefined as never;
+    return (mcpServer.tool as unknown as (...a: unknown[]) => unknown)(name, ...rest) as never;
+  }) as typeof mcpServer.tool;
 
-  mcpServer.tool(
+  registerTool(
     "list_sources",
     [
       "List the configured observability backends (Prometheus, Loki, and any connector) and whether each is currently reachable.",
@@ -384,7 +394,7 @@ async function main() {
     }
   );
 
-  mcpServer.tool(
+  registerTool(
     "list_services",
     [
       "Discover the service names that can be queried, aggregated across every connected backend.",
@@ -411,7 +421,7 @@ async function main() {
   const metricNames = registry.getBySignal("metrics").flatMap(c => c.getMetrics().map(m => m.name));
   const uniqueNames = [...new Set(metricNames)];
 
-  mcpServer.tool(
+  registerTool(
     "query_metrics",
     [
       "Fetch the raw time-series for ONE metric of ONE service over a look-back window, returned together with pre-computed summary statistics.",
@@ -457,7 +467,7 @@ async function main() {
     }
   );
 
-  mcpServer.tool(
+  registerTool(
     "query_logs",
     [
       "Fetch recent log entries for ONE service over a look-back window, with a pre-computed summary (error/warning counts and the most frequent error patterns).",
@@ -545,7 +555,7 @@ async function main() {
     }
   );
 
-  mcpServer.tool(
+  registerTool(
     "get_service_health",
     [
       "Produce a single aggregated health verdict for ONE service by combining its metrics and logs.",
@@ -568,7 +578,7 @@ async function main() {
     }
   );
 
-  mcpServer.tool(
+  registerTool(
     "detect_anomalies",
     [
       "Scan one or all monitored services for abnormal behavior and return the findings ranked by severity.",
@@ -602,7 +612,7 @@ async function main() {
     }
   );
 
-  mcpServer.tool(
+  registerTool(
     "get_topology",
     [
       "Return the infrastructure topology graph (Resources and Edges) from every topology-capable connector.",
@@ -645,7 +655,7 @@ async function main() {
     }
   );
 
-  mcpServer.tool(
+  registerTool(
     "get_blast_radius",
     [
       "Given a resource, return who else fails if its underlying host(s) fail.",
@@ -2011,10 +2021,10 @@ async function main() {
 
   // Bearer/X-API-Key on every /mcp request; resolve the principal + its
   // coarse source allow-list into the RequestContext.
-  function gateCtx(
+  async function gateCtx(
     req: import("express").Request,
     res: import("express").Response
-  ): RequestContext | null {
+  ): Promise<RequestContext | null> {
     if (!credentialsConfigured()) return defaultContext();
     const cred = resolveToken(
       extractToken(req.headers as Record<string, unknown>),
@@ -2047,14 +2057,33 @@ async function main() {
       });
       return null;
     }
+    // Resolve the credential's bound Product (OMCP_KEY_PRODUCTS) into
+    // a concrete tools allow-list. Cross-tenant Products are invisible
+    // — products.get() returns undefined when the productId belongs to
+    // another tenant, mirroring the rest of the tenancy layer. A bound
+    // Product whose own `tools` field is absent / empty leaves the
+    // allow-list undefined (== unrestricted), matching the YAML
+    // loader's "no tools key = no restriction" semantics.
+    let allowedTools: string[] | undefined;
+    if (cred.productId) {
+      // Pick up out-of-band edits to OMCP_PRODUCTS_FILE before each
+      // /mcp request — cheap (one stat), keeps the binding live.
+      // Best-effort: if the catalogue reload fails we keep the prior
+      // good state (the store handles that internally) rather than
+      // failing the request.
+      await products.maybeReload().catch(() => undefined);
+      const p = products.get(cred.productId, credTenant);
+      if (p && p.tools && p.tools.length > 0) allowedTools = p.tools.slice();
+    }
     return principalContext(cred.name, cred.allowedSources, {
       allowBypassRedaction: cred.bypassRedaction,
       tenant: cred.tenant,
+      allowedTools,
     });
   }
 
   app.post("/mcp", async (req, res) => {
-    const ctx = gateCtx(req, res);
+    const ctx = await gateCtx(req, res);
     if (!ctx) return;
     const sessionId = req.headers["mcp-session-id"] as string | undefined;
     let transport: StreamableHTTPServerTransport;
@@ -2090,7 +2119,7 @@ async function main() {
   });
 
   app.get("/mcp", async (req, res) => {
-    if (!gateCtx(req, res)) return;
+    if (!(await gateCtx(req, res))) return;
     const sessionId = req.headers["mcp-session-id"] as string;
     const transport = transports.get(sessionId);
     if (!transport) {
@@ -2101,7 +2130,7 @@ async function main() {
   });
 
   app.delete("/mcp", async (req, res) => {
-    if (!gateCtx(req, res)) return;
+    if (!(await gateCtx(req, res))) return;
     const sessionId = req.headers["mcp-session-id"] as string;
     const transport = transports.get(sessionId);
     if (transport) {
