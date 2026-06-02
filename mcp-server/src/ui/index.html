@@ -1978,6 +1978,71 @@ curl -s http://localhost:3000/api/enterprise/status</pre>
     </div>
   </div>
 
+  <!-- MCP Product Modal (Create + Edit) -->
+  <div class="modal-overlay" id="mcp-product-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="mcp-product-modal-title">New Product</h3>
+        <button class="btn-icon" onclick="closeModal('mcp-product-modal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="mcp-product-mode" value="new">
+        <input type="hidden" id="mcp-product-original-id" value="">
+        <div class="form-group">
+          <label for="mcp-product-id">Id</label>
+          <input type="text" id="mcp-product-id" placeholder="e.g. ops-bundle" autocomplete="off">
+          <div class="form-hint">URL-safe identifier. Pattern: <code>[A-Za-z0-9][A-Za-z0-9._-]{0,63}</code>. Immutable once saved.</div>
+        </div>
+        <div class="form-group">
+          <label for="mcp-product-name">Display name</label>
+          <input type="text" id="mcp-product-name" placeholder="e.g. Operations Bundle" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label for="mcp-product-description">Description <span class="t-sm" style="opacity:.6">(optional)</span></label>
+          <input type="text" id="mcp-product-description" placeholder="One-sentence summary" autocomplete="off">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="mcp-product-status">Status</label>
+            <select id="mcp-product-status">
+              <option value="staging">staging (admin-only)</option>
+              <option value="published">published (visible to agents)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="mcp-product-tenant">Tenant <span class="t-sm" style="opacity:.6">(admin only)</span></label>
+            <input type="text" id="mcp-product-tenant" placeholder="default" autocomplete="off">
+            <div class="form-hint">Blank = same tenant as the calling user.</div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="mcp-product-tools">Tools allow-list <span class="t-sm" style="opacity:.6">(optional)</span></label>
+          <textarea id="mcp-product-tools" rows="3" placeholder="query_logs&#10;query_metrics&#10;get_service_health"></textarea>
+          <div class="form-hint">One MCP tool name per line. Empty = no filter (every registered tool).</div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="mcp-product-version">Version <span class="t-sm" style="opacity:.6">(optional)</span></label>
+            <input type="text" id="mcp-product-version" placeholder="1.0.0" autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label for="mcp-product-color">Brand colour <span class="t-sm" style="opacity:.6">(optional)</span></label>
+            <input type="text" id="mcp-product-color" placeholder="#3178c6" autocomplete="off">
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="mcp-product-icon">Icon URL <span class="t-sm" style="opacity:.6">(optional)</span></label>
+          <input type="text" id="mcp-product-icon" placeholder="https://example.com/icons/ops.svg" autocomplete="off">
+        </div>
+        <div id="mcp-product-error" class="form-hint" role="alert" aria-live="polite" style="color: var(--danger); display: none;"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeModal('mcp-product-modal')">Cancel</button>
+        <button class="btn btn-primary" onclick="mcpProductSave()">Save Product</button>
+      </div>
+    </div>
+  </div>
+
   <div class="toast" id="toast-el"></div>
 
   <div class="drawer-ov" id="drawer-ov" onclick="closeDrawer()"></div>
@@ -3128,25 +3193,93 @@ async function loadMcpProducts() {
     box.innerHTML = '<div class="empty">/api/products unavailable: ' + escHtml(String(e && e.message || e)) + '</div>';
   }
 }
-async function mcpProductsNew() {
-  const id = (window.prompt('New product id (lowercase, [a-z0-9._-]):') || '').trim();
-  if (!id) return;
-  const name = (window.prompt('Display name:') || '').trim();
-  if (!name) return;
-  await mcpProductsUpsert(id, { id, name, status: 'staging' });
+// Form-driven Product modal — replaces the old chain of window.prompt
+// dialogs. Exposes id + name + description + status + tenant + tools
+// + version + branding in one place, validated client-side before
+// the server's strict parser sees it.
+function mcpProductOpen(mode, current) {
+  const idEl = document.getElementById('mcp-product-id');
+  const nameEl = document.getElementById('mcp-product-name');
+  const descEl = document.getElementById('mcp-product-description');
+  const statusEl = document.getElementById('mcp-product-status');
+  const tenantEl = document.getElementById('mcp-product-tenant');
+  const toolsEl = document.getElementById('mcp-product-tools');
+  const verEl = document.getElementById('mcp-product-version');
+  const colorEl = document.getElementById('mcp-product-color');
+  const iconEl = document.getElementById('mcp-product-icon');
+  const errEl = document.getElementById('mcp-product-error');
+  const titleEl = document.getElementById('mcp-product-modal-title');
+  document.getElementById('mcp-product-mode').value = mode;
+  document.getElementById('mcp-product-original-id').value = (current && current.id) || '';
+  errEl.style.display = 'none';
+  errEl.textContent = '';
+  if (mode === 'edit' && current) {
+    titleEl.textContent = 'Edit Product · ' + current.id;
+    idEl.value = current.id;
+    idEl.disabled = true;
+    nameEl.value = current.name || '';
+    descEl.value = current.description || '';
+    statusEl.value = current.status || 'published';
+    tenantEl.value = current.tenant || '';
+    toolsEl.value = (current.tools || []).join('\n');
+    verEl.value = current.version || '';
+    colorEl.value = (current.branding && current.branding.color) || '';
+    iconEl.value = (current.branding && current.branding.iconUrl) || '';
+  } else {
+    titleEl.textContent = 'New Product';
+    idEl.value = '';
+    idEl.disabled = false;
+    nameEl.value = '';
+    descEl.value = '';
+    statusEl.value = 'staging';
+    tenantEl.value = '';
+    toolsEl.value = '';
+    verEl.value = '';
+    colorEl.value = '';
+    iconEl.value = '';
+  }
+  document.getElementById('mcp-product-modal').classList.add('open');
+  setTimeout(() => (mode === 'edit' ? nameEl : idEl).focus(), 50);
 }
+async function mcpProductsNew() { mcpProductOpen('new'); }
 async function mcpProductsEdit(idEnc) {
   const id = decodeURIComponent(idEnc);
   const r = await fetch('/api/products/' + encodeURIComponent(id));
   if (!r.ok) { toast('Could not fetch ' + id); return; }
   const current = await r.json();
-  const newName = window.prompt('Display name', current.name);
-  if (newName === null) return;
-  const status = window.prompt('Status (published | staging)', current.status || 'published');
-  if (status === null) return;
-  await mcpProductsUpsert(id, { ...current, name: newName, status });
+  mcpProductOpen('edit', current);
 }
-async function mcpProductsUpsert(id, body) {
+async function mcpProductSave() {
+  const mode = document.getElementById('mcp-product-mode').value;
+  const id = document.getElementById('mcp-product-id').value.trim();
+  const name = document.getElementById('mcp-product-name').value.trim();
+  const errEl = document.getElementById('mcp-product-error');
+  function fail(msg) { errEl.textContent = msg; errEl.style.display = ''; }
+  // Mirror the server-side ID_RE so the user sees the rule before the
+  // round-trip — server is still the source of truth for rejection.
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(id)) {
+    fail('Id must match [A-Za-z0-9][A-Za-z0-9._-]{0,63}.');
+    return;
+  }
+  if (!name) { fail('Display name is required.'); return; }
+  const body = { id, name, status: document.getElementById('mcp-product-status').value };
+  const desc = document.getElementById('mcp-product-description').value.trim();
+  if (desc) body.description = desc;
+  const tenant = document.getElementById('mcp-product-tenant').value.trim();
+  if (tenant) body.tenant = tenant;
+  // Split on newlines or commas so paste-from-a-list works either way.
+  const toolsRaw = document.getElementById('mcp-product-tools').value || '';
+  const tools = toolsRaw.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean);
+  if (tools.length > 0) body.tools = tools;
+  const version = document.getElementById('mcp-product-version').value.trim();
+  if (version) body.version = version;
+  const color = document.getElementById('mcp-product-color').value.trim();
+  const icon = document.getElementById('mcp-product-icon').value.trim();
+  if (color || icon) {
+    body.branding = {};
+    if (icon) body.branding.iconUrl = icon;
+    if (color) body.branding.color = color;
+  }
   try {
     const r = await fetch('/api/products/' + encodeURIComponent(id), {
       method: 'PUT',
@@ -3155,12 +3288,13 @@ async function mcpProductsUpsert(id, body) {
     });
     if (!r.ok) {
       const j = await r.json().catch(() => ({}));
-      toast('Save failed: ' + (j.error || r.status));
+      fail(j.error || ('Save failed: HTTP ' + r.status));
       return;
     }
-    toast('Saved ' + id);
+    closeModal('mcp-product-modal');
+    toast((mode === 'edit' ? 'Updated ' : 'Created ') + id);
     await loadMcpProducts();
-  } catch (e) { toast('Save failed: ' + (e && e.message || e)); }
+  } catch (e) { fail('Save failed: ' + (e && e.message || e)); }
 }
 async function mcpProductsDelete(idEnc) {
   const id = decodeURIComponent(idEnc);
