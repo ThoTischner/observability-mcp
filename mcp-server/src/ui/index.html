@@ -3754,6 +3754,27 @@ function setAuthInForm(auth) {
   if(auth.type==='bearer') { document.getElementById('src-auth-token').value=auth.token||''; }
   toggleAuthFields();
 }
+// Admins (users:delete) can pick any tenant or leave blank (global);
+// non-admins are silently scoped to their own tenant by the server.
+// Pre-fill + disable for non-admins so the UX matches the server
+// posture — they SEE the constraint instead of typing into a field
+// that the server will then quietly rewrite.
+function _omcpApplyTenantFieldMode() {
+  const inp = document.getElementById('src-tenant');
+  if (!inp) return;
+  const isAdmin = (typeof omcpCan === 'function') && omcpCan('users', 'delete');
+  const sess = window.__omcpMe;
+  const isAnonymous = !sess || sess.mode === 'anonymous';
+  if (isAdmin || isAnonymous) {
+    inp.disabled = false;
+    inp.placeholder = '(blank = global)';
+  } else {
+    const own = (sess && sess.user && sess.user.tenant) || 'default';
+    inp.value = own;
+    inp.disabled = true;
+    inp.placeholder = own;
+  }
+}
 function openAddModal() {
   document.getElementById('modal-title').textContent='Add Source'; document.getElementById('modal-mode').value='add';
   document.getElementById('modal-original-name').value=''; document.getElementById('src-name').value='';
@@ -3763,6 +3784,7 @@ function openAddModal() {
   document.getElementById('src-name').disabled=false; resetAuthFields(); hideTestResult();
   setFieldError('src-name','src-name-err',null); setFieldError('src-url','src-url-err',null); clearSrcBanner();
   const sel=document.getElementById('src-type'); sel.innerHTML=supportedTypes.map(t=>`<option value="${t}">${t}</option>`).join('');
+  _omcpApplyTenantFieldMode();
   document.getElementById('source-modal').classList.add('open');
 }
 function openEditModal(name) {
@@ -3774,6 +3796,7 @@ function openEditModal(name) {
   document.getElementById('src-tenant').value = s.tenant || '';
   setFieldError('src-name','src-name-err',null); setFieldError('src-url','src-url-err',null); clearSrcBanner();
   const sel=document.getElementById('src-type'); sel.innerHTML=supportedTypes.map(t=>`<option value="${t}" ${t===s.type?'selected':''}>${t}</option>`).join('');
+  _omcpApplyTenantFieldMode();
   document.getElementById('source-modal').classList.add('open');
 }
 // --- Source modal form validation + banner ------------------------------
