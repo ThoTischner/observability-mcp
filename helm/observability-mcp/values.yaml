@@ -78,7 +78,28 @@ sources:
 #   - OMCP_OIDC_SCOPES / _ROLES_CLAIM / _ROLE_MAP / _LOGOUT_REDIRECT
 #   - OMCP_USERS_FILE              path to the local-users JSON file (basic mode)
 #   - OMCP_SESSION_SECRET          ≥32-char HMAC key for signing session cookies
-#   - OMCP_API_KEYS                bearer tokens for the /mcp transport
+#   - OMCP_API_KEYS                bearer tokens for the /mcp transport,
+#                                  "name:token,name2:token2" or a bare token
+#   - OMCP_KEY_SOURCES             coarse per-credential source allow-list,
+#                                  "agent=prom-prod|loki-prod;ci=prom-staging"
+#   - OMCP_KEY_TENANTS             per-credential tenant assignment,
+#                                  "agent=acme;ci=bigco"; unlisted → "default"
+#   - OMCP_KEY_BYPASS_REDACTION    comma-separated credential names allowed
+#                                  to bypass /mcp log redaction via the
+#                                  bypass_redaction tool arg (off by default)
+#   - OMCP_RBAC_POLICY_FILE        YAML/JSON file with per-role grants,
+#                                  replaces the built-in DEFAULT_POLICY;
+#                                  fail-closed on parse error.
+#                                  see docs/policy-engines.md
+#   - OMCP_OPA_URL                 external OPA endpoint (e.g. http://opa:8181);
+#                                  when set, RBAC decisions go through OPA.
+#                                  Tenant is passed in input.tenant — Rego
+#                                  rules can be tenant-conditional.
+#   - OMCP_OPA_PACKAGE             OPA package path (default "observability/authz")
+#   - OMCP_OPA_ROLES               comma-separated declared roles for the
+#                                  Policy UI catalogue
+#   - OMCP_OPA_TOKEN               optional bearer token for OPA's
+#                                  --authentication=token
 #   - OMCP_MGMT_AUDIT_FILE         JSONL audit log; in-memory ring (500) when unset
 #   - OMCP_SERVICE_CATALOG_FILE    owner / tier / on-call / SLO metadata
 #   - OMCP_TOOL_RATE_PER_MIN       per-identity /mcp cap; default 60.
