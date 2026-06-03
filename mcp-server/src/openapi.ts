@@ -573,6 +573,25 @@ export function buildOpenApiSpec(version: string): OpenAPIV3_1.Document {
             "403": { description: "Missing products:read permission." },
           },
         },
+        post: {
+          tags: ["products"],
+          summary: "Create a new product (strict create — 409 on conflict; PUT for upsert).",
+          description: "Strict create-only variant of PUT. Same tenancy + typo-guard posture. Returns 409 when a product with body.id already exists. Body must include id + name; tools[] entries must reference registered MCP tool names (typo → 422).",
+          requestBody: {
+            required: true,
+            content: { "application/json": { schema: { type: "object", additionalProperties: true } } },
+          },
+          responses: {
+            "201": { description: "Created.", content: { "application/json": { schema: { type: "object", properties: {
+              product: { type: "object", additionalProperties: true },
+              persisted: { type: "boolean" },
+            } } } } },
+            "400": { description: "Body invalid (missing id / shape rejected by validateProduct)." },
+            "403": { description: "Missing products:write permission, or non-admin attempting to create in another tenant." },
+            "409": { description: "Product with that id already exists — use PUT to update." },
+            "422": { description: "tools[] references unknown tool names. Body includes `unknown` + `available`; error code OMCP_PRODUCT_UNKNOWN_TOOL." },
+          },
+        },
       },
       "/api/products/{id}": {
         get: {
@@ -608,6 +627,7 @@ export function buildOpenApiSpec(version: string): OpenAPIV3_1.Document {
             "400": { description: "Body shape invalid (validateProduct rejected — typo, unknown key, wrong type, ...)." },
             "403": { description: "Missing products:write permission, or non-admin attempting to write into another tenant." },
             "404": { description: "Existing product belongs to a different tenant (non-admin)." },
+            "422": { description: "tools[] references unknown tool names. Body includes `unknown` + `available`; error code OMCP_PRODUCT_UNKNOWN_TOOL." },
           },
         },
         delete: {
