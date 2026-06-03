@@ -1,5 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { IncidentDeduper } from "./dedup.js";
 
 // Config from env vars
 const MCP_URL = process.env.MCP_URL || "http://mcp-server:3000/mcp";
@@ -46,29 +47,12 @@ async function syncSettings(): Promise<void> {
 }
 
 // --- Incident Deduplication ---
-const reportedIncidents = new Map<string, number>(); // hash → timestamp
-
-function anomalyHash(anomaly: { service: string; metric: string; severity: string }): string {
-  return `${anomaly.service}:${anomaly.metric}:${anomaly.severity}`;
-}
-
-function isDuplicate(anomaly: { service: string; metric: string; severity: string }): boolean {
-  const hash = anomalyHash(anomaly);
-  const lastReported = reportedIncidents.get(hash);
-  if (lastReported && Date.now() - lastReported < DEDUP_TTL_MS) return true;
-  return false;
-}
-
-function markReported(anomaly: { service: string; metric: string; severity: string }) {
-  reportedIncidents.set(anomalyHash(anomaly), Date.now());
-}
-
-function cleanExpiredIncidents() {
-  const now = Date.now();
-  for (const [hash, ts] of reportedIncidents) {
-    if (now - ts > DEDUP_TTL_MS) reportedIncidents.delete(hash);
-  }
-}
+// IncidentDeduper extracted to ./dedup.ts so the contract is unit-
+// testable without spinning up the full agent + Ollama + MCP stack.
+const deduper = new IncidentDeduper(DEDUP_TTL_MS);
+const isDuplicate = (a: { service: string; metric: string; severity: string }) => deduper.isDuplicate(a);
+const markReported = (a: { service: string; metric: string; severity: string }) => deduper.markReported(a);
+const cleanExpiredIncidents = () => deduper.cleanExpired();
 
 // --- MCP Connection ---
 async function waitForService(url: string, name: string, maxRetries = 60): Promise<void> {
