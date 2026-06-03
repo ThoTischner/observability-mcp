@@ -241,28 +241,69 @@ jobs:
         # Pin label corrected by reviewer: this SHA is the
         # anchore/sbom-action v0.20.4 release.
         uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
-      - name: Generate SBOMs (Syft)
-        # Note: Syft handed a manifest-list digest defaults to the
-        # host runner's platform (linux/amd64 on GitHub-hosted
-        # runners). The arm64 variant of the image is covered by
-        # the buildx-embedded SBOM only; doing a second per-platform
-        # Syft pass is tracked as an E9 follow-up.
+      - name: Generate per-platform SBOMs (Syft)
+        # Per-platform pass: Syft handed a manifest-list digest defaults
+        # to the host runner's platform (linux/amd64 on GitHub-hosted
+        # runners). To produce a true SBOM for the arm64 variant we
+        # enumerate the manifest-list, look up each platform's
+        # per-platform digest, and scan with --platform so Syft pulls
+        # the correct layer set. Output files are suffixed with the
+        # platform pair (e.g. -amd64, -arm64) so downstream consumers
+        # can pick the SBOM matching the arch they actually run.
         run: |
-          syft "${{ env.REGISTRY }}/${{ steps.image.outputs.lower }}@${{ steps.inspect.outputs.digest }}" \
-            -o cyclonedx-json=image-sbom.cdx.json \
-            -o spdx-json=image-sbom.spdx.json
-      - name: Attest SBOM to the image (cosign attestation)
+          set -euo pipefail
+          IMAGE="${{ env.REGISTRY }}/${{ steps.image.outputs.lower }}"
+          LIST_DIGEST="${{ steps.inspect.outputs.digest }}"
+          # `imagetools inspect --raw` returns the OCI image-index JSON
+          # of the manifest list — one `manifests[]` entry per platform
+          # with the per-platform digest plus its os/architecture.
+          MANIFEST_JSON="$(docker buildx imagetools inspect --raw "${IMAGE}@${LIST_DIGEST}")"
+          # Track per-platform digests in a side file so the attest
+          # step (next) can iterate without re-running inspect.
+          : > /tmp/sbom-platforms.tsv
+          echo "$MANIFEST_JSON" | jq -r '
+            .manifests[]
+            | select(.platform.os == "linux")
+            | select(.platform.architecture == "amd64" or .platform.architecture == "arm64")
+            | [.platform.architecture, .digest] | @tsv' \
+            | tee /tmp/sbom-platforms.tsv
+          if ! [ -s /tmp/sbom-platforms.tsv ]; then
+            echo "no per-platform manifests found in $IMAGE@$LIST_DIGEST" >&2
+            exit 1
+          fi
+          while IFS=$'\t' read -r ARCH DIGEST; do
+            echo "scanning ${ARCH} variant @ ${DIGEST}"
+            # --platform tells Syft to follow the named entry in the
+            # index instead of defaulting to the runner's arch. The
+            # digest in the URL still resolves the manifest list; the
+            # flag selects the variant.
+            syft "${IMAGE}@${DIGEST}" --platform "linux/${ARCH}" \
+              -o cyclonedx-json="image-sbom-${ARCH}.cdx.json" \
+              -o spdx-json="image-sbom-${ARCH}.spdx.json"
+          done < /tmp/sbom-platforms.tsv
+      - name: Attest per-platform SBOMs (cosign attestation)
         run: |
-          cosign attest --yes --predicate image-sbom.cdx.json --type cyclonedx \
-            "${{ env.REGISTRY }}/${{ steps.image.outputs.lower }}@${{ steps.inspect.outputs.digest }}"
-          cosign attest --yes --predicate image-sbom.spdx.json --type spdxjson \
-            "${{ env.REGISTRY }}/${{ steps.image.outputs.lower }}@${{ steps.inspect.outputs.digest }}"
-      - name: Upload SBOM as workflow artifact
+          set -euo pipefail
+          IMAGE="${{ env.REGISTRY }}/${{ steps.image.outputs.lower }}"
+          # Attest each SBOM against its OWN per-platform digest, not
+          # the manifest-list digest — that way `cosign verify-
+          # attestation --platform linux/arm64` against the user-facing
+          # tag resolves to the right predicate, instead of a single
+          # SBOM bound to the index hash.
+          while IFS=$'\t' read -r ARCH DIGEST; do
+            cosign attest --yes --predicate "image-sbom-${ARCH}.cdx.json" --type cyclonedx \
+              "${IMAGE}@${DIGEST}"
+            cosign attest --yes --predicate "image-sbom-${ARCH}.spdx.json" --type spdxjson \
+              "${IMAGE}@${DIGEST}"
+          done < /tmp/sbom-platforms.tsv
+      - name: Upload per-platform SBOMs as workflow artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4
         with:
           name: image-sbom-${{ steps.meta.outputs.version }}
           path: |
-            image-sbom.cdx.json
-            image-sbom.spdx.json
+            image-sbom-amd64.cdx.json
+            image-sbom-amd64.spdx.json
+            image-sbom-arm64.cdx.json
+            image-sbom-arm64.spdx.json
           if-no-files-found: error
           retention-days: 90

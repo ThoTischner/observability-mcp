@@ -108,16 +108,26 @@ cosign verify \
 ```
 
 **SBOM attestations.** CycloneDX-JSON + SPDX-JSON SBOMs (Syft-generated, in
-addition to the buildx-embedded SBOM) are attached as cosign attestations.
-Fetch + verify either format:
+addition to the buildx-embedded SBOM) are attached as cosign attestations,
+**per platform** — one CycloneDX + one SPDX predicate is bound to each
+per-platform digest in the manifest list. Resolve the platform digest
+first, then verify:
 
 ```bash
+IMAGE=ghcr.io/thotischner/observability-mcp:latest
+
+# Pick the platform you actually run (linux/amd64 or linux/arm64).
+PLATFORM=linux/amd64
+PER_PLATFORM_DIGEST=$(docker buildx imagetools inspect --raw "$IMAGE" \
+  | jq -r --arg p "$PLATFORM" '
+      .manifests[] | select((.platform.os + "/" + .platform.architecture) == $p) | .digest')
+
 # CycloneDX
 cosign verify-attestation \
   --type cyclonedx \
   --certificate-identity-regexp "^https://github\.com/ThoTischner/observability-mcp/\.github/workflows/docker-publish\.yml@refs/" \
   --certificate-oidc-issuer    "https://token.actions.githubusercontent.com" \
-  ghcr.io/thotischner/observability-mcp:latest \
+  "ghcr.io/thotischner/observability-mcp@${PER_PLATFORM_DIGEST}" \
   | jq -r '.payload | @base64d | fromjson | .predicate' > image-sbom.cdx.json
 
 # SPDX
@@ -125,14 +135,16 @@ cosign verify-attestation \
   --type spdxjson \
   --certificate-identity-regexp "^https://github\.com/ThoTischner/observability-mcp/\.github/workflows/docker-publish\.yml@refs/" \
   --certificate-oidc-issuer    "https://token.actions.githubusercontent.com" \
-  ghcr.io/thotischner/observability-mcp:latest \
+  "ghcr.io/thotischner/observability-mcp@${PER_PLATFORM_DIGEST}" \
   | jq -r '.payload | @base64d | fromjson | .predicate' > image-sbom.spdx.json
 ```
 
-> The Syft SBOMs cover the `linux/amd64` variant (GitHub-runner host
-> platform). The `linux/arm64` variant is covered by buildx's
-> embedded SBOM only; a second per-platform Syft attestation is a
-> tracked E9 follow-up.
+> Per-platform coverage: Syft scans both the amd64 and arm64 variants
+> on the amd64 runner via the `--platform` flag (it pulls the right
+> layer set from the manifest list) and attaches the resulting SBOMs
+> as cosign attestations on the matching per-platform digest. The
+> buildx-embedded SBOM remains as well, for tools that read attached
+> SBOMs from the image directly.
 
 The raw SBOM files are also uploaded as workflow artifacts on each release
 (90-day retention), so an air-gapped operator can pull them from the
