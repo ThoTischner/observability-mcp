@@ -26,6 +26,10 @@ const SOURCE_SCHEMA: OpenAPIV3_1.SchemaObject = {
     },
     tls: { type: "object", additionalProperties: true },
     signalType: { type: "string", enum: ["metrics", "logs", "traces"] },
+    tenant: {
+      type: "string",
+      description: "Tenant this source belongs to. Omitted = global (visible to every tenant). Tagged sources are visible only inside their named tenant; cross-tenant probes return 404 with no existence leak.",
+    },
   },
   additionalProperties: true,
 };
@@ -65,21 +69,27 @@ export function buildOpenApiSpec(version: string): OpenAPIV3_1.Document {
       "/api/sources": {
         get: {
           tags: ["sources"],
-          summary: "List configured sources with live health.",
+          summary: "List configured sources with live health (tenant-scoped).",
+          description: "Non-admin callers see only their own tenant's sources + globals (untagged). Admins (users:delete) see every source; pass ?tenant=X for an admin drill-down to that tenant + globals. Anonymous mode bypasses scoping (single-tenant default).",
+          parameters: [
+            { name: "tenant", in: "query", schema: { type: "string" }, description: "Admin-only tenant drill-down (silently ignored for non-admins, who are scoped to their own tenant)." },
+          ],
           responses: {
             "200": {
-              description: "Sources with status, latency, signal type.",
+              description: "Sources with status, latency, signal type. The `tenant` field is present when the source is tagged.",
               content: { "application/json": { schema: { type: "array", items: SOURCE_SCHEMA } } },
             },
           },
         },
         post: {
           tags: ["sources"],
-          summary: "Add a new source.",
+          summary: "Add a new source (tenant-aware).",
+          description: "Body may include `tenant` to tag the source. Non-admins may only create within their own tenant; setting body.tenant to another value returns 403. Admins may leave tenant unset (global) or set any value.",
           requestBody: { required: true, content: { "application/json": { schema: SOURCE_SCHEMA } } },
           responses: {
             "201": { description: "Source created." },
             "400": { description: "Validation error." },
+            "403": { description: "Non-admin attempting to create in another tenant." },
             "409": { description: "Source with that name already exists." },
           },
         },
@@ -112,14 +122,23 @@ export function buildOpenApiSpec(version: string): OpenAPIV3_1.Document {
         parameters: [{ name: "name", in: "path", required: true, schema: { type: "string" } }],
         put: {
           tags: ["sources"],
-          summary: "Replace an existing source.",
+          summary: "Replace an existing source (tenant-aware).",
+          description: "Non-admin probes of a cross-tenant source return 404 (no existence leak — same posture as /api/products). Non-admins attempting to reassign body.tenant return 403. Admins may move sources between tenants.",
           requestBody: { required: true, content: { "application/json": { schema: SOURCE_SCHEMA } } },
-          responses: { "200": { description: "Updated." }, "404": { description: "Not found." } },
+          responses: {
+            "200": { description: "Updated." },
+            "403": { description: "Non-admin attempting tenant reassignment." },
+            "404": { description: "Not found (or hidden by tenant scope)." },
+          },
         },
         delete: {
           tags: ["sources"],
           summary: "Remove a source.",
-          responses: { "204": { description: "Removed." }, "404": { description: "Not found." } },
+          description: "Cross-tenant deletes return 404 (no existence leak).",
+          responses: {
+            "204": { description: "Removed." },
+            "404": { description: "Not found (or hidden by tenant scope)." },
+          },
         },
       },
       "/api/source-types": {
@@ -487,11 +506,12 @@ export function buildOpenApiSpec(version: string): OpenAPIV3_1.Document {
       "/api/policy": {
         get: {
           tags: ["auth"],
-          summary: "Read-only view of the active RBAC policy (admin-only). Dry-run probe with ?resource=&action=&roles=.",
+          summary: "Read-only view of the active RBAC policy (admin-only). Dry-run probe with ?resource=&action=&roles=[&tenant=].",
           parameters: [
             { name: "roles", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated role names to probe. Defaults to none (treated as anonymous → always denied)." },
             { name: "resource", in: "query", required: false, schema: { type: "string" }, description: "Resource to probe. Pair with `action` to enter dry-run mode." },
             { name: "action", in: "query", required: false, schema: { type: "string" }, description: "Action to probe. Pair with `resource` to enter dry-run mode." },
+            { name: "tenant", in: "query", required: false, schema: { type: "string" }, description: "Tenant to probe under (dry-run only). Defaults to the caller's session tenant; admins may override to probe verdicts for any tenant — exactly how to debug tenant-conditional Rego rules under the OPA engine." },
           ],
           responses: {
             "200": {
@@ -502,6 +522,7 @@ export function buildOpenApiSpec(version: string): OpenAPIV3_1.Document {
                     type: "object",
                     properties: {
                       engine: { type: "string", description: "Identifier of the active engine: 'builtin', 'file:<path>', 'opa:<url>'." },
+                      tenantAware: { type: "boolean", description: "True when the active engine honours session.tenant on .evaluate() — i.e. OPA. Built-in / file-loaded engines ignore tenant ctx (false)." },
                       policy: { type: "object", additionalProperties: true },
                       roles: { type: "array", items: { type: "string" } },
                       note: { type: "string" },
@@ -511,6 +532,7 @@ export function buildOpenApiSpec(version: string): OpenAPIV3_1.Document {
                           roles: { type: "array", items: { type: "string" } },
                           resource: { type: "string" },
                           action: { type: "string" },
+                          tenant: { type: "string", description: "Tenant the probe ran under (echoed from ?tenant= or the caller's session)." },
                           allowed: { type: "boolean" },
                           reason: { type: "string" },
                         },
