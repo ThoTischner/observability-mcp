@@ -30,10 +30,11 @@ export const getServiceHealthDefinition = {
 export async function getServiceHealthHandler(
   registry: ConnectorRegistry,
   args: { service: string },
-  _ctx: RequestContext = defaultContext()
+  ctx: RequestContext = defaultContext()
 ) {
-  const metricsConnectors = registry.getBySignal("metrics");
-  const logConnectors = registry.getBySignal("logs");
+  const tenantConnectors = registry.getByTenant(ctx.tenant);
+  const metricsConnectors = tenantConnectors.filter((c) => c.signalType === "metrics");
+  const logConnectors = tenantConnectors.filter((c) => c.signalType === "logs");
 
   // Gather metrics
   let cpu = 0, memory = 0, errorRate = 0, latencyP99 = 0;

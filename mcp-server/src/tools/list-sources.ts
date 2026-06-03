@@ -13,10 +13,14 @@ export const listSourcesDefinition = {
 
 export async function listSourcesHandler(
   registry: ConnectorRegistry,
-  _ctx: RequestContext = defaultContext()
+  ctx: RequestContext = defaultContext()
 ) {
   const healthResults = await registry.healthCheckAll();
-  const connectors = registry.getAll();
+  // Tenant-scoped: caller only sees sources tagged with their tenant
+  // plus untagged (global) sources. Pre-E7 deployments (no tenant
+  // labels on any source) behave identically — every source is
+  // global and visible to every tenant.
+  const connectors = registry.getByTenant(ctx.tenant);
 
   const sources = connectors.map((c) => ({
     name: c.name,

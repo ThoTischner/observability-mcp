@@ -93,6 +93,35 @@ export class ConnectorRegistry {
     return this.getAll().filter((c) => c.signalType === signal);
   }
 
+  /** Connectors visible to the named tenant: every source whose
+   *  config.tenant matches OR is unset (global). Unset = available
+   *  everywhere — keeps single-tenant deployments untouched.
+   *  Anonymous traffic / the agent / internal callers can pass
+   *  the DEFAULT_TENANT sentinel and see exactly what the default-
+   *  tenant operator sees. */
+  getByTenant(tenant: string): ObservabilityConnector[] {
+    const out: ObservabilityConnector[] = [];
+    for (const [name, c] of this.connectors) {
+      const cfg = this.sourceConfigs.get(name);
+      const srcTenant = cfg?.tenant;
+      if (!srcTenant || srcTenant === tenant) out.push(c);
+    }
+    return out;
+  }
+
+  /** Same as `getByName`, but enforces the tenant gate: a source
+   *  whose config.tenant is set and differs from the calling tenant
+   *  returns undefined — indistinguishable from "no such source",
+   *  per the rest of the tenancy layer (no cross-tenant existence
+   *  leak). Unset source tenant = global, always resolves. */
+  getByNameForTenant(name: string, tenant: string): ObservabilityConnector | undefined {
+    const c = this.connectors.get(name);
+    if (!c) return undefined;
+    const cfg = this.sourceConfigs.get(name);
+    if (cfg?.tenant && cfg.tenant !== tenant) return undefined;
+    return c;
+  }
+
   async healthCheckAll(): Promise<Record<string, ConnectorHealth>> {
     const results: Record<string, ConnectorHealth> = {};
     for (const [name, connector] of this.connectors) {

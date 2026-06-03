@@ -40,14 +40,14 @@ export const queryMetricsDefinition = {
 export async function queryMetricsHandler(
   registry: ConnectorRegistry,
   args: { service: string; metric: string; duration?: string; source?: string; groupBy?: string },
-  _ctx: RequestContext = defaultContext()
+  ctx: RequestContext = defaultContext()
 ) {
   // Coarse single-tenant source scoping: if the principal is restricted to a
   // source allow-list, deny an explicit out-of-scope source.
   if (
-    _ctx.allowedSources &&
+    ctx.allowedSources &&
     args.source &&
-    !_ctx.allowedSources.includes(args.source)
+    !ctx.allowedSources.includes(args.source)
   ) {
     return errorResponse(
       `forbidden: source "${args.source}" is not in your allowed sources`
@@ -66,13 +66,26 @@ export async function queryMetricsHandler(
     );
   }
 
+  // Tenant-scoped resolution: an explicit `source` from the agent
+  // must belong to the caller's tenant (or be a global / untagged
+  // source) — cross-tenant sources resolve to undefined exactly like
+  // a missing source, preserving the no-existence-leak posture used
+  // elsewhere in the tenancy layer.
   const connectors = args.source
-    ? [registry.getByName(args.source)].filter(Boolean)
-    : registry.getBySignal("metrics");
+    ? [registry.getByNameForTenant(args.source, ctx.tenant)].filter(Boolean)
+    : registry.getByTenant(ctx.tenant).filter((c) => c.signalType === "metrics");
 
   if (connectors.length === 0) {
+    // Distinct messages but identical posture: the source-named branch
+    // could land here either because the source doesn't exist OR
+    // belongs to another tenant — both surface as "not found", same
+    // shape, no existence leak. The fan-out branch lands here only on
+    // an empty registry.
+    const msg = args.source
+      ? `Source "${args.source}" not found`
+      : "No metrics backends configured";
     return {
-      content: [{ type: "text" as const, text: JSON.stringify({ error: "No metrics backends configured" }) }],
+      content: [{ type: "text" as const, text: JSON.stringify({ error: msg }) }],
       isError: true,
     };
   }

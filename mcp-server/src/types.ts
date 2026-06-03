@@ -38,6 +38,12 @@ export interface SourceConfig {
   /** @deprecated Use tls.skipVerify instead */
   tlsSkipVerify?: boolean;
   metrics?: MetricDefinition[];  // per-source metric definitions (overrides connector defaults)
+  /** Tenant this source belongs to. When set, only requests in that
+   *  tenant see / can target the source — cross-tenant access returns
+   *  the same not-found posture as the rest of the tenancy layer.
+   *  Unset = global source, available to every tenant (preserves
+   *  pre-E7 single-tenant behaviour as the default). */
+  tenant?: string;
 }
 
 export interface GeneralSettings {
