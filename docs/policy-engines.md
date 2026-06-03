@@ -136,6 +136,38 @@ admin_grants := [..., {"resource": "redaction", "action": "bypass"}]
 
 See [`docs/access-control.md`](access-control.md) for the full design.
 
+## Probing the live engine
+
+`GET /api/policy` (admin-gated, `users:delete`) reflects the active
+engine and supports a dry-run for ad-hoc verdict probes — useful for
+debugging "why doesn't my tenant-conditional Rego rule fire?".
+
+Snapshot:
+
+```bash
+curl -s -b "omcp_session=$ADMIN_COOKIE" "$URL/api/policy" | jq '{engine, tenantAware}'
+# { "engine": "opa:http://opa:8181", "tenantAware": true }
+```
+
+`tenantAware` reflects whether the active engine honours
+`session.tenant` on `.evaluate()`. The built-in / file-loaded engines
+ignore it (false); OPA threads it into the Rego input (true).
+
+Dry-run a single verdict — tenant defaults to the caller's session
+tenant, an explicit `?tenant=` override probes any tenant:
+
+```bash
+# As tenant Acme, what does the engine say about sources:delete for the admin role?
+curl -s -b "omcp_session=$ADMIN_COOKIE" \
+  "$URL/api/policy?roles=admin&resource=sources&action=delete&tenant=acme" | jq .
+# { "dryRun": { "roles": ["admin"], "resource": "sources", "action": "delete",
+#              "tenant": "acme", "allowed": true, "reason": "allowed by OPA" } }
+```
+
+If `tenantAware` is `false` and a Rego rule keyed on `input.tenant`
+isn't firing, the engine kind is the diagnostic — switch the gate
+plumbing to OPA mode.
+
 ## Troubleshooting
 
 ### "OPA decision pending (warming cache); request again"
