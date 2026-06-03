@@ -20,6 +20,12 @@
 const DEFAULT_LIMIT_PER_MIN = 60;
 const DEFAULT_WINDOW_MS = 60_000;
 
+/** Magic strings that explicitly disable the per-identity cap.
+ *  Matched case-insensitively. Operators picked any of these to
+ *  mean "no rate limit at all" — useful when the caps are enforced
+ *  upstream (envoy / API-gateway) and OMCP shouldn't double-count. */
+const UNLIMITED_TOKENS = new Set(["off", "none", "unlimited", "disabled", "false"]);
+
 /** Resolve `OMCP_TOOL_RATE_PER_MIN` (or any equivalent caller-supplied
  * string) into the per-identity cap used by the limiter and reported
  * by `/api/info` + `/api/usage`. Single source of truth, so the three
@@ -29,14 +35,21 @@ const DEFAULT_WINDOW_MS = 60_000;
  * - unset / empty / non-numeric → DEFAULT_LIMIT_PER_MIN (60)
  * - `"0"` → DEFAULT_LIMIT_PER_MIN (limit=0 would deny every request,
  *   which is almost never what an operator setting "0" wants — they
- *   either mean "default" or "disable"; we treat it as "default" and
- *   leave the explicit disable path on the roadmap)
+ *   either mean "default" or "disable"; this function maps it to the
+ *   default so they aren't accidentally locked out, and the explicit
+ *   disable path is one of the UNLIMITED_TOKENS instead)
+ * - `"off"` / `"none"` / `"unlimited"` / `"disabled"` / `"false"`
+ *   (case-insensitive) → Number.POSITIVE_INFINITY, which the
+ *   `count >= limit` comparison in check() always allows. JSON
+ *   serialisation renders Infinity as `null`; consumers can treat
+ *   a null limit as "uncapped".
  * - negative → DEFAULT_LIMIT_PER_MIN (limit=-1 with the current
  *   `count >= limit` check would also deny every request)
  * - any positive integer ≥ 1 → that value
  */
 export function resolveToolRatePerMin(raw: string | undefined): number {
   if (raw === undefined || raw === "") return DEFAULT_LIMIT_PER_MIN;
+  if (UNLIMITED_TOKENS.has(raw.trim().toLowerCase())) return Number.POSITIVE_INFINITY;
   const n = Number(raw);
   if (!Number.isFinite(n) || n < 1) return DEFAULT_LIMIT_PER_MIN;
   return Math.floor(n);
