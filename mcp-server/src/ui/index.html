@@ -1938,6 +1938,11 @@ curl -s http://localhost:3000/api/enterprise/status</pre>
         <div class="form-group"><label>CA Certificate Path</label><input type="text" id="src-tls-ca" placeholder="/path/to/ca.pem"><div class="form-hint">Custom CA for self-signed certs (safer than skip verify)</div></div>
         <div class="form-group"><label>Client Certificate Path</label><input type="text" id="src-tls-cert" placeholder="/path/to/client.pem"><div class="form-hint">For mutual TLS (mTLS)</div></div>
         <div class="form-group"><label>Client Key Path</label><input type="text" id="src-tls-key" placeholder="/path/to/client-key.pem"></div>
+        <div class="form-group">
+          <label for="src-tenant">Tenant <span class="t-sm" style="opacity:.6">(optional, admin-only)</span></label>
+          <input type="text" id="src-tenant" placeholder="(blank = global)" autocomplete="off">
+          <div class="form-hint">Tagged source is visible only inside its tenant. Blank = global (every tenant). Non-admins can only see / create within their own tenant.</div>
+        </div>
         <div class="form-group" style="display:flex;align-items:center;gap:10px;"><label style="margin:0">Enabled</label><label class="toggle"><input type="checkbox" id="src-enabled" checked><span class="slider"></span></label></div>
         <div class="test-result" id="test-result"></div>
       </div>
@@ -3546,8 +3551,17 @@ function renderSources() {
   let body;
   if(view==='table'){
     const h = (key, label) => `<th class="sortable ${sortIndClass(key)}" data-sort-key="${key}" onclick="setSrcSort('${key}')">${label}<span class="sort-ind"></span></th>`;
-    body=`<table class="dtable"><thead><tr>${h('name','Name')}${h('type','Type')}${h('signal','Signal')}${h('url','URL')}${h('status','Status')}${h('latency','Latency')}</tr></thead><tbody>`+
-      visible.map(s=>`<tr data-src="${esc(s.name)}"><td class="mono">${esc(s.name)}</td><td>${esc(s.type)}</td><td>${s.signalType?esc(s.signalType):'—'}</td><td class="mono t-muted">${esc(s.url)}</td><td>${!s.enabled?'disabled':s.status==='up'?'<span class="pill-yes">up</span>':'<span class="pill-no">down</span>'}</td><td class="mono">${s.latencyMs?s.latencyMs+'ms':'—'}</td></tr>`).join('')+
+    // Show the tenant column only when at least one source is
+    // tagged — single-tenant deployments stay uncluttered.
+    const anyTenant = visible.some(s => s.tenant);
+    const tenantHead = anyTenant ? h('tenant','Tenant') : '';
+    body=`<table class="dtable"><thead><tr>${h('name','Name')}${h('type','Type')}${h('signal','Signal')}${tenantHead}${h('url','URL')}${h('status','Status')}${h('latency','Latency')}</tr></thead><tbody>`+
+      visible.map(s=>{
+        const tenantCell = anyTenant
+          ? `<td>${s.tenant ? `<span class="badge">${esc(s.tenant)}</span>` : '<span class="t-muted">global</span>'}</td>`
+          : '';
+        return `<tr data-src="${esc(s.name)}"><td class="mono">${esc(s.name)}</td><td>${esc(s.type)}</td><td>${s.signalType?esc(s.signalType):'—'}</td>${tenantCell}<td class="mono t-muted">${esc(s.url)}</td><td>${!s.enabled?'disabled':s.status==='up'?'<span class="pill-yes">up</span>':'<span class="pill-no">down</span>'}</td><td class="mono">${s.latencyMs?s.latencyMs+'ms':'—'}</td></tr>`;
+      }).join('')+
       `</tbody></table>`;
   } else {
     body = visible.length === 0
@@ -3741,6 +3755,7 @@ function openAddModal() {
   document.getElementById('modal-title').textContent='Add Source'; document.getElementById('modal-mode').value='add';
   document.getElementById('modal-original-name').value=''; document.getElementById('src-name').value='';
   document.getElementById('src-url').value=''; document.getElementById('src-enabled').checked=true;
+  document.getElementById('src-tenant').value='';
   resetTlsFields();
   document.getElementById('src-name').disabled=false; resetAuthFields(); hideTestResult();
   setFieldError('src-name','src-name-err',null); setFieldError('src-url','src-url-err',null); clearSrcBanner();
@@ -3753,6 +3768,7 @@ function openEditModal(name) {
   document.getElementById('modal-original-name').value=name; document.getElementById('src-name').value=s.name;
   document.getElementById('src-name').disabled=true; document.getElementById('src-url').value=s.url;
   document.getElementById('src-enabled').checked=s.enabled; setTlsInForm(s.tls); setAuthInForm(s.auth); hideTestResult();
+  document.getElementById('src-tenant').value = s.tenant || '';
   setFieldError('src-name','src-name-err',null); setFieldError('src-url','src-url-err',null); clearSrcBanner();
   const sel=document.getElementById('src-type'); sel.innerHTML=supportedTypes.map(t=>`<option value="${t}" ${t===s.type?'selected':''}>${t}</option>`).join('');
   document.getElementById('source-modal').classList.add('open');
@@ -3814,6 +3830,8 @@ async function saveSource() {
   if (!okName || !okUrl) { showSrcBanner('error', 'Fix the highlighted fields and try again.'); return; }
   const mode=document.getElementById('modal-mode').value;
   const src={name:document.getElementById('src-name').value.trim(),type:document.getElementById('src-type').value,url:document.getElementById('src-url').value.trim(),enabled:document.getElementById('src-enabled').checked,auth:getAuthFromForm(),tls:getTlsFromForm()};
+  const tenant = document.getElementById('src-tenant').value.trim();
+  if (tenant) src.tenant = tenant;
   const btn=document.getElementById('save-btn'); btn.disabled=true; btn.textContent='Saving...';
   try {
     let res; if(mode==='add') res=await fetch('/api/sources',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(src)});
