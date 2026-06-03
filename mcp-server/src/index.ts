@@ -1986,9 +1986,19 @@ async function main() {
 
   // Get metrics for a source (active metrics or defaults)
   app.get("/api/sources/:name/metrics", (req, res) => {
-    const connector = registry.getByName(String(req.params.name));
+    const name = String(req.params.name);
+    const sess = (req as AuthedRequest).session;
+    const isAdmin = hasPermission(sess?.roles, "users", "delete");
+    const callerTenant = sess?.tenant || "default";
+    // Tenant-aware: getByNameForTenant returns undefined for both
+    // "doesn't exist" and "cross-tenant" — same no-leak posture as
+    // /api/sources GET/PUT/DELETE. Anonymous / admin keep the
+    // single-tenant behaviour by falling back to getByName.
+    const connector = (sess && !isAdmin)
+      ? registry.getByNameForTenant(name, callerTenant)
+      : registry.getByName(name);
     if (!connector) {
-      res.status(404).json({ error: `Source "${String(req.params.name)}" not found` });
+      res.status(404).json({ error: `Source "${name}" not found` });
       return;
     }
     res.json({
@@ -1997,11 +2007,15 @@ async function main() {
     });
   });
 
-  // Update metrics for a source
+  // Update metrics for a source — tenant-aware mutation.
   app.put("/api/sources/:name/metrics", need("sources","write"), audit("sources","write"), async (req, res) => {
     const name = String(req.params.name);
     const sourceIdx = config.sources.findIndex((s) => s.name === name);
-    if (sourceIdx === -1) {
+    const sess = (req as AuthedRequest).session;
+    const isAdmin = hasPermission(sess?.roles, "users", "delete");
+    const callerTenant = sess?.tenant || "default";
+    const src = sourceIdx >= 0 ? config.sources[sourceIdx] : undefined;
+    if (!src || (!isAdmin && src.tenant && src.tenant !== callerTenant)) {
       res.status(404).json({ error: `Source "${name}" not found` });
       return;
     }
@@ -2012,11 +2026,15 @@ async function main() {
     res.json({ ok: true });
   });
 
-  // Reset a source's metrics to connector defaults
+  // Reset a source's metrics to connector defaults — tenant-aware.
   app.delete("/api/sources/:name/metrics", need("sources","write"), audit("sources","write"), async (req, res) => {
     const name = String(req.params.name);
     const sourceIdx = config.sources.findIndex((s) => s.name === name);
-    if (sourceIdx === -1) {
+    const sess = (req as AuthedRequest).session;
+    const isAdmin = hasPermission(sess?.roles, "users", "delete");
+    const callerTenant = sess?.tenant || "default";
+    const src = sourceIdx >= 0 ? config.sources[sourceIdx] : undefined;
+    if (!src || (!isAdmin && src.tenant && src.tenant !== callerTenant)) {
       res.status(404).json({ error: `Source "${name}" not found` });
       return;
     }
