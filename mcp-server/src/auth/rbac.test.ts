@@ -142,3 +142,72 @@ test("DEFAULT_POLICY shape — has the three built-in roles", () => {
   assert.ok(DEFAULT_POLICY.operator);
   assert.ok(DEFAULT_POLICY.admin);
 });
+
+import { buildRequirePermissionFromEngine } from "./rbac.js";
+import { BuiltinPolicyEngine } from "./policy/engine.js";
+import type { EvalContext, EvalResult } from "./policy/engine.js";
+import type { Resource, Action } from "./rbac.js";
+
+test("buildRequirePermissionFromEngine — anonymous always allows (no-op middleware)", () => {
+  const engine = new BuiltinPolicyEngine(DEFAULT_POLICY);
+  const mw = buildRequirePermissionFromEngine({ mode: "anonymous" } as AuthRuntime, "sources", "write", engine);
+  const res = mkRes() as ReturnType<typeof mkRes>;
+  let called = false;
+  mw(mkReq(), res as unknown as import("express").Response, () => { called = true; });
+  assert.equal(called, true);
+  assert.equal(res.statusCode, 0);
+});
+
+test("buildRequirePermissionFromEngine — engine.evaluate verdict is surfaced verbatim in the 403 body", () => {
+  // Spy engine returns a custom reason so we can prove the gate forwards it.
+  const engine = {
+    evaluate: () => ({ allowed: false, reason: "test deny reason from engine" } as EvalResult),
+    list: () => [],
+    roles: () => [],
+    kind: () => "test",
+  };
+  const runtime = { mode: "basic", session: { secret: "x".repeat(48) } } as AuthRuntime;
+  const mw = buildRequirePermissionFromEngine(runtime, "sources", "write", engine);
+  const res = mkRes() as ReturnType<typeof mkRes>;
+  mw(mkReq(["viewer"]), res as unknown as import("express").Response, () => undefined);
+  assert.equal(res.statusCode, 403);
+  const body = res.body as Record<string, unknown>;
+  assert.equal(body.code, "OMCP_PERMISSION_DENIED");
+  assert.equal(body.reason, "test deny reason from engine");
+});
+
+test("buildRequirePermissionFromEngine — passes session.tenant into engine.evaluate's EvalContext (load-bearing for OPA tenant rules)", () => {
+  // This is the property the OPA-input-tenant refine relies on:
+  // the gate MUST pass session.tenant to engine.evaluate so a Rego
+  // rule like `allow { input.tenant == "acme" }` can fire. Capture
+  // the ctx and assert it carries the tenant verbatim.
+  let seenCtx: EvalContext | undefined;
+  const engine = {
+    evaluate: (_roles: string[] | undefined, _r: Resource, _a: Action, ctx?: EvalContext) => {
+      seenCtx = ctx;
+      return { allowed: true, reason: "ok" } as EvalResult;
+    },
+    list: () => [],
+    roles: () => [],
+    kind: () => "spy",
+  };
+  const runtime = { mode: "basic", session: { secret: "x".repeat(48) } } as AuthRuntime;
+  const mw = buildRequirePermissionFromEngine(runtime, "sources", "read", engine);
+  const res = mkRes() as ReturnType<typeof mkRes>;
+  const req = {
+    session: { sub: "u", name: "u", roles: ["viewer"], tenant: "acme", iat: 0, exp: Date.now() / 1000 + 60 },
+  } as AuthedRequest;
+  mw(req, res as unknown as import("express").Response, () => undefined);
+  assert.equal(seenCtx?.tenant, "acme", "tenant from session must flow into engine.evaluate ctx");
+});
+
+test("buildRequirePermissionFromEngine — sessionless basic-mode request denies via engine (roles undefined → no permission)", () => {
+  const engine = new BuiltinPolicyEngine(DEFAULT_POLICY);
+  const runtime = { mode: "basic", session: { secret: "x".repeat(48) } } as AuthRuntime;
+  const mw = buildRequirePermissionFromEngine(runtime, "sources", "read", engine);
+  const res = mkRes() as ReturnType<typeof mkRes>;
+  let called = false;
+  mw(mkReq(), res as unknown as import("express").Response, () => { called = true; });
+  assert.equal(called, false);
+  assert.equal(res.statusCode, 403);
+});

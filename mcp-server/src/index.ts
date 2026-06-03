@@ -48,6 +48,7 @@ import {
 } from "./auth/middleware.js";
 import {
   buildRequirePermission,
+  buildRequirePermissionFromEngine,
   hasPermission,
   listGrantedPermissions,
   DEFAULT_POLICY,
@@ -865,8 +866,13 @@ async function main() {
     }
   }
 
+  // Use the engine-aware variant so tenant (session.tenant) flows into
+  // engine.evaluate() — required for tenant-conditional Rego rules
+  // (`input.tenant == "acme"` etc.) under OMCP_OPA_URL. Built-in /
+  // file-loaded engines ignore the tenant ctx, so the behaviour is
+  // unchanged for those deployments.
   const need = (resource: Resource, action: Action) =>
-    buildRequirePermission(authRuntime, resource, action, policyEngineToMap(policyEngine));
+    buildRequirePermissionFromEngine(authRuntime, resource, action, policyEngine);
 
   // Management-plane audit log. Records one entry per mutating /api/*
   // request. Writes JSONL to disk when OMCP_MGMT_AUDIT_FILE is set;

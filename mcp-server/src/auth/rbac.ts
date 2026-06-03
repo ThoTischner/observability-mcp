@@ -18,6 +18,7 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 
 import type { AuthedRequest, AuthRuntime } from "./middleware.js";
+import type { PolicyEngine } from "./policy/engine.js";
 
 export type Action = "read" | "write" | "delete" | "bypass";
 export type Resource =
@@ -38,7 +39,11 @@ export interface Permission {
   action: Action;
 }
 
-/** Built-in default policy. Operators can replace this via OMCP_RBAC_POLICY in a follow-up. */
+/** Built-in default policy. Operators replace this via OMCP_RBAC_POLICY_FILE
+ *  (YAML/JSON file → BuiltinPolicyEngine) or OMCP_OPA_URL (external
+ *  OPA → OpaPolicyEngine). The gate consumes whichever via
+ *  `buildRequirePermissionFromEngine` so tenant-conditional Rego
+ *  rules can fire. */
 export const DEFAULT_POLICY: Record<string, Permission[]> = {
   viewer: [
     { resource: "sources", action: "read" },
@@ -128,6 +133,50 @@ export function buildRequirePermission(
       code: "OMCP_PERMISSION_DENIED",
       required: { resource, action },
       have: roles ?? [],
+    });
+  };
+}
+
+/**
+ * Engine-aware variant of `buildRequirePermission`. Prefer this when an
+ * external policy engine (OPA, custom Rego) is in play — the legacy
+ * `(roles, resource, action) → boolean` map cannot carry the active
+ * tenant, so a Rego rule like `allow { input.tenant == "acme" }` can
+ * never fire if you go through the map. This variant calls
+ * `engine.evaluate(roles, resource, action, { tenant: session.tenant })`
+ * so tenant-conditional rules see the input they need.
+ *
+ * Anonymous mode stays a no-op — same as the map variant.
+ *
+ * Performance: `evaluate` is sync by contract. OPA hits its cache; on
+ * first miss it returns a conservative deny and warms in the
+ * background — the second request inside the TTL gets the real
+ * verdict. Documented in opa.ts.
+ */
+export function buildRequirePermissionFromEngine(
+  runtime: AuthRuntime,
+  resource: Resource,
+  action: Action,
+  engine: PolicyEngine,
+): RequestHandler {
+  if (runtime.mode === "anonymous") {
+    return function rbacNoop(_req: Request, _res: Response, next: NextFunction): void {
+      next();
+    };
+  }
+  return function rbacGateEngine(req: Request, res: Response, next: NextFunction): void {
+    const sess = (req as AuthedRequest).session;
+    const verdict = engine.evaluate(sess?.roles, resource, action, { tenant: sess?.tenant });
+    if (verdict.allowed) {
+      next();
+      return;
+    }
+    res.status(403).json({
+      error: "permission denied",
+      code: "OMCP_PERMISSION_DENIED",
+      required: { resource, action },
+      have: sess?.roles ?? [],
+      reason: verdict.reason,
     });
   };
 }
