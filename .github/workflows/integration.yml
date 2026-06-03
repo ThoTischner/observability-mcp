@@ -188,9 +188,13 @@ jobs:
             -H "Content-Type: application/json" \
             -H "Accept: application/json, text/event-stream" \
             -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' -o "$tools_body"
-          echo "--- bound tools/list ---"; cat "$tools_body"
+          echo "--- bound tools/list (raw, may be SSE-framed) ---"; cat "$tools_body"
 
-          names=$(jq -r '.result.tools[].name' < "$tools_body" | sort | tr '\n' ' ' | sed 's/ $//')
+          # The /mcp Streamable HTTP transport returns SSE-framed JSON
+          # when Accept includes text/event-stream. Strip the
+          # `data: ` envelope before jq.
+          json=$(grep -E '^(data: )?\{' "$tools_body" | head -1 | sed -E 's/^data: //')
+          names=$(echo "$json" | jq -r '.result.tools[].name' | sort | tr '\n' ' ' | sed 's/ $//')
           expected='list_sources query_metrics'
           if [ "$names" != "$expected" ]; then
             echo "FAIL: tools/list did not match the bound Product."
@@ -199,9 +203,9 @@ jobs:
             exit 1
           fi
 
-          # Negative control: a bound tool that IS NOT in the Product
-          # (e.g. get_topology) must NOT appear.
-          if echo "$names" | grep -q "get_topology"; then
+          # Negative control: a registered tool that is NOT in the
+          # Product's allow-list (e.g. get_topology) must NOT appear.
+          if echo "$names" | tr ' ' '\n' | grep -qx "get_topology"; then
             echo "FAIL: tools/list leaked a tool NOT in the Product's allow-list"
             exit 1
           fi
