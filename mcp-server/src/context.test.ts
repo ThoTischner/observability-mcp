@@ -41,3 +41,30 @@ test("defaultContext — no allowedTools (anonymous sees every tool, back-compat
   assert.equal(ctx.allowedTools, undefined);
   assert.equal(allowsTool(ctx.allowedTools, "any_tool"), true);
 });
+
+import { sessionContext } from "./context.js";
+
+test("sessionContext — undefined session → defaultContext shape (anonymous, default tenant)", () => {
+  const ctx = sessionContext(undefined);
+  assert.equal(ctx.auth, "anonymous");
+  assert.equal(ctx.tenant, "default");
+  assert.equal(ctx.principalId, "anonymous");
+});
+
+test("sessionContext — session.tenant flows into ctx.tenant (the load-bearing property for /api/services + /api/health)", () => {
+  const ctx = sessionContext({ sub: "alice", name: "Alice", tenant: "acme" });
+  assert.equal(ctx.tenant, "acme");
+  assert.equal(ctx.principalId, "alice");
+  assert.equal(ctx.auth, "apikey");
+});
+
+test("sessionContext — falls back to session.name when sub absent", () => {
+  const ctx = sessionContext({ name: "operator-bot", tenant: "bigco" });
+  assert.equal(ctx.principalId, "operator-bot");
+});
+
+test("sessionContext — sessionless tenant inherits DEFAULT (no leak from a previous tenant'd request)", () => {
+  // Belt-and-suspenders: explicit empty tenant string normalises to default.
+  const ctx = sessionContext({ sub: "u", tenant: "" });
+  assert.equal(ctx.tenant, "default");
+});

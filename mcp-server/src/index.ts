@@ -9,7 +9,7 @@ import { z } from "zod";
 import { loadConfig, saveConfig, DEFAULT_HEALTH_THRESHOLDS, DEFAULT_SETTINGS } from "./config/loader.js";
 import { ConnectorRegistry, getSupportedTypes } from "./connectors/registry.js";
 import { isTopologyProvider } from "./connectors/interface.js";
-import { defaultContext, principalContext, allowsTool, type RequestContext } from "./context.js";
+import { defaultContext, principalContext, sessionContext, allowsTool, type RequestContext } from "./context.js";
 import {
   enforceEntitledAccess,
   enterpriseGateStatus,
@@ -1680,7 +1680,10 @@ async function main() {
     try {
       const sess = (req as AuthedRequest).session;
       const callerTenant = sess?.tenant || "default";
-      const result = await listServicesHandler(registry, {}, defaultContext());
+      // sessionContext threads the caller's tenant into the handler so
+      // PR #331's per-tenant connector scoping fires for the dashboard
+      // surface too (was previously bypassed with defaultContext()).
+      const result = await listServicesHandler(registry, {}, sessionContext(sess));
       const parsed = parseToolResult(result) as { services?: Array<Record<string, unknown> & { name?: string }> };
       // Tenant-scope catalog enrichment so a viewer in tenant A
       // doesn't accidentally see acme's owner/SLO metadata on a
@@ -1842,9 +1845,10 @@ async function main() {
   // Health endpoint for UI dashboard
   app.get("/api/health/:service", async (req, res) => {
     try {
-      const callerTenant = (req as AuthedRequest).session?.tenant || "default";
+      const sess = (req as AuthedRequest).session;
+      const callerTenant = sess?.tenant || "default";
       const service = String(req.params.service);
-      const result = await getServiceHealthHandler(registry, { service }, defaultContext());
+      const result = await getServiceHealthHandler(registry, { service }, sessionContext(sess));
       const parsed = parseToolResult(result) as Record<string, unknown>;
       const entry = catalog.get(service, callerTenant);
       if (entry && parsed && typeof parsed === "object") parsed.catalog = entry;
@@ -1857,14 +1861,16 @@ async function main() {
   // Health for all services
   app.get("/api/health", async (req, res) => {
     try {
-      const callerTenant = (req as AuthedRequest).session?.tenant || "default";
-      const servicesResult = await listServicesHandler(registry, {}, defaultContext());
+      const sess = (req as AuthedRequest).session;
+      const callerTenant = sess?.tenant || "default";
+      const ctx = sessionContext(sess);
+      const servicesResult = await listServicesHandler(registry, {}, ctx);
       const parsed = parseToolResult(servicesResult) as { services?: Array<{ name: string }> };
       const services = parsed?.services || [];
       const health: Record<string, unknown> = {};
       for (const svc of services) {
         try {
-          const result = await getServiceHealthHandler(registry, { service: svc.name }, defaultContext());
+          const result = await getServiceHealthHandler(registry, { service: svc.name }, ctx);
           const h = parseToolResult(result) as Record<string, unknown>;
           // Same tenant scoping as /api/services to avoid the
           // dashboard cross-tenant catalog leak the reviewer
@@ -1884,8 +1890,10 @@ async function main() {
   // Returns the union of topology snapshots across all topology-capable
   // connectors (today only "kubernetes"). One JSON document so the UI can
   // render summary + grouped views without N round-trips.
-  app.get("/api/topology", async (_req, res) => {
+  app.get("/api/topology", async (req, res) => {
     try {
+      const sess = (req as AuthedRequest).session;
+      const callerTenant = sess?.tenant || "default";
       const sources: Array<{
         source: string;
         type: string;
@@ -1895,7 +1903,11 @@ async function main() {
       }> = [];
       const allResources = [];
       const allEdges = [];
-      for (const c of registry.getAll()) {
+      // Tenant-scoped: non-anonymous callers only see topology from
+      // connectors their tenant can reach. Anonymous mode keeps the
+      // global view (single-tenant default).
+      const connectors = sess ? registry.getByTenant(callerTenant) : registry.getAll();
+      for (const c of connectors) {
         if (!isTopologyProvider(c)) continue;
         const snap = await c.getTopologySnapshot();
         sources.push({

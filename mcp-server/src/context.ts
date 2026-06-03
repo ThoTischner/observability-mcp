@@ -68,6 +68,24 @@ export function principalContext(
   };
 }
 
+/** Context for an authenticated management-plane (browser / OIDC /
+ *  basic-auth) request. The session-derived tenant flows into tool
+ *  handlers exactly like the MCP-credential path, so a viewer in
+ *  tenant Acme reading /api/services through the dashboard sees the
+ *  same service set as an /mcp client bound to Acme. Anonymous mode
+ *  (no session) → behaves like defaultContext(). */
+export function sessionContext(
+  session: { sub?: string; name?: string; tenant?: string } | undefined,
+): RequestContext {
+  if (!session) return defaultContext();
+  return {
+    principalId: session.sub || session.name || "anonymous",
+    auth: "apikey",
+    tenant: normaliseTenant(session.tenant),
+    correlationId: randomUUID(),
+  };
+}
+
 /** Decide whether a given tool name is accessible under the active
  *  Product binding. Pure helper so the registration site stays
  *  declarative and the filtering policy is unit-testable in isolation.
