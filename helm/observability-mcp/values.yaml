@@ -52,6 +52,15 @@ sources:
   #       type: loki
   #       url: http://loki.logging.svc.cluster.local:3100
   #       enabled: true
+  #     # Optional per-tenant source — visible only to callers in
+  #     # tenant "acme" (resolved from the OIDC tenant claim or
+  #     # OMCP_KEY_TENANTS). Untagged sources stay global. See
+  #     # docs/tenancy.md.
+  #     - name: acme-loki
+  #       type: loki
+  #       url: http://loki.acme.svc.cluster.local:3100
+  #       enabled: true
+  #       tenant: acme
   config: ""
   # Alternative: comma-separated URLs as env vars (handled by the server).
   prometheusUrl: ""

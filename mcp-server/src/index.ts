@@ -950,11 +950,30 @@ async function main() {
 
   // --- API endpoints for Web UI ---
 
-  // List sources with health status
-  app.get("/api/sources", async (_req, res) => {
+  // List sources with health status — tenant-scoped.
+  // Non-admin callers see only their own tenant's sources + globals
+  // (untagged). Admins (users:delete) see everything, with optional
+  // ?tenant=acme drill-down. Anonymous mode (no session) sees
+  // everything — preserves single-tenant default. The `tenant` field
+  // is included on every entry so the UI can render scope badges.
+  app.get("/api/sources", async (req, res) => {
+    const sess = (req as AuthedRequest).session;
+    const isAdmin = hasPermission(sess?.roles, "users", "delete");
+    const callerTenant = sess?.tenant || "default";
+    const requestedTenant = qstr(req.query.tenant);
     const health = await registry.healthCheckAll();
     const configs = registry.getSourceConfigs();
-    const sources = configs.map((c) => {
+    const filtered = configs.filter((c) => {
+      // Anonymous: every source.
+      if (!sess) return true;
+      // Admin with ?tenant=X drill-down: untagged + that tenant.
+      if (isAdmin && requestedTenant) return !c.tenant || c.tenant === requestedTenant;
+      // Admin no filter: every source (cross-tenant view).
+      if (isAdmin) return true;
+      // Non-admin: own tenant + untagged.
+      return !c.tenant || c.tenant === callerTenant;
+    });
+    const sources = filtered.map((c) => {
       const connector = registry.getByName(c.name);
       return {
         name: c.name,
@@ -963,6 +982,7 @@ async function main() {
         enabled: c.enabled,
         auth: c.auth ? { type: c.auth.type } : undefined,
         tls: c.tls || undefined,
+        tenant: c.tenant,
         signalType: connector?.signalType || null,
         status: health[c.name]?.status || (c.enabled ? "down" : "disabled"),
         latencyMs: health[c.name]?.latencyMs || null,
@@ -1514,32 +1534,54 @@ async function main() {
     },
   );
 
-  // Add a new source
+  // Add a new source — tenant-aware. Non-admins can only create
+  // sources in their own tenant; admins may set any tenant or leave
+  // unset (global). Untagged inputs default to undefined (global) for
+  // admins and to the caller's own tenant for non-admins, so a
+  // tenant-bound user can't accidentally pollute the global pool.
   app.post("/api/sources", installRateLimit, need("sources","write"), audit("sources","write"), async (req, res) => {
-    const { name, type, url, enabled, auth, tls } = req.body;
+    const { name, type, url, enabled, auth, tls, tenant: bodyTenant } = req.body;
     if (!name || !type || !url) {
       res.status(400).json({ error: "name, type, and url are required" });
       return;
     }
     const urlErr = validateSourceUrl(url);
     if (urlErr) { res.status(400).json({ error: urlErr }); return; }
+    const sess = (req as AuthedRequest).session;
+    const isAdmin = hasPermission(sess?.roles, "users", "delete");
+    const callerTenant = sess?.tenant || "default";
+    const resolvedTenant: string | undefined = isAdmin
+      ? (typeof bodyTenant === "string" && bodyTenant ? bodyTenant : undefined)
+      : (typeof bodyTenant === "string" && bodyTenant && bodyTenant !== callerTenant
+          ? "__deny__"
+          : callerTenant);
+    if (resolvedTenant === "__deny__") {
+      res.status(403).json({ error: "cannot create source in another tenant" });
+      return;
+    }
     const existing = registry.getSourceConfigs().find((s) => s.name === name);
     if (existing) {
       res.status(409).json({ error: `Source "${name}" already exists` });
       return;
     }
-    const source = { name, type, url, enabled: enabled !== false, auth, tls };
+    const source = { name, type, url, enabled: enabled !== false, auth, tls, tenant: resolvedTenant };
     await registry.addSource(source);
     saveConfig(config = { ...config, sources: registry.getSourceConfigs() });
     res.status(201).json({ ok: true, source });
   });
 
-  // Update an existing source
+  // Update an existing source — tenant-aware. Non-admins editing a
+  // cross-tenant source get the same 404 they'd get for "no such
+  // source" (no existence leak). Admins may move a source between
+  // tenants by setting body.tenant; non-admins cannot.
   app.put("/api/sources/:name", need("sources","write"), audit("sources","write"), async (req, res) => {
     const oldName = String(req.params.name);
-    const { name, type, url, enabled, auth, tls } = req.body;
+    const { name, type, url, enabled, auth, tls, tenant: bodyTenant } = req.body;
     const existing = registry.getSourceConfigs().find((s) => s.name === oldName);
-    if (!existing) {
+    const sess = (req as AuthedRequest).session;
+    const isAdmin = hasPermission(sess?.roles, "users", "delete");
+    const callerTenant = sess?.tenant || "default";
+    if (!existing || (!isAdmin && existing.tenant && existing.tenant !== callerTenant)) {
       res.status(404).json({ error: `Source "${oldName}" not found` });
       return;
     }
@@ -1548,6 +1590,18 @@ async function main() {
       const urlErr = validateSourceUrl(newUrl);
       if (urlErr) { res.status(400).json({ error: urlErr }); return; }
     }
+    let nextTenant = existing.tenant;
+    if (bodyTenant !== undefined) {
+      if (!isAdmin) {
+        // Non-admin attempting tenant reassignment — disallow.
+        if (bodyTenant !== existing.tenant) {
+          res.status(403).json({ error: "cannot change source tenant" });
+          return;
+        }
+      } else {
+        nextTenant = typeof bodyTenant === "string" && bodyTenant ? bodyTenant : undefined;
+      }
+    }
     const source = {
       name: name || oldName,
       type: type || existing.type,
@@ -1555,17 +1609,21 @@ async function main() {
       enabled: enabled !== undefined ? enabled : existing.enabled,
       auth: auth !== undefined ? auth : existing.auth,
       tls: tls !== undefined ? tls : existing.tls,
+      tenant: nextTenant,
     };
     await registry.updateSource(oldName, source);
     saveConfig(config = { ...config, sources: registry.getSourceConfigs() });
     res.json({ ok: true, source });
   });
 
-  // Delete a source
+  // Delete a source — same cross-tenant 404 posture.
   app.delete("/api/sources/:name", need("sources","delete"), audit("sources","delete"), async (req, res) => {
     const name = String(req.params.name);
     const existing = registry.getSourceConfigs().find((s) => s.name === name);
-    if (!existing) {
+    const sess = (req as AuthedRequest).session;
+    const isAdmin = hasPermission(sess?.roles, "users", "delete");
+    const callerTenant = sess?.tenant || "default";
+    if (!existing || (!isAdmin && existing.tenant && existing.tenant !== callerTenant)) {
       res.status(404).json({ error: `Source "${name}" not found` });
       return;
     }
@@ -1598,7 +1656,10 @@ async function main() {
   app.patch("/api/sources/:name/toggle", need("sources","write"), audit("sources","write"), async (req, res) => {
     const name = String(req.params.name);
     const existing = registry.getSourceConfigs().find((s) => s.name === name);
-    if (!existing) {
+    const sess = (req as AuthedRequest).session;
+    const isAdmin = hasPermission(sess?.roles, "users", "delete");
+    const callerTenant = sess?.tenant || "default";
+    if (!existing || (!isAdmin && existing.tenant && existing.tenant !== callerTenant)) {
       res.status(404).json({ error: `Source "${name}" not found` });
       return;
     }
