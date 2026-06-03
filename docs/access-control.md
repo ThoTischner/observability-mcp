@@ -159,8 +159,11 @@ The `/mcp` HTTP transport carries one per-identity sliding window:
 `OMCP_TOOL_RATE_PER_MIN` overrides — accepts any positive integer;
 unset / empty / non-numeric / `0` / negative all fall back to the
 default 60 (so an operator setting `0` to mean "disable" doesn't
-accidentally lock every caller out). The explicit-disable path is
-on the roadmap. Anonymous `/mcp` traffic (no `OMCP_API_KEYS`) is
+accidentally lock every caller out). To truly disable the per-identity
+cap — e.g. when an upstream gateway already enforces quotas —
+set it to `off`, `none`, `unlimited`, `disabled`, or `false`
+(case-insensitive). In that mode `/api/usage` reports `limit: null`
+for every identity. Anonymous `/mcp` traffic (no `OMCP_API_KEYS`) is
 unaffected; the existing IP-level express-rate-limit still applies.
 
 Every `/mcp` response carries the live bucket state in headers so a

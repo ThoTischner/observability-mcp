@@ -4,15 +4,13 @@ The observability-mcp server can optionally require a logged-in user before
 serving any `/api/*` management endpoint or the Web UI. This is **off by
 default** — single-user demos / local development behave exactly as before.
 
-Two modes ship today:
+Three modes ship today:
 
 | `OMCP_AUTH` value | Behaviour |
 |---|---|
 | unset / `anonymous` (default) | Every `/api/*` request is accepted. The UI shows no login screen. |
-| `basic` | A signed cookie session is required. The UI shows a login modal on first 401. |
-
-A third mode (`oidc`) is on the roadmap and will plug into the same session
-machinery without changing the UI experience.
+| `basic` | A signed cookie session is required. Local users live in `OMCP_USERS_FILE`; the UI shows a login modal on first 401. |
+| `oidc` | A signed cookie session is required, but the credential exchange goes through an external IdP (Keycloak, Auth0, Authentik, generic OIDC) via PKCE. Same session machinery as `basic`. See [auth-oidc.md](auth-oidc.md). |
 
 > The `/mcp` Streamable HTTP transport keeps using **bearer tokens** through
 > the existing `OMCP_API_KEYS` mechanism (see [auth-and-tls.md](auth-and-tls.md)).

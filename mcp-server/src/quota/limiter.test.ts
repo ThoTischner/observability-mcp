@@ -130,3 +130,32 @@ test("default limit applies when constructed with no args", () => {
   }
   assert.equal(lim.check("alice", t + 60).allowed, false);
 });
+
+test("resolveToolRatePerMin — explicit-disable tokens map to Infinity (any case, with whitespace)", () => {
+  for (const tok of ["off", "OFF", "Off", "none", "NONE", "unlimited", "UNLIMITED", "disabled", "false", "  off  "]) {
+    assert.equal(resolveToolRatePerMin(tok), Number.POSITIVE_INFINITY, `'${tok}' should disable the limiter`);
+  }
+});
+
+test("IdentityRateLimiter — limit=Infinity always allows (the explicit-disable contract)", () => {
+  const lim = new IdentityRateLimiter({ limit: Number.POSITIVE_INFINITY });
+  const t = 1_700_000_000_000;
+  // Burst far past the default cap; every call must allow.
+  for (let i = 0; i < 1000; i++) {
+    const r = lim.check("alice", t + i);
+    assert.equal(r.allowed, true);
+    assert.equal(r.retryAfterSeconds, 0);
+    // Limit reflects the configured Infinity — JSON serialisation
+    // would render this as null; callers can branch on Number.isFinite.
+    assert.equal(r.limit, Number.POSITIVE_INFINITY);
+  }
+});
+
+test("resolveToolRatePerMin — disable tokens are NOT a number trap (\"infinity\" alone is not a token)", () => {
+  // We deliberately do NOT accept the literal string "infinity"
+  // because Number("Infinity") === Infinity — operators expect
+  // OMCP_TOOL_RATE_PER_MIN=Infinity to error out, not silently
+  // mean "unlimited". The explicit tokens are off/none/unlimited/
+  // disabled/false. (Number.isFinite is what the resolver checks.)
+  assert.equal(resolveToolRatePerMin("Infinity"), 60, "literal 'Infinity' must NOT secretly enable unlimited mode");
+});
