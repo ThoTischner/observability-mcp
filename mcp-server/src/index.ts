@@ -1072,9 +1072,18 @@ async function main() {
   // to non-admin sessions.
   app.get("/api/policy", need("users", "delete"), (req, res) => {
     const map = policyEngineToMap(policyEngine);
-    // Optional dry-run: ?roles=admin,operator&resource=sources&action=delete
+    // The OPA engine's kind() is prefixed `opa:` (see opa.ts:198).
+    // Surface a `tenantAware` boolean so operators can confirm at a
+    // glance whether the active engine honours session.tenant in
+    // .evaluate() — the BuiltinPolicyEngine ignores tenant ctx; OPA
+    // threads it into the Rego input. This is the property required
+    // for `allow { input.tenant == "acme" }` rules to actually fire.
+    const tenantAware = policyEngine.kind().startsWith("opa:");
+    // Optional dry-run: ?roles=admin,operator&resource=sources&action=delete[&tenant=acme]
     // returns { allowed, reason } so operators can probe the active
-    // engine without writing tests against a checkout.
+    // engine without writing tests against a checkout. Tenant defaults
+    // to the caller's session tenant; an admin can override via the
+    // ?tenant= query string to probe verdicts for any tenant.
     const q = req.query as Record<string, string | undefined>;
     if (q.resource && q.action) {
       const dryRoles = typeof q.roles === "string" ? q.roles.split(",").map((r) => r.trim()).filter(Boolean) : undefined;
@@ -1089,12 +1098,35 @@ async function main() {
         res.json({ dryRun: { roles: dryRoles ?? [], resource: q.resource, action: q.action, allowed: false, reason: `unknown action '${q.action}' (valid: ${[...VALID_ACTIONS].join(", ")})` } });
         return;
       }
-      const result = policyEngine.evaluate(dryRoles, q.resource as Resource, q.action as Action);
-      res.json({ dryRun: { roles: dryRoles ?? [], resource: q.resource, action: q.action, ...result } });
+      const callerSess = (req as AuthedRequest).session;
+      // Tenant resolution: explicit ?tenant= override wins, else the
+      // caller's session tenant. The probe runs at users:delete (admin),
+      // so a cross-tenant override is intentional — exactly how an
+      // operator debugs "why doesn't my tenant-conditional Rego rule
+      // fire for tenant Acme?".
+      const probeTenant = typeof q.tenant === "string" && q.tenant
+        ? q.tenant.trim()
+        : callerSess?.tenant;
+      const result = policyEngine.evaluate(
+        dryRoles,
+        q.resource as Resource,
+        q.action as Action,
+        probeTenant ? { tenant: probeTenant } : undefined,
+      );
+      res.json({
+        dryRun: {
+          roles: dryRoles ?? [],
+          resource: q.resource,
+          action: q.action,
+          tenant: probeTenant,
+          ...result,
+        },
+      });
       return;
     }
     res.json({
       engine: policyEngine.kind(),
+      tenantAware,
       policy: map,
       roles: policyEngine.roles(),
       note: policyEngine.kind() === "builtin"
