@@ -67,7 +67,7 @@ import { buildBypassBreadcrumb, buildBypassAuditParams } from "./audit/redaction
 import { readCatalogFile, CatalogStore } from "./catalog/loader.js";
 import { readProductsFile, ProductsStore, validateProduct, writeProductsFile, ProductsLoadError } from "./products/loader.js";
 import { redactValue } from "./policy/redact.js";
-import { IdentityRateLimiter, resolveToolRatePerMin } from "./quota/limiter.js";
+import { IdentityRateLimiter, resolveToolRatePerMin, parseKeyRateLimits } from "./quota/limiter.js";
 import { TokenBudget, estimateTokensFor, resolveDailyTokenLimit } from "./quota/token-budget.js";
 import { applyBudgetDecision } from "./quota/charge.js";
 import { getPluginLoader } from "./connectors/loader.js";
@@ -1972,8 +1972,22 @@ async function main() {
   // 429 with a Retry-After. Anonymous /mcp traffic (no OMCP_API_KEYS
   // configured) bypasses this — the global express-rate-limit IP gate
   // still applies. Override via OMCP_TOOL_RATE_PER_MIN.
+  // Per-credential cap overrides: OMCP_KEY_RATE_PER_MIN="agent=600;ci=240"
+  // wins over the global OMCP_TOOL_RATE_PER_MIN for the named credentials.
+  // The bucket identity is "<tenant> <credName>"; the override map keys on
+  // credName, so the lookup pulls the cred-name back out of the composite.
+  const keyRateLimits = parseKeyRateLimits(process.env.OMCP_KEY_RATE_PER_MIN);
   const toolRateLimiter = new IdentityRateLimiter({
     limit: resolveToolRatePerMin(process.env.OMCP_TOOL_RATE_PER_MIN),
+    limitFor: keyRateLimits.size === 0 ? undefined : (identity: string) => {
+      // Composite identity is "<tenant> <credName>" — split on the
+      // single space that gateCtx put there (NUL would be safer but
+      // would break existing /api/usage actor labels; cred names are
+      // operator-set and don't contain spaces in practice).
+      const sp = identity.indexOf(" ");
+      const credName = sp >= 0 ? identity.slice(sp + 1) : identity;
+      return keyRateLimits.get(credName);
+    },
   });
   // Per-identity tracker key. Composes tenant + principalId so two
   // credentials of the same name in different tenants don't share

@@ -159,3 +159,69 @@ test("resolveToolRatePerMin — disable tokens are NOT a number trap (\"infinity
   // disabled/false. (Number.isFinite is what the resolver checks.)
   assert.equal(resolveToolRatePerMin("Infinity"), 60, "literal 'Infinity' must NOT secretly enable unlimited mode");
 });
+
+import { parseKeyRateLimits } from "./limiter.js";
+
+test("parseKeyRateLimits — parses name=count pairs, skips malformed entries", () => {
+  const m = parseKeyRateLimits("agent=600;ci=240;bad;empty=;negative=-1;zero=0;notnum=abc");
+  assert.equal(m.get("agent"), 600);
+  assert.equal(m.get("ci"), 240);
+  assert.equal(m.get("bad"), undefined);
+  assert.equal(m.get("empty"), undefined);
+  assert.equal(m.get("negative"), undefined);
+  assert.equal(m.get("zero"), undefined);
+  assert.equal(m.get("notnum"), undefined);
+});
+
+test("parseKeyRateLimits — disable tokens map to Infinity (same vocabulary as the global override)", () => {
+  const m = parseKeyRateLimits("agent=off;ci=unlimited;loud=DISABLED");
+  assert.equal(m.get("agent"), Number.POSITIVE_INFINITY);
+  assert.equal(m.get("ci"), Number.POSITIVE_INFINITY);
+  assert.equal(m.get("loud"), Number.POSITIVE_INFINITY);
+});
+
+test("IdentityRateLimiter — limitFor override wins over the default cap", () => {
+  // Default is 60; override gives agent=2.
+  const lim = new IdentityRateLimiter({
+    limit: 60,
+    limitFor: (id) => (id === "default agent" ? 2 : undefined),
+  });
+  const t = 1_700_000_000_000;
+  // Two calls allowed for agent, third denies.
+  assert.equal(lim.check("default agent", t).allowed, true);
+  assert.equal(lim.check("default agent", t + 1).allowed, true);
+  const denied = lim.check("default agent", t + 2);
+  assert.equal(denied.allowed, false);
+  assert.equal(denied.limit, 2, "reported limit must be the per-identity override, not the default");
+  // Default identity still gets the global 60.
+  for (let i = 0; i < 60; i++) {
+    assert.equal(lim.check("default other", t + i).allowed, true);
+  }
+  assert.equal(lim.check("default other", t + 60).allowed, false);
+});
+
+test("IdentityRateLimiter — limitFor returning undefined falls back to default; Infinity disables for that identity", () => {
+  const lim = new IdentityRateLimiter({
+    limit: 5,
+    limitFor: (id) => (id === "default vip" ? Number.POSITIVE_INFINITY : undefined),
+  });
+  const t = 1_700_000_000_000;
+  // VIP can burst far past 5.
+  for (let i = 0; i < 1000; i++) {
+    assert.equal(lim.check("default vip", t + i).allowed, true);
+  }
+  // Default user still capped at 5.
+  for (let i = 0; i < 5; i++) {
+    assert.equal(lim.check("default user", t + i).allowed, true);
+  }
+  assert.equal(lim.check("default user", t + 5).allowed, false);
+});
+
+test("IdentityRateLimiter — inspect() reports the per-identity limit too (not just the default)", () => {
+  const lim = new IdentityRateLimiter({
+    limit: 60,
+    limitFor: (id) => (id === "default agent" ? 600 : undefined),
+  });
+  assert.equal(lim.inspect("default agent").limit, 600);
+  assert.equal(lim.inspect("default other").limit, 60);
+});

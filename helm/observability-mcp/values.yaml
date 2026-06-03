@@ -79,6 +79,13 @@ sources:
 #                                  upstream gateway already enforces
 #                                  quotas. /api/usage reports
 #                                  limit: null in that mode.
+#   - OMCP_KEY_RATE_PER_MIN        per-credential override of the
+#                                  /mcp cap, "agent=600;ci=240" style
+#                                  (mirrors OMCP_KEY_TENANTS /
+#                                  OMCP_KEY_PRODUCTS). Same disable
+#                                  vocabulary as the global override.
+#                                  Unknown credentials fall back to
+#                                  the global default.
 #   - OMCP_TOOL_DAILY_TOKENS       per-identity 24h-rolling token cap;
 #                                  default 0 (uncapped). Charges only
 #                                  named bearer-token callers, never

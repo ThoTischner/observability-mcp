@@ -56,10 +56,44 @@ export function resolveToolRatePerMin(raw: string | undefined): number {
 }
 
 export interface LimiterConfig {
-  /** Cap per identity per window. Defaults to 60. */
+  /** Default cap per identity per window. Defaults to 60. */
   limit?: number;
   /** Window length in milliseconds. Defaults to 60_000. */
   windowMs?: number;
+  /** Optional per-identity override. Returns the cap for the named
+   *  identity, or undefined to fall back to the default `limit`.
+   *  Useful for the OMCP_KEY_RATE_PER_MIN credential-level override
+   *  (`agent=600;ci=240`) — admin gives a noisy automation a higher
+   *  quota without affecting every other caller. Returning Infinity
+   *  disables the cap for that identity (matches the global
+   *  unlimited-token contract). */
+  limitFor?: (identity: string) => number | undefined;
+}
+
+/** Parse OMCP_KEY_RATE_PER_MIN — `name=count;name2=count2`. Same
+ *  shape as parseKeyTenants / parseKeyProducts so operators have one
+ *  syntactic model across all per-credential overrides. Unknown
+ *  counts (non-numeric / ≤ 0) silently skip. Magic disable tokens
+ *  (off/none/unlimited/disabled/false) map to Infinity, same as the
+ *  global OMCP_TOOL_RATE_PER_MIN. */
+export function parseKeyRateLimits(raw: string | undefined): Map<string, number> {
+  const m = new Map<string, number>();
+  if (!raw) return m;
+  for (const entry of raw.split(";").map((s) => s.trim()).filter(Boolean)) {
+    const eq = entry.indexOf("=");
+    if (eq <= 0) continue;
+    const name = entry.slice(0, eq).trim();
+    const valueRaw = entry.slice(eq + 1).trim();
+    if (!name || !valueRaw) continue;
+    if (UNLIMITED_TOKENS.has(valueRaw.toLowerCase())) {
+      m.set(name, Number.POSITIVE_INFINITY);
+      continue;
+    }
+    const n = Number(valueRaw);
+    if (!Number.isFinite(n) || n < 1) continue;
+    m.set(name, Math.floor(n));
+  }
+  return m;
 }
 
 export interface CheckResult {
@@ -77,14 +111,28 @@ export interface CheckResult {
 }
 
 export class IdentityRateLimiter {
-  private readonly limit: number;
+  private readonly defaultLimit: number;
   private readonly windowMs: number;
+  private readonly limitFor?: (identity: string) => number | undefined;
   // identity → ring of millisecond timestamps, newest at the end.
   private readonly buckets = new Map<string, number[]>();
 
   constructor(cfg: LimiterConfig = {}) {
-    this.limit = cfg.limit ?? DEFAULT_LIMIT_PER_MIN;
+    this.defaultLimit = cfg.limit ?? DEFAULT_LIMIT_PER_MIN;
     this.windowMs = cfg.windowMs ?? DEFAULT_WINDOW_MS;
+    this.limitFor = cfg.limitFor;
+  }
+
+  /** Resolved cap for one identity: the per-identity override wins
+   *  when defined; otherwise the process-wide default applies. */
+  private resolveLimit(identity: string): number {
+    if (this.limitFor) {
+      const v = this.limitFor(identity);
+      if (typeof v === "number" && (Number.isFinite(v) ? v >= 1 : v === Number.POSITIVE_INFINITY)) {
+        return v;
+      }
+    }
+    return this.defaultLimit;
   }
 
   /** Record-and-test a call for the given identity. Returns the
@@ -97,7 +145,8 @@ export class IdentityRateLimiter {
     while (i < bucket.length && bucket[i] <= cutoff) i++;
     const fresh = i === 0 ? bucket : bucket.slice(i);
 
-    if (fresh.length >= this.limit) {
+    const limit = this.resolveLimit(identity);
+    if (fresh.length >= limit) {
       // Compute when the oldest in-window record drops off.
       const retryAfterMs = fresh[0] + this.windowMs - now;
       // Don't store the call we just denied — that would push the
@@ -106,7 +155,7 @@ export class IdentityRateLimiter {
       return {
         allowed: false,
         count: fresh.length,
-        limit: this.limit,
+        limit,
         windowMs: this.windowMs,
         retryAfterSeconds: Math.max(1, Math.ceil(retryAfterMs / 1000)),
       };
@@ -117,7 +166,7 @@ export class IdentityRateLimiter {
     return {
       allowed: true,
       count: fresh.length,
-      limit: this.limit,
+      limit,
       windowMs: this.windowMs,
       retryAfterSeconds: 0,
     };
@@ -129,7 +178,7 @@ export class IdentityRateLimiter {
     const bucket = this.buckets.get(identity) ?? [];
     let count = 0;
     for (const t of bucket) if (t > cutoff) count++;
-    return { count, limit: this.limit, windowMs: this.windowMs };
+    return { count, limit: this.resolveLimit(identity), windowMs: this.windowMs };
   }
 
   /** All identities we've ever seen — for /api/usage aggregation. */
