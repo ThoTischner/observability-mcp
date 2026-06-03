@@ -62,6 +62,7 @@ import { loadPolicyFromFile, PolicyLoadError, VALID_RESOURCES, VALID_ACTIONS } f
 import { OpaPolicyEngine } from "./auth/policy/opa.js";
 import { AuditLog } from "./audit/log.js";
 import { buildAuditMiddleware } from "./audit/middleware.js";
+import { buildBypassBreadcrumb, buildBypassAuditParams } from "./audit/redaction-bypass.js";
 import { readCatalogFile, CatalogStore } from "./catalog/loader.js";
 import { readProductsFile, ProductsStore, validateProduct, writeProductsFile, ProductsLoadError } from "./products/loader.js";
 import { redactValue } from "./policy/redact.js";
@@ -133,15 +134,7 @@ function emitBypassEvent(
   ctx: RequestContext,
   args: unknown,
 ): void {
-  console.error(JSON.stringify({
-    event,
-    ts: new Date().toISOString(),
-    auth: ctx.auth,
-    tool: "query_logs",
-    service: (args as { service?: string })?.service ?? null,
-    correlationId: ctx.correlationId,
-    ...(event === "redaction_bypass_denied" ? { reason: "credential_not_in_OMCP_KEY_BYPASS_REDACTION" } : {}),
-  }));
+  console.error(JSON.stringify(buildBypassBreadcrumb(event, ctx, args)));
 }
 
 /** Bridge from the new PolicyEngine to the existing
@@ -508,16 +501,7 @@ async function main() {
         //      invocation is tamper-evident alongside the rest of
         //      /api/*. Persists if OMCP_MGMT_AUDIT_FILE is set.
         emitBypassEvent(bypass ? "redaction_bypass_engaged" : "redaction_bypass_denied", ctx, args);
-        void mgmtAudit.record({
-          actor: { sub: ctx.principalId },
-          tenant: ctx.tenant,
-          resource: "redaction",
-          action: "bypass",
-          method: "MCP",
-          path: "/mcp/query_logs",
-          status: bypass ? 200 : 403,
-          target: (args as { service?: string })?.service ?? undefined,
-        }).catch(() => {
+        void mgmtAudit.record(buildBypassAuditParams(bypass, ctx, args)).catch(() => {
           // Audit record is best-effort — losing one entry must not
           // crash the tool call. The chain itself remains intact.
         });
