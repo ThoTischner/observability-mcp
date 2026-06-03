@@ -34,6 +34,13 @@ jobs:
     permissions:
       contents: write
       pages: write
+      # Required for the OCI publish step: helm push goes to ghcr.io,
+      # cosign keyless attest pushes the signature into the same OCI
+      # registry alongside the chart artifact.
+      packages: write
+      # Keyless cosign needs OIDC to exchange a short-lived token with
+      # Sigstore Fulcio — same pattern as docker-publish.yml.
+      id-token: write
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
@@ -123,6 +130,55 @@ jobs:
           config: /tmp/cr.yaml
         env:
           CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Parallel OCI publish (ghcr.io) + keyless cosign signing.
+      # chart-releaser writes the packaged tarball to .cr-release-packages/
+      # (one .tgz per chart version it just released). If that directory
+      # is empty — e.g. skip_existing skipped the only chart this run —
+      # the OCI publish is a no-op so a re-run that publishes nothing
+      # new doesn't error out.
+      - name: Lowercase OCI repo path
+        id: oci
+        run: |
+          echo "repo=ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/charts" >> "$GITHUB_OUTPUT"
+      - name: Log in to GHCR (helm OCI)
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io \
+            -u "${{ github.actor }}" --password-stdin
+      - name: Install cosign
+        # Pin matches docker-publish.yml — sigstore/cosign-installer v4.1.2.
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Publish chart to OCI + sign with cosign (keyless)
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          pkgs=(.cr-release-packages/*.tgz)
+          if [ ${#pkgs[@]} -eq 0 ]; then
+            echo "::notice::no chart tarballs in .cr-release-packages — nothing to push to OCI"
+            exit 0
+          fi
+          REPO="${{ steps.oci.outputs.repo }}"
+          for tgz in "${pkgs[@]}"; do
+            # `helm push` emits "Pushed: <repo>/<name>:<version>" and
+            # "Digest: sha256:..." on stdout. We capture both — the
+            # digest is what cosign signs (signing the tag would race
+            # an unrelated push to the same tag, the digest is stable).
+            out="$(helm push "$tgz" "oci://${REPO}" 2>&1 | tee /dev/stderr)"
+            ref="$(echo "$out" | awk '/^Pushed:/ {print $2; exit}')"
+            digest="$(echo "$out" | awk '/^Digest:/ {print $2; exit}')"
+            if [ -z "$ref" ] || [ -z "$digest" ]; then
+              echo "could not parse helm push output for $tgz" >&2
+              exit 1
+            fi
+            # Drop the :tag from the ref so we sign by digest, which is
+            # the recommended cosign pattern for OCI artifacts.
+            repo_only="${ref%:*}"
+            echo "signing ${repo_only}@${digest}"
+            cosign sign --yes "${repo_only}@${digest}"
+          done
+      - name: Log out of GHCR
+        if: always()
+        run: helm registry logout ghcr.io || true
 
       - name: Wipe signing material
         if: always()

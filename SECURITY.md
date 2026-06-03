@@ -162,26 +162,39 @@ cosign verify-attestation \
   ghcr.io/thotischner/observability-mcp:latest
 ```
 
-### Helm chart — GPG-signed
+### Helm chart — GPG-signed (HTTP) + cosign-signed (OCI)
 
-The Helm chart is GPG-signed; the public key is committed at
-[`docs/helm-signing.pub.asc`](docs/helm-signing.pub.asc) and the fingerprint
-is advertised on ArtifactHub via the `artifacthub.io/signKey` annotation.
+The chart is published **twice** on every release: the GPG-signed
+tarball lives on the GitHub Pages chart repo (the path the
+`helm repo add` command targets), and the same chart is pushed to
+GHCR as an OCI artifact and signed with cosign keyless. Either path is
+authoritative; pick whichever fits the consumer's posture.
+
+**GPG path (default `helm repo add`).** Public key committed at
+[`docs/helm-signing.pub.asc`](docs/helm-signing.pub.asc); fingerprint
+also advertised on ArtifactHub via `artifacthub.io/signKey`.
 
 ```bash
-# Add the signing key to your keyring
 curl -sS https://raw.githubusercontent.com/ThoTischner/observability-mcp/main/docs/helm-signing.pub.asc \
   | gpg --import
-
-# Verify the .tgz + .prov pair before installing
 helm verify ./observability-mcp-<version>.tgz
 ```
 
-> **Roadmap.** A cosign-signed OCI chart variant is on the deferred
-> list — once the chart is also pushed as an OCI artifact to GHCR
-> via `helm push`, the same `cosign verify --certificate-identity-…`
-> pattern that covers the image will apply to the chart. Until then,
-> the GPG signature above is the authoritative verification path.
+**OCI / cosign path.** The chart is pushed to
+`oci://ghcr.io/thotischner/charts/observability-mcp` and each version
+is cosign-signed by digest via Sigstore keyless OIDC. No GPG keyring
+required on the consumer side:
+
+```bash
+# Pull (or install directly from OCI):
+helm pull oci://ghcr.io/thotischner/charts/observability-mcp --version <version>
+
+# Verify the cosign signature against the GitHub Actions workflow identity:
+cosign verify \
+  --certificate-identity-regexp "^https://github\.com/ThoTischner/observability-mcp/\.github/workflows/helm-release\.yml@refs/" \
+  --certificate-oidc-issuer    "https://token.actions.githubusercontent.com" \
+  ghcr.io/thotischner/charts/observability-mcp:<version>
+```
 
 ### MCP tool surface — `tools/list` is the contract
 
