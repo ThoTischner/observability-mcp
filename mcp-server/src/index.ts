@@ -10,6 +10,7 @@ import { loadConfig, saveConfig, DEFAULT_HEALTH_THRESHOLDS, DEFAULT_SETTINGS } f
 import { ConnectorRegistry, getSupportedTypes } from "./connectors/registry.js";
 import { isTopologyProvider } from "./connectors/interface.js";
 import { defaultContext, principalContext, sessionContext, allowsTool, type RequestContext } from "./context.js";
+import { parseKeyTenants } from "./tenancy/context.js";
 import {
   enforceEntitledAccess,
   enterpriseGateStatus,
@@ -838,20 +839,39 @@ async function main() {
       if (roles.length === 0) return;
       const resources = [...VALID_RESOURCES];
       const actions = [...VALID_ACTIONS];
+      // Tenant-aware pre-warm: the gate keys cache per
+      // (roles, resource, action, tenant) so a tenant-conditional
+      // Rego rule that fires for "acme" but not "bigco" produces a
+      // distinct cached verdict per tenant. The pre-warm iterates
+      // every known declared tenant + "default" so the first user
+      // request from a tenant'd identity gets a real decision
+      // instead of a warming-deny. OIDC tenants only known at
+      // runtime are still subject to first-request warming, but
+      // operator-set OMCP_KEY_TENANTS land here.
+      const knownTenants = new Set<string>(["default"]);
+      // parseKeyTenants is the same parser the credentials layer
+      // uses, so the warm set is exactly what the gate will see.
+      for (const t of parseKeyTenants(process.env.OMCP_KEY_TENANTS).values()) {
+        if (t) knownTenants.add(t);
+      }
+      const tenants = Array.from(knownTenants);
       const tasks: Promise<unknown>[] = [];
-      for (const role of roles) {
-        for (const resource of resources) for (const action of actions) {
-          tasks.push(opaEngine.warmEvaluate([role], resource, action));
+      for (const tenant of tenants) {
+        for (const role of roles) {
+          for (const resource of resources) for (const action of actions) {
+            tasks.push(opaEngine.warmEvaluate([role], resource, action, tenant));
+          }
+          tasks.push(opaEngine.warmList([role], tenant));
         }
-        tasks.push(opaEngine.warmList([role]));
       }
       try {
         const settled = await Promise.allSettled(tasks);
         const failed = settled.filter((s) => s.status === "rejected").length;
+        const tlbl = tenants.length === 1 ? "1 tenant" : `${tenants.length} tenants`;
         if (failed === 0) {
-          console.log(`[auth] OPA cache pre-warmed: ${settled.length} decisions cached for ${roles.length} role(s)`);
+          console.log(`[auth] OPA cache pre-warmed: ${settled.length} decisions cached for ${roles.length} role(s) × ${tlbl}`);
         } else {
-          console.warn(`[auth] OPA cache pre-warmed: ${settled.length - failed}/${settled.length} ok, ${failed} failed (gates will retry on first user call)`);
+          console.warn(`[auth] OPA cache pre-warmed: ${settled.length - failed}/${settled.length} ok, ${failed} failed across ${tlbl} (gates will retry on first user call)`);
         }
       } catch { /* best-effort */ }
     })();

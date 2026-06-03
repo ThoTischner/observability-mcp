@@ -94,17 +94,28 @@ responses also work; the UI just shows an empty grant table.
 ### Boot pre-warm
 
 `PolicyEngine.evaluate()` is synchronous; OPA HTTP is not. The
-engine ships a 5s per-(roles, resource, action) cache. On a cache
-miss, `evaluate()` returns a conservative deny + async-fires a warm.
-To avoid that "warming-deny" for the very first user request, OMCP
-hits every (declared role × valid resource × valid action) combo at
-boot — for the 3-role default catalogue that's 120 calls; OPA
-handles this in <1s.
+engine ships a 5s per-(roles, resource, action, tenant) cache. On a
+cache miss, `evaluate()` returns a conservative deny + async-fires
+a warm. To avoid that "warming-deny" for the very first user
+request, OMCP hits every (declared role × valid resource × valid
+action × known tenant) combo at boot.
+
+Known tenants = `"default"` plus every value parsed from
+`OMCP_KEY_TENANTS`. With 3 roles × 10 resources × 4 actions ×
+N tenants, the warm count scales linearly in N; for the typical
+case of 1–5 tenants OPA handles it in well under a second.
+
+OIDC tenants only become known at session time, so the very first
+request from a brand-new OIDC tenant still pays one warming-deny
+per `(role, resource, action)`. Operators that want zero warming-
+deny for OIDC-only deployments can list expected tenant names in
+`OMCP_KEY_TENANTS` even if no MCP credentials use them — the parser
+treats every value as an additional tenant to pre-warm.
 
 The boot log reports:
 
 ```
-[auth] OPA cache pre-warmed: 124 decisions cached for 3 role(s)
+[auth] OPA cache pre-warmed: 372 decisions cached for 3 role(s) × 3 tenants
 ```
 
 A partial warm (e.g. transient OPA hiccup) logs the count + failure
