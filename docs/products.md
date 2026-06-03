@@ -81,9 +81,17 @@ RBAC / users-file failures.
 | Endpoint | Method | RBAC | Notes |
 |---|---|---|---|
 | `/api/products` | GET | `products:read` | Tenant + staging-aware. `?tenant=X` admin drill-down. |
+| `/api/products` | POST | `products:write` | Strict create — 409 on conflict. Use when you want create-vs-update semantics. |
 | `/api/products/:id` | GET | `products:read` | 404 on cross-tenant or staging probe by non-admin (no existence leak). |
-| `/api/products/:id` | PUT | `products:write` | Body validated through the same parser; persists to file when set. |
+| `/api/products/:id` | PUT | `products:write` | Upsert. Body validated through the same parser; persists to file when set. |
 | `/api/products/:id` | DELETE | `products:delete` | 404 on cross-tenant; admin-only via DEFAULT_POLICY. |
+
+Both POST + PUT enforce the **tools[] typo guard**: a Product whose
+`tools` list names tools that don't actually register (e.g. a typo
+`query_logz`) is rejected with **422** + `code:
+OMCP_PRODUCT_UNKNOWN_TOOL` + the `unknown` names + the `available`
+list. Without the guard, a bound credential would open an `/mcp`
+session with an empty tool surface — silent dead session.
 
 Default permission grants:
 

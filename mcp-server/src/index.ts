@@ -67,6 +67,7 @@ import { buildAuditMiddleware } from "./audit/middleware.js";
 import { buildBypassBreadcrumb, buildBypassAuditParams } from "./audit/redaction-bypass.js";
 import { readCatalogFile, CatalogStore } from "./catalog/loader.js";
 import { readProductsFile, ProductsStore, validateProduct, writeProductsFile, ProductsLoadError } from "./products/loader.js";
+import { REGISTERED_TOOL_NAMES, unknownToolNames } from "./tools/registry-names.js";
 import { redactValue } from "./policy/redact.js";
 import { IdentityRateLimiter, resolveToolRatePerMin, parseKeyRateLimits } from "./quota/limiter.js";
 import { TokenBudget, estimateTokensFor, resolveDailyTokenLimit } from "./quota/token-budget.js";
@@ -1760,6 +1761,63 @@ async function main() {
       includesStaging: includeStaging,
     });
   });
+  // Create a new product (REST convention: POST = create, 409 on
+  // conflict). Same tenancy + typo-guard posture as PUT. The PUT
+  // upsert path remains for the existing UI; new integrations that
+  // want strict create-vs-update semantics use POST.
+  app.post("/api/products", need("products", "write"), audit("products", "write"), async (req, res) => {
+    await products.maybeReload();
+    const sess = (req as AuthedRequest).session;
+    const isAdmin = hasPermission(sess?.roles, "users", "delete");
+    const callerTenant = sess?.tenant || "default";
+    const body = req.body as Record<string, unknown> | undefined;
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      res.status(400).json({ error: "body must be a product object" });
+      return;
+    }
+    if (typeof body.id !== "string" || !body.id) {
+      res.status(400).json({ error: "body.id is required" });
+      return;
+    }
+    let validated;
+    try { validated = validateProduct(body, `POST /api/products`); }
+    catch (e) {
+      if (e instanceof ProductsLoadError) { res.status(400).json({ error: e.message }); return; }
+      throw e;
+    }
+    if (validated.tools && validated.tools.length > 0) {
+      const unknown = unknownToolNames(validated.tools);
+      if (unknown.length > 0) {
+        res.status(422).json({
+          error: `unknown tool name(s) in product '${validated.id}': ${unknown.join(", ")}`,
+          code: "OMCP_PRODUCT_UNKNOWN_TOOL",
+          unknown,
+          available: REGISTERED_TOOL_NAMES,
+        });
+        return;
+      }
+    }
+    if (!isAdmin && (validated.tenant || "default") !== callerTenant) {
+      res.status(403).json({ error: "cannot create product in another tenant" });
+      return;
+    }
+    if (products.get(validated.id)) {
+      res.status(409).json({ error: `product '${validated.id}' already exists; use PUT to update` });
+      return;
+    }
+    const next = products.upsert(validated);
+    if (process.env.OMCP_PRODUCTS_FILE) {
+      try {
+        await writeProductsFile(process.env.OMCP_PRODUCTS_FILE, next);
+        await products.pinMtimeAfterWrite();
+      }
+      catch (e) {
+        console.warn(`[products] POST ${validated.id}: failed to persist to ${process.env.OMCP_PRODUCTS_FILE}: ${(e as Error).message} — in-memory state is still updated`);
+      }
+    }
+    res.status(201).json({ product: validated, persisted: !!process.env.OMCP_PRODUCTS_FILE });
+  });
+
   // Upsert a product. Body is the same shape as a single entry
   // in OMCP_PRODUCTS_FILE. The URL-path id must match the body id
   // (defence-in-depth: the gate keys on body, the path keys the
@@ -1792,6 +1850,23 @@ async function main() {
     catch (e) {
       if (e instanceof ProductsLoadError) { res.status(400).json({ error: e.message }); return; }
       throw e;
+    }
+    // Typo guard: a Product whose `tools` allow-list names tools
+    // that don't actually register would bind a credential to an
+    // empty /mcp tool surface (silent dead session). Reject with
+    // 422 + a hint of valid tool names so the operator can see the
+    // intended typo immediately.
+    if (validated.tools && validated.tools.length > 0) {
+      const unknown = unknownToolNames(validated.tools);
+      if (unknown.length > 0) {
+        res.status(422).json({
+          error: `unknown tool name(s) in product '${id}': ${unknown.join(", ")}`,
+          code: "OMCP_PRODUCT_UNKNOWN_TOOL",
+          unknown,
+          available: REGISTERED_TOOL_NAMES,
+        });
+        return;
+      }
     }
     // Tenant gate: non-admins can only write into their own tenant.
     if (!isAdmin && (validated.tenant || "default") !== callerTenant) {

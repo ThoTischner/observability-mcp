@@ -116,6 +116,106 @@ jobs:
           curl -fsS http://localhost:8081/health | head -5
           curl -fsS -X POST http://localhost:8081/chaos/reset
 
+      - name: Real E2E — OMCP_KEY_PRODUCTS filters /mcp tools/list
+        # End-to-end proof that a credential bound to an MCP Product
+        # sees ONLY the Product's tools allow-list — not the full 8.
+        # Boots a second mcp-server container (same image, port 3002)
+        # with OMCP_API_KEYS + OMCP_KEY_PRODUCTS + a mounted
+        # products.yaml fixture, then does a real MCP handshake with
+        # the bound bearer token and asserts the tools/list payload.
+        # No mocks. Touches every layer: env parsing → credential
+        # binding → tenant resolution → ctx.allowedTools →
+        # registerTool() filter → tools/list response.
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/products-fixture
+          cat > /tmp/products-fixture/products.yaml <<'EOF'
+          products:
+            - id: ci-ops
+              name: CI Ops Bundle
+              status: published
+              tools:
+                - list_sources
+                - query_metrics
+          EOF
+
+          # Start a one-off test container sharing the demo network.
+          # `docker compose run` reuses the project image + network so
+          # the test instance can reach Prometheus / Loki by service
+          # name like the real one does. -d keeps it backgrounded.
+          docker compose run -d --rm --name mcp-test \
+            -e PORT=3000 \
+            -e OMCP_API_KEYS=ci:tok_e2e_secret \
+            -e OMCP_KEY_PRODUCTS=ci=ci-ops \
+            -e OMCP_PRODUCTS_FILE=/fixture/products.yaml \
+            -v /tmp/products-fixture:/fixture:ro \
+            -p 3002:3000 \
+            --no-deps \
+            mcp-server
+
+          # Wait for the test instance.
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:3002/api/sources >/dev/null 2>&1; then
+              echo "test instance ready"
+              break
+            fi
+            sleep 1
+          done
+
+          # MCP handshake with bearer.
+          hdr=/tmp/init.h
+          body=/tmp/init.body
+          curl -fsS -X POST http://localhost:3002/mcp \
+            -H "Authorization: Bearer tok_e2e_secret" \
+            -H "Content-Type: application/json" \
+            -H "Accept: application/json, text/event-stream" \
+            -D "$hdr" -o "$body" \
+            -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"ci-product-binding","version":"1.0"}}}'
+          sid=$(grep -i '^mcp-session-id:' "$hdr" | awk '{print $2}' | tr -d '\r\n')
+          [ -n "$sid" ] || { echo "no mcp-session-id"; exit 1; }
+          curl -fsS -X POST http://localhost:3002/mcp \
+            -H "Mcp-Session-Id: $sid" \
+            -H "Authorization: Bearer tok_e2e_secret" \
+            -H "Content-Type: application/json" \
+            -H "Accept: application/json, text/event-stream" \
+            -d '{"jsonrpc":"2.0","method":"notifications/initialized"}' >/dev/null || true
+
+          # tools/list — must return EXACTLY the Product's two tools.
+          tools_body=/tmp/tools.body
+          curl -fsS -X POST http://localhost:3002/mcp \
+            -H "Mcp-Session-Id: $sid" \
+            -H "Authorization: Bearer tok_e2e_secret" \
+            -H "Content-Type: application/json" \
+            -H "Accept: application/json, text/event-stream" \
+            -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' -o "$tools_body"
+          echo "--- bound tools/list (raw, may be SSE-framed) ---"; cat "$tools_body"
+
+          # The /mcp Streamable HTTP transport returns SSE-framed JSON
+          # when Accept includes text/event-stream. Strip the
+          # `data: ` envelope before jq.
+          json=$(grep -E '^(data: )?\{' "$tools_body" | head -1 | sed -E 's/^data: //')
+          names=$(echo "$json" | jq -r '.result.tools[].name' | sort | tr '\n' ' ' | sed 's/ $//')
+          expected='list_sources query_metrics'
+          if [ "$names" != "$expected" ]; then
+            echo "FAIL: tools/list did not match the bound Product."
+            echo "  expected: $expected"
+            echo "  got:      $names"
+            exit 1
+          fi
+
+          # Negative control: a registered tool that is NOT in the
+          # Product's allow-list (e.g. get_topology) must NOT appear.
+          if echo "$names" | tr ' ' '\n' | grep -qx "get_topology"; then
+            echo "FAIL: tools/list leaked a tool NOT in the Product's allow-list"
+            exit 1
+          fi
+
+          echo "OK: real E2E — Product binding filtered tools/list to exactly the bound subset"
+
+      - name: Cleanup product-binding test instance
+        if: always()
+        run: docker rm -f mcp-test 2>/dev/null || true
+
       - name: Dump logs on failure
         if: failure()
         run: |
