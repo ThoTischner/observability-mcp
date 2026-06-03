@@ -411,8 +411,22 @@ env:
   OMCP_TOOL_RATE_PER_MIN: "240"
 ```
 
-For a per-role cap, the limiter is structured to accept a per-identity
-override map — wiring is on the roadmap.
+For a per-credential cap override, set `OMCP_KEY_RATE_PER_MIN`:
+
+```yaml
+env:
+  OMCP_TOOL_RATE_PER_MIN: "60"           # default everyone else
+  OMCP_KEY_RATE_PER_MIN: "agent=600;ci=240;noisy-bot=off"
+```
+
+The override syntax mirrors `OMCP_KEY_TENANTS` / `OMCP_KEY_PRODUCTS` —
+`name=count` pairs separated by `;`. The same disable vocabulary as
+the global cap (`off`, `none`, `unlimited`, `disabled`, `false`,
+case-insensitive) lifts the cap entirely for that credential —
+useful for an internal automation that shouldn't be rate-limited.
+Unknown credentials silently fall back to the global default; a
+non-numeric override silently skips so a typo doesn't lock the
+credential out at boot.
 
 ### "Restart broke my audit chain"
 
