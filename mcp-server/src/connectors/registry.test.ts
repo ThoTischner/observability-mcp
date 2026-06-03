@@ -109,4 +109,56 @@ describe("ConnectorRegistry", () => {
       assert.deepEqual(results, {});
     });
   });
+
+  describe("getByTenant / getByNameForTenant", () => {
+    it("untagged sources are visible to every tenant (pre-E7 single-tenant default)", async () => {
+      await getPluginLoader().load();
+      const reg = new ConnectorRegistry();
+      await reg.initialize(makeConfig([
+        // No tenant on either source — both are "global".
+        { name: "prom-global", type: "prometheus", url: "http://p:9090", enabled: true },
+        { name: "loki-global", type: "loki", url: "http://l:3100", enabled: true },
+      ]));
+      const acmeVisible = reg.getByTenant("acme").map((c) => c.name).sort();
+      const bigcoVisible = reg.getByTenant("bigco").map((c) => c.name).sort();
+      assert.deepEqual(acmeVisible, ["loki-global", "prom-global"]);
+      assert.deepEqual(bigcoVisible, ["loki-global", "prom-global"]);
+    });
+
+    it("tenant-tagged source is invisible to other tenants", async () => {
+      await getPluginLoader().load();
+      const reg = new ConnectorRegistry();
+      await reg.initialize(makeConfig([
+        { name: "shared", type: "prometheus", url: "http://p:9090", enabled: true },
+        { name: "acme-only", type: "loki", url: "http://l:3100", enabled: true, tenant: "acme" },
+      ]));
+      assert.deepEqual(reg.getByTenant("acme").map((c) => c.name).sort(), ["acme-only", "shared"]);
+      // bigco sees only the shared source — the acme-only one is hidden.
+      assert.deepEqual(reg.getByTenant("bigco").map((c) => c.name).sort(), ["shared"]);
+    });
+
+    it("getByNameForTenant returns undefined on cross-tenant probe (no existence leak)", async () => {
+      await getPluginLoader().load();
+      const reg = new ConnectorRegistry();
+      await reg.initialize(makeConfig([
+        { name: "acme-loki", type: "loki", url: "http://l:3100", enabled: true, tenant: "acme" },
+      ]));
+      // Within tenant: resolves.
+      assert.ok(reg.getByNameForTenant("acme-loki", "acme"));
+      // Cross-tenant: undefined — indistinguishable from "no such source".
+      assert.equal(reg.getByNameForTenant("acme-loki", "bigco"), undefined);
+      // Unknown name in own tenant: also undefined.
+      assert.equal(reg.getByNameForTenant("nope", "acme"), undefined);
+    });
+
+    it("a source whose tenant is unset resolves for every tenant via getByNameForTenant", async () => {
+      await getPluginLoader().load();
+      const reg = new ConnectorRegistry();
+      await reg.initialize(makeConfig([
+        { name: "global", type: "prometheus", url: "http://p:9090", enabled: true },
+      ]));
+      assert.ok(reg.getByNameForTenant("global", "acme"));
+      assert.ok(reg.getByNameForTenant("global", "bigco"));
+    });
+  });
 });

@@ -20,9 +20,10 @@ export const listServicesDefinition = {
 export async function listServicesHandler(
   registry: ConnectorRegistry,
   args: { filter?: string },
-  _ctx: RequestContext = defaultContext()
+  ctx: RequestContext = defaultContext()
 ) {
-  const connectors = registry.getAll();
+  // Tenant-scoped: only consult sources the caller can see.
+  const connectors = registry.getByTenant(ctx.tenant);
   const allServices: ServiceInfo[] = [];
 
   for (const connector of connectors) {

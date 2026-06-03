@@ -26,11 +26,15 @@ interface AggregatedTopology {
   edges: Edge[];
 }
 
-export async function aggregateTopology(registry: ConnectorRegistry): Promise<AggregatedTopology> {
+export async function aggregateTopology(registry: ConnectorRegistry, tenant?: string): Promise<AggregatedTopology> {
   const sources: AggregatedTopology["sources"] = [];
   const resources: Resource[] = [];
   const edges: Edge[] = [];
-  for (const c of registry.getAll()) {
+  // Tenant-scoped when a tenant is supplied (call sites at the MCP
+  // tool layer pass ctx.tenant); undefined preserves the original
+  // global behaviour for internal / non-request callers.
+  const connectors = tenant ? registry.getByTenant(tenant) : registry.getAll();
+  for (const c of connectors) {
     if (!isTopologyProvider(c)) continue;
     try {
       const snap = await c.getTopologySnapshot();
@@ -100,9 +104,9 @@ export interface GetTopologyArgs {
 export async function getTopologyHandler(
   registry: ConnectorRegistry,
   args: GetTopologyArgs = {},
-  _ctx: RequestContext = defaultContext(),
+  ctx: RequestContext = defaultContext(),
 ) {
-  const agg = await aggregateTopology(registry);
+  const agg = await aggregateTopology(registry, ctx.tenant);
 
   // Filtering — all optional. Filters compose conjunctively.
   let resources = agg.resources;
@@ -180,9 +184,9 @@ interface BlastRadiusForHost {
 export async function getBlastRadiusHandler(
   registry: ConnectorRegistry,
   args: GetBlastRadiusArgs,
-  _ctx: RequestContext = defaultContext(),
+  ctx: RequestContext = defaultContext(),
 ) {
-  const agg = await aggregateTopology(registry);
+  const agg = await aggregateTopology(registry, ctx.tenant);
   const found = resolveResource(args.resource, agg.resources);
   if ("error" in found) {
     return {

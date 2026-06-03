@@ -46,14 +46,15 @@ const CRITICAL_LOG_PATTERN =
 export async function detectAnomaliesHandler(
   registry: ConnectorRegistry,
   args: { service?: string; duration?: string; sensitivity?: string },
-  _ctx: RequestContext = defaultContext()
+  ctx: RequestContext = defaultContext()
 ) {
   const duration = args.duration || "10m";
   const threshold = SENSITIVITY_THRESHOLDS[args.sensitivity || "medium"] || 2.0;
 
-  // Discover services to scan
-  const metricsConnectors = registry.getBySignal("metrics");
-  const logConnectors = registry.getBySignal("logs");
+  // Discover services to scan — tenant-scoped.
+  const tenantConnectors = registry.getByTenant(ctx.tenant);
+  const metricsConnectors = tenantConnectors.filter((c) => c.signalType === "metrics");
+  const logConnectors = tenantConnectors.filter((c) => c.signalType === "logs");
 
   let serviceNames: string[] = [];
   if (args.service) {

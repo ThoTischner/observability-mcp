@@ -38,14 +38,14 @@ export const queryLogsDefinition = {
 export async function queryLogsHandler(
   registry: ConnectorRegistry,
   args: { service: string; query?: string; duration?: string; level?: string; limit?: number },
-  _ctx: RequestContext = defaultContext()
+  ctx: RequestContext = defaultContext()
 ) {
   const svcErr = validateServiceName(args.service);
   if (svcErr) return errorResponse(svcErr);
   const duration = args.duration || "5m";
   const durationErr = validateDuration(duration);
   if (durationErr) return errorResponse(durationErr);
-  const connectors = registry.getBySignal("logs");
+  const connectors = registry.getByTenant(ctx.tenant).filter((c) => c.signalType === "logs");
 
   if (connectors.length === 0) {
     return {

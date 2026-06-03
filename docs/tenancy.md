@@ -150,10 +150,16 @@ credential has a unique name.
 
 ## What's not (yet) tenant-scoped
 
-- **Connector configurations** (`config/sources.yaml`) are still
-  process-global. A Prometheus instance configured at boot is
-  reachable by every tenant. Per-tenant connector pools are a
-  follow-up — track via the [tenancy roadmap].
+- **Connector configurations** (`config/sources.yaml`) can now be
+  tagged with an optional `tenant:` field. Untagged sources stay
+  global (visible to every tenant — preserves the pre-E7 default);
+  tagged sources are visible only inside their named tenant.
+  `list_sources`, `list_services`, `query_metrics` / `query_logs`,
+  `get_service_health`, `detect_anomalies`, `get_topology` /
+  `get_blast_radius` all consult `getByTenant(ctx.tenant)`, and a
+  cross-tenant probe via `query_metrics({ source: "acme-only" })`
+  from tenant `bigco` resolves to "no such source" — same posture as
+  the rest of the tenancy layer (no existence leak).
 - **Helm chart** doesn't yet split deployments per tenant. The
   documented model is "one Helm release per tenant" if you need full
   network-level isolation; in-process multi-tenancy is for the

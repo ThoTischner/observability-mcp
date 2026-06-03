@@ -20,9 +20,14 @@ describe("RequestContext seam", () => {
     if (!hasHandler) continue;
 
     it(`${file}: handler accepts a RequestContext`, () => {
+      // Accept both the read-and-use form (`ctx: RequestContext`) and
+      // the historic placeholder form (`_ctx: RequestContext`) — the
+      // seam is the same; the underscore was only there to silence
+      // unused-param lints. Handlers that actually consume the ctx
+      // (tenant-aware tools, post-E7) drop it.
       assert.match(
         src,
-        /_ctx:\s*RequestContext/,
+        /\b_?ctx:\s*RequestContext/,
         `${file} exports a *Handler but does not thread RequestContext — ` +
           `add the ctx seam (see context.ts)`
       );
