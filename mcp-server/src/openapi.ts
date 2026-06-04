@@ -672,6 +672,52 @@ export function buildOpenApiSpec(version: string): OpenAPIV3_1.Document {
           },
         },
       },
+      "/api/products/{id}/preview": {
+        get: {
+          tags: ["products"],
+          summary: "Agent preview — the filtered tools/list a credential bound to this product would receive.",
+          description: "Same tenancy + staging filter as GET /api/products/{id}. Returns the product's branding/identity metadata + the registered MCP tools after applying its tools allow-list. The UI uses this for the per-card 'Preview as agent' affordance.",
+          parameters: [
+            { name: "id", in: "path", required: true, schema: { type: "string" } },
+          ],
+          responses: {
+            "200": {
+              description: "Preview payload.",
+              content: { "application/json": { schema: {
+                type: "object",
+                required: ["product", "unrestricted", "tools"],
+                properties: {
+                  product: {
+                    type: "object",
+                    properties: {
+                      id: { type: "string" },
+                      name: { type: "string" },
+                      version: { type: "string" },
+                      branding: { type: "object", additionalProperties: true },
+                      tenant: { type: "string" },
+                      status: { type: "string" },
+                    },
+                  },
+                  unrestricted: { type: "boolean", description: "True when the product has no tools allow-list — the bound agent sees every registered tool." },
+                  tools: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        name: { type: "string" },
+                        category: { type: "string", enum: ["discovery", "query", "diagnose", "topology"] },
+                        summary: { type: "string" },
+                      },
+                    },
+                  },
+                },
+              } } },
+            },
+            "404": { description: "Not found (or hidden by tenant / staging scope)." },
+            "403": { description: "Missing products:read permission." },
+          },
+        },
+      },
       "/api/catalog": {
         get: {
           tags: ["catalog"],
