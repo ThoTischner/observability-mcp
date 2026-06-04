@@ -968,6 +968,41 @@
     .pcard-footer { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-2); padding-top: var(--sp-2); border-top: 1px solid var(--border); }
     .pcard-footer .pcard-spacer { flex: 1; }
 
+    /* Policies — engine banner + sticky dry-run */
+    .pol-engine-banner { display: flex; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border-radius: var(--radius); border: 1px solid var(--border); margin-bottom: var(--sp-3); }
+    .pol-engine-banner .pol-eb-dot { flex: 0 0 8px; width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; background: var(--text-2); }
+    .pol-engine-banner .pol-eb-body { flex: 1; min-width: 0; }
+    .pol-engine-banner .pol-eb-title { font-weight: 600; font-size: 13px; display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
+    .pol-engine-banner .pol-eb-meta { font-size: 11px; opacity: .7; margin-top: 2px; font-family: 'JetBrains Mono', ui-monospace, monospace; }
+    .pol-engine-banner .pol-eb-body p { margin: var(--sp-2) 0 0; font-size: 12px; line-height: 1.5; opacity: .9; max-width: 720px; }
+    .pol-engine-banner.eng-builtin { background: var(--surface-2); border-color: var(--border); }
+    .pol-engine-banner.eng-builtin .pol-eb-dot { background: var(--text-2); }
+    .pol-engine-banner.eng-file { background: var(--success-soft); border-color: var(--success); }
+    .pol-engine-banner.eng-file .pol-eb-dot { background: var(--success); }
+    .pol-engine-banner.eng-opa { background: var(--warning-soft); border-color: var(--warning); }
+    .pol-engine-banner.eng-opa .pol-eb-dot { background: var(--warning); }
+    .pol-engine-banner .pol-eb-pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); font-weight: 500; }
+
+    /* Sticky dry-run bar — pinned at the top of the policies page */
+    .pol-probe-bar { position: sticky; top: 0; z-index: 5; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--sp-3); margin-bottom: var(--sp-3); box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+    .pol-probe-grid { display: grid; grid-template-columns: repeat(5, 1fr) auto; gap: var(--sp-3); align-items: end; }
+    .pol-probe-grid .form-group { margin: 0; }
+    .pol-probe-result { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) 0 0; }
+    .pol-probe-result .pol-pv { font-weight: 600; padding: 2px 10px; border-radius: 4px; font-size: 12px; letter-spacing: .04em; text-transform: uppercase; }
+    .pol-probe-result .pol-pv.allow { background: var(--success-soft); color: var(--success); }
+    .pol-probe-result .pol-pv.deny { background: var(--danger-soft); color: var(--danger); }
+    .pol-probe-result code { font-size: 11px; opacity: .8; }
+    @media (max-width: 1000px) {
+      .pol-probe-grid { grid-template-columns: 1fr 1fr; }
+    }
+
+    /* Author-controls are hidden when the active engine is read-only.
+       Anything with data-engine-required="file" needs the file engine. */
+    body[data-policy-engine="opa"] [data-engine-required="file"],
+    body[data-policy-engine="builtin"] [data-engine-required="file"] {
+      opacity: .35; pointer-events: none;
+    }
+
     /* Products — empty state with templates */
     .pempty { padding: var(--sp-5); text-align: center; }
     .pempty h3 { margin: 0 0 var(--sp-2); font-size: 16px; }
@@ -1886,38 +1921,66 @@ curl -X PUT http://localhost:3000/api/enterprise/catalog \
         </div>
         <div class="ph-actions"><span id="pol-engine" class="badge"></span></div>
       </div>
+
+      <!-- Engine banner — colour + copy distinguishes editable file
+           vs read-only builtin / opa modes at a glance. -->
+      <div id="pol-engine-banner" class="pol-engine-banner eng-builtin" hidden>
+        <div class="pol-eb-dot"></div>
+        <div class="pol-eb-body">
+          <div class="pol-eb-title">
+            <span id="pol-eb-title-text">Engine</span>
+            <span id="pol-eb-kind" class="pol-eb-pill"></span>
+            <span id="pol-eb-tenant-aware" class="pol-eb-pill" hidden>tenant-aware</span>
+          </div>
+          <div class="pol-eb-meta" id="pol-eb-meta"></div>
+          <p id="pol-eb-copy"></p>
+        </div>
+      </div>
+
+      <!-- Sticky dry-run probe bar — promoted to the top so it's the
+           first affordance, not buried below the snapshot. Works
+           across every engine including OPA (the only way to see what
+           Rego actually grants without writing a unit test). -->
+      <div class="pol-probe-bar">
+        <h3 style="margin:0 0 var(--sp-2);display:flex;align-items:center;gap:var(--sp-2);font-size:13px">
+          <span>Probe a permission</span>
+          <button class="info" aria-label="About dry-run"
+            data-title="Dry-run probe"
+            data-info="Asks the active engine 'would these roles be allowed this resource:action under this tenant?' Works for every engine kind including OPA — the answer reflects the live Rego evaluation."
+            onclick="infoPop(this)">?</button>
+        </h3>
+        <div class="pol-probe-grid">
+          <div class="form-group">
+            <label>Roles <span class="form-hint">comma-separated</span></label>
+            <input id="pol-dry-roles" placeholder="admin, operator">
+          </div>
+          <div class="form-group">
+            <label>Resource</label>
+            <input id="pol-dry-resource" placeholder="sources">
+          </div>
+          <div class="form-group">
+            <label>Action</label>
+            <input id="pol-dry-action" placeholder="read">
+          </div>
+          <div class="form-group">
+            <label>Tenant <span class="form-hint">optional</span></label>
+            <input id="pol-dry-tenant" placeholder="default">
+          </div>
+          <div class="form-group"><label>&nbsp;</label>
+            <button class="btn btn-primary" onclick="polDryRun()">Evaluate</button>
+          </div>
+        </div>
+        <div id="pol-dry-out"></div>
+      </div>
+
       <div class="card">
         <div class="card-header"><h2>Active policy
           <button class="info" aria-label="About the active policy"
             data-title="Active policy"
-            data-info="Read-only view of the RBAC policy this build is running. When OMCP_RBAC_POLICY_FILE is set the file replaces the built-in defaults; the badge above identifies which is active. Use the dry-run panel below to probe specific role/resource/action combinations without writing a test."
+            data-info="Read-only view of the RBAC policy this build is running. Switch the active engine via OMCP_RBAC_POLICY_FILE (file) or OMCP_OPA_URL (OPA); the banner above identifies which is in use."
             onclick="infoPop(this)">?</button>
         </h2></div>
         <div id="pol-roles" class="content"><div class="empty">Loading…</div></div>
-        <div class="form-hint" style="padding: var(--sp-3) var(--sp-4)">
-          File source: read-only here. To change, edit <code>OMCP_RBAC_POLICY_FILE</code> on the server and restart.
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-header"><h2>Dry-run probe</h2></div>
-        <div class="content" style="display:grid; gap: var(--sp-3); grid-template-columns: 1fr 1fr 1fr auto;">
-          <div class="form-group" style="margin:0">
-            <label>Roles <span class="form-hint">comma-separated</span></label>
-            <input id="pol-dry-roles" placeholder="admin, operator">
-          </div>
-          <div class="form-group" style="margin:0">
-            <label>Resource</label>
-            <input id="pol-dry-resource" placeholder="sources">
-          </div>
-          <div class="form-group" style="margin:0">
-            <label>Action</label>
-            <input id="pol-dry-action" placeholder="write">
-          </div>
-          <div class="form-group" style="margin:0; align-self:end">
-            <button class="btn btn-primary" onclick="polDryRun()">Evaluate</button>
-          </div>
-        </div>
-        <div id="pol-dry-out" style="padding: 0 var(--sp-4) var(--sp-4)"></div>
       </div>
     </div>
 
@@ -2167,19 +2230,70 @@ function showPage(name) {
 }
 
 // --- Policies tab (PolicyEngine snapshot + dry-run) ---
-async function loadPolicies() {
+// Classify the engine kind reported by /api/policy.engine into one of
+// the three banner styles. The kind is `builtin`, `file:<path>`, or
+// `opa:<url>`; the prefix is what we key on.
+function polEngineKind(engineStr) {
+  const s = (engineStr || '').toLowerCase();
+  if (s.startsWith('opa:')) return 'opa';
+  if (s.startsWith('file:') || s.startsWith('file ')) return 'file';
+  return 'builtin';
+}
+function polRenderEngineBanner(j) {
+  const banner = document.getElementById('pol-engine-banner');
+  if (!banner) return;
+  const kind = polEngineKind(j.engine);
+  banner.hidden = false;
+  banner.className = 'pol-engine-banner eng-' + kind;
+  // body[data-policy-engine="..."] drives CSS that disables every
+  // [data-engine-required="file"] control when authoring isn't
+  // supported by the active engine.
+  document.body.setAttribute('data-policy-engine', kind);
+  const titleEl = document.getElementById('pol-eb-title-text');
+  const kindEl = document.getElementById('pol-eb-kind');
+  const metaEl = document.getElementById('pol-eb-meta');
+  const copyEl = document.getElementById('pol-eb-copy');
+  const tenantPill = document.getElementById('pol-eb-tenant-aware');
+  if (kindEl) kindEl.textContent = j.engine || 'unknown';
+  if (tenantPill) tenantPill.hidden = !j.tenantAware;
+  if (kind === 'file') {
+    titleEl.textContent = 'Editable here';
+    metaEl.textContent = 'source: ' + (j.engine || '');
+    copyEl.textContent = 'Changes saved via the API are persisted to the file. A server restart re-reads the file from disk; until then the in-memory state is authoritative.';
+  } else if (kind === 'opa') {
+    titleEl.textContent = 'Read-only (OPA)';
+    metaEl.textContent = 'evaluating Rego at ' + (j.engine || '').replace(/^opa:/i, '');
+    copyEl.textContent = 'OPA is the source of truth. Define roles + bindings in Rego, deploy them through OPA’s bundle pipeline; this view reflects what OPA evaluates on every gate decision. Use the probe above to verify a specific verdict.';
+  } else {
+    titleEl.textContent = 'Built-in defaults (read-only)';
+    metaEl.textContent = j.note || 'DEFAULT_POLICY shipped with the build';
+    copyEl.textContent = 'Set OMCP_RBAC_POLICY_FILE to override with a YAML / JSON role catalogue (then the engine flips to file mode and authoring becomes available), or OMCP_OPA_URL to delegate evaluation to OPA.';
+  }
+  // Mirror the kind on the legacy badge in the header.
   const engineEl = document.getElementById('pol-engine');
+  if (engineEl) {
+    engineEl.textContent = 'engine: ' + (j.engine || 'unknown');
+    engineEl.className = 'badge ' + (kind === 'opa' ? 'badge-warn' : kind === 'file' ? 'badge-ok' : '');
+  }
+}
+async function loadPolicies() {
   const rolesEl = document.getElementById('pol-roles');
   try {
     const r = await fetch('/api/policy');
     if (!r.ok) {
       rolesEl.innerHTML = '<div class="empty">Policy view requires the <code>users:delete</code> permission (admin role).</div>';
-      engineEl.textContent = '';
+      const engineEl = document.getElementById('pol-engine');
+      if (engineEl) engineEl.textContent = '';
+      const banner = document.getElementById('pol-engine-banner');
+      if (banner) banner.hidden = true;
+      // Clear the body attribute so a stale value from a prior session
+      // (e.g. logged-out tab refresh) doesn't keep authoring controls
+      // dimmed under the wrong engine assumption.
+      document.body.removeAttribute('data-policy-engine');
       return;
     }
     const j = await r.json();
-    engineEl.textContent = 'engine: ' + (j.engine || 'unknown');
-    engineEl.className = 'badge ' + (j.engine === 'builtin' ? 'badge-ok' : '');
+    polRenderEngineBanner(j);
     const blocks = [];
     for (const role of (j.roles || [])) {
       const grants = (j.policy && j.policy[role]) || [];
@@ -2201,9 +2315,6 @@ async function loadPolicies() {
         </div>`);
     }
     rolesEl.innerHTML = blocks.join('') || '<div class="empty">No roles defined.</div>';
-    if (j.note) {
-      rolesEl.insertAdjacentHTML('beforeend', `<div class="form-hint" style="padding: var(--sp-2) var(--sp-4) var(--sp-3)">${escHtml(j.note)}</div>`);
-    }
   } catch (e) {
     rolesEl.innerHTML = '<div class="empty">Policy unavailable: ' + escHtml(String(e && e.message || e)) + '</div>';
   }
@@ -2213,24 +2324,28 @@ async function polDryRun() {
   const roles = document.getElementById('pol-dry-roles').value.trim();
   const resource = document.getElementById('pol-dry-resource').value.trim();
   const action = document.getElementById('pol-dry-action').value.trim();
+  const tenant = document.getElementById('pol-dry-tenant').value.trim();
   if (!resource || !action) {
     out.innerHTML = '<div class="form-banner show error" style="margin-top: var(--sp-3)">Resource and action are required.</div>';
     return;
   }
   const params = new URLSearchParams({ resource, action });
   if (roles) params.set('roles', roles);
+  if (tenant) params.set('tenant', tenant);
   try {
     const r = await fetch('/api/policy?' + params.toString());
     const j = await r.json();
     const d = j.dryRun || {};
-    const cls = d.allowed ? 'badge-ok' : 'badge-err';
     const verdict = d.allowed ? 'allowed' : 'denied';
+    const cls = d.allowed ? 'allow' : 'deny';
+    const tenantTag = d.tenant ? ` <span class="tag t-sm">tenant: ${escHtml(d.tenant)}</span>` : '';
     out.innerHTML = `
-      <div style="margin-top: var(--sp-3); display:flex; gap: var(--sp-2); align-items:center;">
-        <span class="badge ${cls}">${verdict}</span>
+      <div class="pol-probe-result">
+        <span class="pol-pv ${cls}" data-verdict="${verdict}">${verdict}</span>
         <code>${escHtml(Array.isArray(d.roles) ? d.roles.join(',') : '')} → ${escHtml(resource)}:${escHtml(action)}</code>
+        ${tenantTag}
       </div>
-      <div class="form-hint" style="margin-top: var(--sp-2)">${escHtml(d.reason || '')}</div>`;
+      <div class="form-hint" style="margin-top: var(--sp-1)">${escHtml(d.reason || '')}</div>`;
   } catch (e) {
     out.innerHTML = '<div class="form-banner show error" style="margin-top: var(--sp-3)">Probe failed: ' + escHtml(String(e && e.message || e)) + '</div>';
   }
