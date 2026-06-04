@@ -3787,7 +3787,7 @@ function renderSources() {
   const filterBar=`<div class="list-filter">
     <input id="src-filter" type="search" placeholder="Filter sources by name, type or URL…" value="${esc(srcFilter)}" oninput="setSrcFilter(this.value)" aria-label="Filter sources">
     <span class="count">${visible.length} of ${sourcesData.length}</span>
-    <span class="view-toggle" style="margin-left:auto"><button class="${view==='list'?'active':''}" onclick="setSrcView('list')">List</button><button class="${view==='table'?'active':''}" onclick="setSrcView('table')">Table</button></span>
+    <span class="view-toggle" id="src-views" style="margin-left:auto"><button id="src-view-list" class="${view==='list'?'active':''}" onclick="setSrcView('list')">List</button><button id="src-view-table" class="${view==='table'?'active':''}" onclick="setSrcView('table')">Table</button></span>
   </div>`;
   let body;
   if(view==='table'){
