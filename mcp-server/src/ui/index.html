@@ -1007,6 +1007,12 @@
     .pol-matrix td { text-align: center; }
     .pol-matrix .cell-grant { color: var(--success); font-weight: 600; }
     .pol-matrix .cell-empty { opacity: .25; }
+    /* Effective-permissions overlay cells — drop the bold/success
+       colour so "via <role>" reads as informational, not as a fresh
+       grant; "denied" cells stay dimmed via cell-empty. */
+    .pol-matrix td[data-effective="allowed"] { color: var(--text-1); font-weight: 400; }
+    .pol-matrix td[data-effective="allowed"][data-via-selected="true"] { color: var(--success); font-weight: 500; }
+    .pol-matrix td[data-effective="denied"] { color: var(--text-3); opacity: .55; font-style: italic; }
     @media (max-width: 900px) {
       .pol-roles-layout { grid-template-columns: 1fr; }
       .pol-role-list { border-right: 0; border-bottom: 1px solid var(--border); max-height: none; }
@@ -2801,6 +2807,64 @@ function polRenderSubjects(j) {
 const POL_RESOURCES = ["sources","services","health","topology","settings","connectors","audit","catalog","users","redaction","products"];
 const POL_ACTIONS = ["read","write","delete","bypass"];
 
+// Effective-permissions overlay: when a subject is selected the
+// matrix flips from "what does THIS role grant" to "what can THIS
+// subject do, and via which role". The overlay is pure client-side
+// composition over the existing /api/policy + /api/subjects snapshots
+// — no new endpoint. Null means overlay off (default = role-centric).
+let POL_EFFECTIVE_SUBJECT = null; // { kind: 'user'|'oidc', id: string, roles: string[] } | null
+
+function polEffectiveSubjectsList() {
+  // Build the dropdown options from the cached subjects payload.
+  // Users carry an explicit roles[] array. OIDC groups map to a
+  // single role via OMCP_OIDC_ROLE_MAP. API keys don't carry RBAC
+  // roles in the current model, so they're omitted — selecting one
+  // would always show "denied" everywhere, which is misleading.
+  const out = [];
+  if (!POL_SUBJECTS) return out;
+  for (const u of (POL_SUBJECTS.users || [])) {
+    out.push({ kind: 'user', id: u.username, label: u.username + ' (user)', roles: u.roles || [] });
+  }
+  for (const g of (POL_SUBJECTS.oidcGroups || [])) {
+    out.push({ kind: 'oidc', id: g.claim, label: g.claim + ' (oidc group)', roles: [g.role] });
+  }
+  return out;
+}
+
+async function polEffectiveEnsureSubjects() {
+  // Lazy-load /api/subjects the first time the operator opens the
+  // selector. Reuse the same cache the Bindings/Subjects tabs use.
+  if (POL_SUBJECTS) return;
+  try {
+    const r = await fetch('/api/subjects');
+    if (!r.ok) return;
+    POL_SUBJECTS = await r.json();
+  } catch (e) {
+    // Silent — the selector will just show "no subjects".
+  }
+}
+
+function polEffectiveOnChange(ev) {
+  const val = ev.target.value;
+  if (!val) {
+    POL_EFFECTIVE_SUBJECT = null;
+    polRolesRender();
+    return;
+  }
+  const list = polEffectiveSubjectsList();
+  const found = list.find((s) => (s.kind + ':' + s.id) === val);
+  POL_EFFECTIVE_SUBJECT = found || null;
+  polRolesRender();
+}
+
+async function polEffectiveOpen() {
+  // Operator clicked the "Show effective permissions" affordance —
+  // make sure the subjects cache is populated, then re-render so the
+  // selector has options.
+  await polEffectiveEnsureSubjects();
+  polRolesRender();
+}
+
 function polRolesRender() {
   const listEl = document.getElementById('pol-role-list');
   const detailEl = document.getElementById('pol-role-detail');
@@ -2846,23 +2910,93 @@ function polRolesRender() {
   const granted = new Set();
   for (const g of grants) granted.add(g.resource + ':' + g.action);
   const headerCells = POL_ACTIONS.map((a) => `<th>${escHtml(a)}</th>`).join('');
+
+  // Effective-overlay precompute. For each (resource, action) build a
+  // list of roles (from the subject's role bundle) that grant it — so
+  // the cell can show "via <role>" or "via <role> +N". Empty = denied.
+  const effective = POL_EFFECTIVE_SUBJECT
+    ? (() => {
+        const m = new Map();
+        for (const role of (POL_EFFECTIVE_SUBJECT.roles || [])) {
+          const gs = (POL_SNAPSHOT.policy && POL_SNAPSHOT.policy[role]) || [];
+          for (const g of gs) {
+            const k = g.resource + ':' + g.action;
+            if (!m.has(k)) m.set(k, []);
+            m.get(k).push(role);
+          }
+        }
+        return m;
+      })()
+    : null;
+
   const bodyRows = POL_RESOURCES.map((res) => {
     const cells = POL_ACTIONS.map((act) => {
-      const has = granted.has(res + ':' + act);
+      const key = res + ':' + act;
+      if (effective) {
+        const viaRoles = effective.get(key) || [];
+        const ownGrant = granted.has(key);
+        if (viaRoles.length === 0) {
+          return `<td class="cell-empty" data-grant="false" data-effective="denied" title="denied — subject has no role granting ${escHtml(res)}:${escHtml(act)}">denied</td>`;
+        }
+        const first = viaRoles[0];
+        const extra = viaRoles.length > 1 ? ` <span class="t-sm" style="opacity:.55">+${viaRoles.length - 1}</span>` : '';
+        const ownHint = ownGrant ? ' data-via-selected="true"' : '';
+        // Show all granting roles in the title for an audit trail.
+        const titleRoles = viaRoles.map((r) => r).join(', ');
+        return `<td class="cell-grant" data-grant="true" data-effective="allowed"${ownHint} title="via ${escHtml(titleRoles)}"><span class="t-sm" style="font-family:'JetBrains Mono', ui-monospace, monospace">via ${escHtml(first)}</span>${extra}</td>`;
+      }
+      const has = granted.has(key);
       return has
         ? `<td class="cell-grant" data-grant="true" title="${escHtml(res)}:${escHtml(act)} granted">✓</td>`
         : `<td class="cell-empty" data-grant="false">—</td>`;
     }).join('');
     return `<tr><th scope="row"><code>${escHtml(res)}</code></th>${cells}</tr>`;
   }).join('');
+
+  // Effective-overlay bar — subject selector + clear control. Rendered
+  // inside the detail panel so it survives polRolesRender re-renders
+  // and stays visually attached to the matrix it modifies.
+  const subjOpts = polEffectiveSubjectsList();
+  const selectedKey = POL_EFFECTIVE_SUBJECT ? (POL_EFFECTIVE_SUBJECT.kind + ':' + POL_EFFECTIVE_SUBJECT.id) : '';
+  const optEls = subjOpts.map((s) => {
+    const v = s.kind + ':' + s.id;
+    const sel = v === selectedKey ? ' selected' : '';
+    return `<option value="${escHtml(v)}"${sel}>${escHtml(s.label)}</option>`;
+  }).join('');
+  const subjEmpty = subjOpts.length === 0;
+  const overlayBar = `
+    <div class="pol-effective-bar" style="display:flex;align-items:center;gap:var(--sp-2);margin-bottom:var(--sp-2);flex-wrap:wrap">
+      <label class="t-sm" style="opacity:.7" for="pol-effective-subject">Show effective permissions for</label>
+      <select id="pol-effective-subject" class="input input-sm" style="min-width:240px" onchange="polEffectiveOnChange(event)" onfocus="polEffectiveOpen()" aria-label="Subject for effective-permissions overlay">
+        <option value="">(none — show role grants)</option>
+        ${optEls}
+      </select>
+      ${POL_EFFECTIVE_SUBJECT
+        ? `<button class="btn btn-ghost btn-sm" onclick="polEffectiveOnChange({target:{value:''}})">Clear</button>
+           <span class="t-sm" style="opacity:.65">via roles: ${(POL_EFFECTIVE_SUBJECT.roles || []).map((r) => `<code>${escHtml(r)}</code>`).join(', ') || '<em>none</em>'}</span>`
+        : (subjEmpty ? '<span class="t-sm" style="opacity:.55">No subjects configured — set OMCP_USERS_FILE or OMCP_OIDC_ROLE_MAP to populate.</span>' : '')
+      }
+    </div>`;
+
+  const titleSuffix = POL_EFFECTIVE_SUBJECT
+    ? ` <span class="t-sm" style="opacity:.65;font-weight:400">— effective view for ${escHtml(POL_EFFECTIVE_SUBJECT.id)}</span>`
+    : ` <span class="t-sm" style="opacity:.65;font-weight:400">${grants.length} grant${grants.length === 1 ? '' : 's'}</span>`;
+
+  const legend = POL_EFFECTIVE_SUBJECT
+    ? `<p class="t-sm" style="opacity:.65;margin-top:var(--sp-3)">
+        <em>via &lt;role&gt;</em> = the subject inherits this grant through that role. <em>denied</em> = no role in the subject's bundle grants it. +N = additional roles also grant it; hover the cell for the full list.
+      </p>`
+    : `<p class="t-sm" style="opacity:.65;margin-top:var(--sp-3)">
+        ✓ = the role grants this resource:action combination. — = no grant. The
+        <em>redaction:bypass</em> column is the operator-side gate for the per-call
+        bypass; the credential must also be allow-listed via OMCP_KEY_BYPASS_REDACTION.
+      </p>`;
+
   detailEl.innerHTML = `
-    <h3>${escHtml(POL_SELECTED_ROLE)} <span class="t-sm" style="opacity:.65;font-weight:400">${grants.length} grant${grants.length === 1 ? '' : 's'}</span></h3>
+    <h3>${escHtml(POL_SELECTED_ROLE)}${titleSuffix}</h3>
+    ${overlayBar}
     <table class="pol-matrix"><thead><tr><th>Resource</th>${headerCells}</tr></thead><tbody>${bodyRows}</tbody></table>
-    <p class="t-sm" style="opacity:.65;margin-top:var(--sp-3)">
-      ✓ = the role grants this resource:action combination. — = no grant. The
-      <em>redaction:bypass</em> column is the operator-side gate for the per-call
-      bypass; the credential must also be allow-listed via OMCP_KEY_BYPASS_REDACTION.
-    </p>
+    ${legend}
   `;
 }
 function polSelectRole(role) {
@@ -2958,11 +3092,22 @@ async function loadPolicies() {
     // Subjects tab visit fetches fresh data (env vars / users file
     // may have changed since last visit).
     POL_SUBJECTS = null;
+    // Stale overlay selection points at a subject that may no longer
+    // exist (subjects cache will be repopulated on next visit) —
+    // safest to drop it on every policy reload.
+    POL_EFFECTIVE_SUBJECT = null;
     // Default sub-tab = Roles.
     if (!document.querySelector('.pol-subtab[data-active="true"]')) {
       polSetTab('roles');
     }
     polRolesRender();
+    // Warm the subjects cache in the background so the effective-
+    // permissions selector has options the first time an operator
+    // opens it (no fetch-on-focus jank). Failure is silent — the
+    // selector falls back to its empty-state copy.
+    polEffectiveEnsureSubjects().then(() => {
+      if (POL_SUBJECTS && document.getElementById('pol-effective-subject')) polRolesRender();
+    });
     // Legacy snapshot card kept hidden — the matrix supersedes it.
     if (rolesEl) {
       const blocks = [];
