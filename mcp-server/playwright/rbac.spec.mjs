@@ -186,6 +186,76 @@ test.describe("Policies UI — engine banner + sticky dry-run", () => {
     // server-side by readUsersFile/writeUsersFile unit tests.
   });
 
+  test("Roles matrix — effective-permissions overlay renders + reflects selected subject", async ({ page }) => {
+    await page.goto(BASE);
+    await page.click("[data-page=policies]");
+    await page.waitForSelector("#page-policies.active");
+
+    // Default state: overlay bar is rendered, selector is "(none)",
+    // the existing role-grant view stays visible (✓/—). Demo profile
+    // has no subjects so the empty-state hint must appear.
+    const bar = page.locator(".pol-effective-bar");
+    await expect(bar).toBeVisible();
+    const sel = page.locator("#pol-effective-subject");
+    await expect(sel).toBeVisible();
+    await expect(sel).toHaveValue("");
+    await expect(bar).toContainText(/No subjects configured/i);
+    // Confirm the role-centric view is still in effect (cells show
+    // ✓ or — for the active role, not "via" / "denied").
+    const matrix = page.locator(".pol-matrix");
+    const grantCellCount = await matrix.locator('td[data-grant="true"]').count();
+    expect(grantCellCount).toBeGreaterThan(0);
+    await expect(matrix.locator('td[data-effective]')).toHaveCount(0);
+
+    // Inject a synthetic subject + trigger a re-render to exercise
+    // the overlay path. The demo profile doesn't configure local
+    // users or OIDC groups, so we can't drive this through the real
+    // selector — but the overlay computation is pure client-side
+    // composition over POL_SNAPSHOT, so a synthetic subject is a
+    // faithful test of the rendering branch.
+    await page.evaluate(() => {
+      // Select the admin role so its grants overlap heavily with
+      // the synthetic admin-bundle subject (gives plenty of "via"
+      // cells) and at least one cell flips to "denied" depending on
+      // grants of the chosen subject roles.
+      window.POL_SELECTED_ROLE = "admin";
+      window.POL_EFFECTIVE_SUBJECT = { kind: "user", id: "alice", roles: ["viewer"] };
+      window.polRolesRender();
+    });
+    // Title reflects the selected subject.
+    await expect(page.locator("#pol-role-detail h3")).toContainText(/effective view for alice/);
+    // At least one cell flips to allowed (viewer grants something —
+    // e.g. sources:read) and at least one to denied (viewer doesn't
+    // grant write/delete on most resources).
+    const allowed = matrix.locator('td[data-effective="allowed"]');
+    const denied = matrix.locator('td[data-effective="denied"]');
+    await expect(allowed.first()).toBeVisible();
+    await expect(denied.first()).toBeVisible();
+    // Allowed cells render the "via <role>" label.
+    await expect(allowed.first()).toContainText(/via\s+viewer/i);
+    // Denied cells render the literal "denied" text.
+    await expect(denied.first()).toContainText(/denied/i);
+
+    // Switching the subject re-renders. Synthetic operator with the
+    // operator role should also produce allowed + denied cells, and
+    // the legend updates.
+    await page.evaluate(() => {
+      window.POL_EFFECTIVE_SUBJECT = { kind: "user", id: "bob", roles: ["operator"] };
+      window.polRolesRender();
+    });
+    await expect(page.locator("#pol-role-detail h3")).toContainText(/effective view for bob/);
+    await expect(page.locator(".pol-effective-bar")).toContainText(/via roles:/i);
+    await expect(page.locator(".pol-effective-bar code", { hasText: "operator" })).toBeVisible();
+
+    // Clearing the overlay must restore the role-centric view.
+    await page.evaluate(() => {
+      window.POL_EFFECTIVE_SUBJECT = null;
+      window.polRolesRender();
+    });
+    await expect(matrix.locator('td[data-effective]')).toHaveCount(0);
+    await expect(matrix.locator('td[data-grant="true"]').first()).toBeVisible();
+  });
+
   test("authoring controls keyed on data-engine-required=file stay disabled on read-only engines", async ({ page }) => {
     // No author controls ship in this slice — but the CSS contract
     // they will use is already in place. Verify the body attribute
