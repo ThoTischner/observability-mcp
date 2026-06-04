@@ -936,6 +936,48 @@
     .view-toggle button + button { border-left: 1px solid var(--border-strong); }
     .view-toggle button.active { background: var(--accent-soft); color: var(--accent); }
     .view-toggle button:hover { color: var(--text); }
+
+    /* Products — leitfaden card */
+    .leitfaden-chev { display: inline-block; transition: transform .15s ease; font-size: .85em; opacity: .7; }
+    #mcp-products-leitfaden.collapsed .leitfaden-chev { transform: rotate(-90deg); }
+    #mcp-products-leitfaden.collapsed #mcp-leitfaden-body { display: none; }
+    .leitfaden-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-4); padding: 0 var(--sp-4) var(--sp-4); }
+    .leitfaden-grid h3 { font-size: 13px; font-weight: 600; margin: 0 0 var(--sp-2); }
+    .leitfaden-grid p { margin: 0 0 var(--sp-2); line-height: 1.5; }
+    .leitfaden-grid pre { background: var(--surface-2); padding: var(--sp-2); border-radius: var(--radius-sm); font-size: 11px; overflow-x: auto; }
+    .leitfaden-grid code { font-size: .92em; }
+    @media (max-width: 900px) { .leitfaden-grid { grid-template-columns: 1fr; } }
+
+    /* Products — card grid */
+    .pcard-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: var(--sp-3); padding: var(--sp-3); }
+    .pcard { position: relative; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: var(--sp-4); padding-left: calc(var(--sp-4) + 6px); display: flex; flex-direction: column; gap: var(--sp-2); transition: border-color .15s ease, box-shadow .15s ease; }
+    .pcard:hover { border-color: var(--border-strong); box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+    .pcard-rail { position: absolute; left: 0; top: var(--sp-3); bottom: var(--sp-3); width: 4px; border-radius: 0 2px 2px 0; background: var(--accent); }
+    .pcard-hd { display: flex; align-items: flex-start; gap: var(--sp-2); }
+    .pcard-icon { width: 32px; height: 32px; flex: 0 0 32px; border-radius: var(--radius-sm); background: var(--surface-2); display: flex; align-items: center; justify-content: center; font-size: 18px; overflow: hidden; }
+    .pcard-icon img { width: 100%; height: 100%; object-fit: cover; }
+    .pcard-title { flex: 1; min-width: 0; }
+    .pcard-title h3 { font-size: 14px; font-weight: 600; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pcard-meta { font-size: 11px; opacity: .7; margin-top: 2px; font-family: 'JetBrains Mono', ui-monospace, monospace; }
+    .pcard-status { flex: 0 0 auto; }
+    .pcard-desc { font-size: 12px; line-height: 1.45; opacity: .85; min-height: 2.9em; }
+    .pcard-tools-label { font-size: 11px; font-weight: 600; opacity: .65; text-transform: uppercase; letter-spacing: .04em; margin-bottom: var(--sp-1); }
+    .pcard-tools { display: flex; flex-wrap: wrap; gap: 4px; min-height: 22px; }
+    .pcard-tool { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 10.5px; padding: 2px 6px; background: var(--surface-2); border-radius: var(--radius-sm); border: 1px solid var(--border); }
+    .pcard-tool-all { font-size: 11px; opacity: .55; font-style: italic; }
+    .pcard-footer { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-2); padding-top: var(--sp-2); border-top: 1px solid var(--border); }
+    .pcard-footer .pcard-spacer { flex: 1; }
+
+    /* Products — empty state with templates */
+    .pempty { padding: var(--sp-5); text-align: center; }
+    .pempty h3 { margin: 0 0 var(--sp-2); font-size: 16px; }
+    .pempty p { margin: 0 auto var(--sp-4); max-width: 540px; line-height: 1.5; opacity: .8; }
+    .pempty-templates { display: flex; gap: var(--sp-2); justify-content: center; flex-wrap: wrap; }
+    .pempty-tpl { padding: var(--sp-3) var(--sp-4); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); cursor: pointer; min-width: 140px; text-align: left; transition: border-color .15s ease, background .15s ease; }
+    .pempty-tpl:hover { border-color: var(--accent); background: var(--accent-soft); }
+    .pempty-tpl-title { font-weight: 600; font-size: 13px; margin-bottom: 2px; }
+    .pempty-tpl-desc { font-size: 11px; opacity: .7; }
+
     /* Form-first editor (Form / JSON / YAML — OpenShift-style) */
     .ed-bar { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-3); flex-wrap: wrap; }
     .ed-token { flex: 1; min-width: 200px; }
@@ -1736,16 +1778,51 @@ curl -X PUT http://localhost:3000/api/enterprise/policy \
            legacy enterprise-catalog block below for new deployments;
            the legacy block stays so existing /api/enterprise/catalog
            operators see their data until they migrate. -->
+      <!-- Inline leitfaden — collapsed by default once the operator
+           dismisses it; re-opens by clicking the chevron. -->
+      <div class="card" id="mcp-products-leitfaden">
+        <div class="card-header" style="cursor:pointer" onclick="mcpLeitfadenToggle()">
+          <h2 style="display:flex;align-items:center;gap:.5rem">
+            <span class="leitfaden-chev" id="mcp-leitfaden-chev">▾</span>
+            About Products
+          </h2>
+          <span class="t-sm" style="opacity:.7">click to collapse</span>
+        </div>
+        <div id="mcp-leitfaden-body">
+          <div class="leitfaden-grid">
+            <div>
+              <h3>What is a product?</h3>
+              <p class="t-sm">A curated, named bundle of MCP tools you expose to one agent. The bundle's <code>tools</code> allow-list filters <code>tools/list</code> at the <code>/mcp</code> transport, so an agent bound to <em>Ops Bundle</em> sees only the operations tools and not the developer tools.</p>
+            </div>
+            <div>
+              <h3>When do I need one?</h3>
+              <p class="t-sm">Whenever more than one agent connects. Each team / use-case gets its own product — SRE on-call vs coding assistant vs compliance auditor. Without a product the credential sees every registered tool, which is fine for a single-operator demo but not for a production multi-agent deployment.</p>
+            </div>
+            <div>
+              <h3>How do agents pick one up?</h3>
+              <p class="t-sm">Bind a credential to a product via <code>OMCP_KEY_PRODUCTS</code>:</p>
+              <pre style="margin:.25rem 0"><code>OMCP_API_KEYS="agent:tok_ops,ci:tok_dev"
+OMCP_KEY_PRODUCTS="agent=ops-bundle;ci=dev-bundle"</code></pre>
+              <p class="t-sm">The next <code>/mcp</code> session of <code>agent</code> sees only the tools in <code>ops-bundle</code>. <a href="https://github.com/ThoTischner/observability-mcp/blob/main/docs/products.md" target="_blank" rel="noreferrer">Full docs →</a></p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="card" id="mcp-products-card">
         <div class="card-header">
           <h2>MCP Products
             <button class="info" aria-label="About the MCP Products API"
               data-title="MCP Products"
-              data-info="Curated tool bundles loaded from OMCP_PRODUCTS_FILE. Each product names an id, display name, optional tool allowlist (filters tools/list at the /mcp transport in a future slice), branding metadata, and a status (published | staging). Non-admins see only their own tenant's published entries; admins see everything plus staging. Edits go through PUT /api/products/{id} with strict body validation."
+              data-info="Curated tool bundles loaded from OMCP_PRODUCTS_FILE. Each product names an id, display name, optional tool allowlist (filters tools/list at the /mcp transport), branding metadata, and a status (published | staging). Non-admins see only their own tenant's published entries; admins see everything plus staging. Edits go through PUT /api/products/{id} with strict body validation."
               onclick="infoPop(this)">?</button>
           </h2>
           <div class="row-inline">
             <span id="mcp-products-scope" class="badge"></span>
+            <span class="view-toggle" id="mcp-products-views">
+              <button id="mcp-pv-cards" onclick="mcpProductsSetView('cards')">Cards</button>
+              <button id="mcp-pv-table" onclick="mcpProductsSetView('table')">Table</button>
+            </span>
             <button class="btn btn-primary btn-sm" data-rbac="products:write" onclick="mcpProductsNew()">+ New product</button>
           </div>
         </div>
@@ -3143,14 +3220,184 @@ function closeModal(id) { document.getElementById(id).classList.remove('open'); 
 // --- Data Loading ---
 async function loadSources() { try { sourcesData=await(await fetch('/api/sources')).json(); renderSources(); updateStats(); } catch(e){} }
 // --- MCP Products (new /api/products surface) ---
+// View mode (cards | table) for the Products catalog. Persisted in
+// localStorage so an operator's preference survives reloads.
+function mcpProductsView() {
+  try { return localStorage.getItem('omcp-mcp-products-view') === 'table' ? 'table' : 'cards'; }
+  catch (e) { return 'cards'; }
+}
+function mcpProductsSetView(v) {
+  try { localStorage.setItem('omcp-mcp-products-view', v); } catch (e) { /* noop */ }
+  loadMcpProducts();
+}
+
+// Leitfaden collapse state. Default expanded on first visit; once
+// the user collapses it the choice sticks. Idempotent — safe to
+// call before the DOM is ready (no-ops if the card isn't present).
+function mcpLeitfadenSync() {
+  const card = document.getElementById('mcp-products-leitfaden');
+  if (!card) return;
+  let collapsed = false;
+  try { collapsed = localStorage.getItem('omcp-mcp-leitfaden-collapsed') === '1'; } catch (e) { /* noop */ }
+  card.classList.toggle('collapsed', collapsed);
+}
+function mcpLeitfadenToggle() {
+  const card = document.getElementById('mcp-products-leitfaden');
+  if (!card) return;
+  const nextCollapsed = !card.classList.contains('collapsed');
+  card.classList.toggle('collapsed', nextCollapsed);
+  try { localStorage.setItem('omcp-mcp-leitfaden-collapsed', nextCollapsed ? '1' : '0'); } catch (e) { /* noop */ }
+}
+
+// Empty-state product templates. Cloning a template prefills the
+// modal — the operator only has to pick an id + tweak before save.
+// Templates are pure UI; the server doesn't know about them.
+const MCP_PRODUCT_TEMPLATES = {
+  ops: {
+    title: 'Ops Bundle',
+    desc: 'Incident-response tools for an on-call SRE agent.',
+    product: {
+      id: '', name: 'Ops Bundle',
+      description: 'Incident-response tools for the on-call SRE agent.',
+      status: 'staging',
+      tools: ['query_logs', 'query_metrics', 'get_service_health', 'detect_anomalies'],
+    },
+  },
+  dev: {
+    title: 'Dev Bundle',
+    desc: 'Discovery + topology tools for a coding agent. Read-only.',
+    product: {
+      id: '', name: 'Dev Bundle',
+      description: 'Discovery + topology tools for a coding agent. Read-only.',
+      status: 'staging',
+      tools: ['list_sources', 'list_services', 'get_topology'],
+    },
+  },
+  compliance: {
+    title: 'Compliance Bundle',
+    desc: 'Logs query only — for an audit agent.',
+    product: {
+      id: '', name: 'Compliance Bundle',
+      description: 'Logs query only — for an audit agent.',
+      status: 'staging',
+      tools: ['query_logs'],
+    },
+  },
+  blank: {
+    title: 'Blank',
+    desc: 'Start from scratch.',
+    product: { id: '', name: '', status: 'staging' },
+  },
+};
+function mcpProductTemplate(key) {
+  const t = MCP_PRODUCT_TEMPLATES[key];
+  if (!t) return;
+  mcpProductOpen('new', t.product);
+}
+
+function mcpProductCardHtml(p) {
+  const accent = (p.branding && typeof p.branding.color === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(p.branding.color))
+    ? p.branding.color : 'var(--accent)';
+  const icon = (p.branding && typeof p.branding.iconUrl === 'string' && /^https?:\/\//.test(p.branding.iconUrl))
+    ? `<img src="${escHtml(p.branding.iconUrl)}" alt="" onerror="this.style.display='none'">`
+    : '◫';
+  const status = p.status === 'staging'
+    ? '<span class="pill" style="background:var(--warning-soft);color:var(--warning)" title="Hidden from non-admin agents">staging</span>'
+    : '<span class="pill" style="background:var(--success-soft);color:var(--success)">published</span>';
+  const meta = [p.id, p.version ? 'v' + p.version : null, 'tenant: ' + (p.tenant || 'default')]
+    .filter(Boolean).map(escHtml).join(' · ');
+  const tools = (p.tools || []);
+  const toolsLabel = tools.length === 0
+    ? '<span class="pcard-tool-all">no filter — every registered tool</span>'
+    : tools.slice(0, 8).map((t) => `<span class="pcard-tool">${escHtml(t)}</span>`).join('') +
+      (tools.length > 8 ? `<span class="pcard-tool">+${tools.length - 8} more</span>` : '');
+  const desc = p.description
+    ? escHtml(p.description)
+    : '<span style="opacity:.5">No description.</span>';
+  const idAttr = encodeURIComponent(p.id);
+  return `<div class="pcard">
+    <div class="pcard-rail" style="background:${accent}"></div>
+    <div class="pcard-hd">
+      <div class="pcard-icon" style="color:${accent}">${icon}</div>
+      <div class="pcard-title">
+        <h3>${escHtml(p.name)}</h3>
+        <div class="pcard-meta">${meta}</div>
+      </div>
+      <div class="pcard-status">${status}</div>
+    </div>
+    <div class="pcard-desc">${desc}</div>
+    <div>
+      <div class="pcard-tools-label">Tools (${tools.length || 'unrestricted'})</div>
+      <div class="pcard-tools">${toolsLabel}</div>
+    </div>
+    <div class="pcard-footer">
+      <div class="pcard-spacer"></div>
+      <button class="btn-icon" data-rbac="products:write" title="Edit" aria-label="Edit ${escHtml(p.id)}" onclick="mcpProductsEdit('${idAttr}')">&#9998;</button>
+      <button class="btn-icon" data-rbac="products:delete" title="Delete" aria-label="Delete ${escHtml(p.id)}" onclick="mcpProductsDelete('${idAttr}')">&#128465;</button>
+    </div>
+  </div>`;
+}
+
+function mcpProductTableHtml(products) {
+  const rows = products.map((p) => {
+    const status = p.status === 'staging'
+      ? '<span class="pill" style="background:var(--warning-soft);color:var(--warning)">staging</span>'
+      : '<span class="pill" style="background:var(--success-soft);color:var(--success)">published</span>';
+    const tools = (p.tools || []).slice(0, 5).map((t) => `<code class="t-sm">${escHtml(t)}</code>`).join(' ');
+    const moreTools = (p.tools || []).length > 5 ? ` <span class="t-sm" style="opacity:.7">+${(p.tools.length - 5)} more</span>` : '';
+    const tenantCell = `<span class="tag">${escHtml(p.tenant || 'default')}</span>`;
+    return `<tr>
+      <td><code>${escHtml(p.id)}</code></td>
+      <td>${escHtml(p.name)}${p.description ? `<div class="t-sm" style="opacity:.7">${escHtml(p.description)}</div>` : ''}</td>
+      <td>${tenantCell}</td>
+      <td>${status}</td>
+      <td>${tools || '<span class="t-sm" style="opacity:.5">all tools</span>'}${moreTools}</td>
+      <td style="text-align:right">
+        <button class="btn-icon" data-rbac="products:write" title="Edit" onclick="mcpProductsEdit('${encodeURIComponent(p.id)}')">&#9998;</button>
+        <button class="btn-icon" data-rbac="products:delete" title="Delete" onclick="mcpProductsDelete('${encodeURIComponent(p.id)}')">&#128465;</button>
+      </td>
+    </tr>`;
+  }).join('');
+  return `<table class="data-table" style="width:100%">
+    <thead><tr><th>id</th><th>Name</th><th>Tenant</th><th>Status</th><th>Tools</th><th></th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function mcpProductEmptyHtml(configured) {
+  const tpls = ['ops', 'dev', 'compliance', 'blank']
+    .map((k) => {
+      const t = MCP_PRODUCT_TEMPLATES[k];
+      return `<button class="pempty-tpl" data-rbac="products:write" onclick="mcpProductTemplate('${k}')">
+        <div class="pempty-tpl-title">${escHtml(t.title)}</div>
+        <div class="pempty-tpl-desc">${escHtml(t.desc)}</div>
+      </button>`;
+    }).join('');
+  const persistedHint = configured
+    ? 'Changes here persist to <code>OMCP_PRODUCTS_FILE</code>.'
+    : '<code>OMCP_PRODUCTS_FILE</code> is unset — changes live in memory only and won\'t survive a restart.';
+  return `<div class="pempty">
+    <h3>No products yet</h3>
+    <p>A product is a curated tool bundle an agent receives when it connects with a bound credential. Pick a template below or start blank — you can rename and tweak everything before saving.</p>
+    <div class="pempty-templates" data-rbac="products:write">${tpls}</div>
+    <p class="t-sm" style="margin-top:var(--sp-4);opacity:.7">${persistedHint}</p>
+  </div>`;
+}
+
 async function loadMcpProducts() {
+  mcpLeitfadenSync();
   const box = document.getElementById('mcp-products-box');
   const scope = document.getElementById('mcp-products-scope');
   if (!box) return;
+  // Sync view-toggle active state.
+  const v = mcpProductsView();
+  const btnC = document.getElementById('mcp-pv-cards');
+  const btnT = document.getElementById('mcp-pv-table');
+  if (btnC) btnC.classList.toggle('active', v === 'cards');
+  if (btnT) btnT.classList.toggle('active', v === 'table');
   try {
     const r = await fetch('/api/products');
     if (!r.ok) {
-      // 403 = no products:read; render a friendly hint instead of an empty list
       if (r.status === 403) {
         box.innerHTML = '<div class="empty">Requires <code>products:read</code> permission (granted to viewer / operator / admin by default).</div>';
       } else {
@@ -3164,35 +3411,15 @@ async function loadMcpProducts() {
       scope.textContent = 'scope: ' + s + (j.includesStaging ? ' · staging visible' : '');
     }
     if (!j.products || j.products.length === 0) {
-      const hint = j.configured
-        ? 'No products yet. Click <b>+ New product</b> or edit <code>OMCP_PRODUCTS_FILE</code> directly.'
-        : 'Set <code>OMCP_PRODUCTS_FILE=&lt;path&gt;</code> on the server (or use <b>+ New product</b> to start an in-memory catalog).';
-      box.innerHTML = '<div class="empty">' + hint + '</div>';
+      box.innerHTML = mcpProductEmptyHtml(j.configured);
+      omcpApplyRbacToDom();
       return;
     }
-    const rows = j.products.map((p) => {
-      const status = p.status === 'staging'
-        ? '<span class="pill" style="background:var(--warning-soft);color:var(--warning)">staging</span>'
-        : '<span class="pill" style="background:var(--success-soft);color:var(--success)">published</span>';
-      const tools = (p.tools || []).slice(0, 5).map((t) => `<code class="t-sm">${escHtml(t)}</code>`).join(' ');
-      const moreTools = (p.tools || []).length > 5 ? ` <span class="t-sm" style="opacity:.7">+${(p.tools.length - 5)} more</span>` : '';
-      const tenantCell = `<span class="tag">${escHtml(p.tenant || 'default')}</span>`;
-      return `<tr>
-        <td><code>${escHtml(p.id)}</code></td>
-        <td>${escHtml(p.name)}${p.description ? `<div class="t-sm" style="opacity:.7">${escHtml(p.description)}</div>` : ''}</td>
-        <td>${tenantCell}</td>
-        <td>${status}</td>
-        <td>${tools || '<span class="t-sm" style="opacity:.5">all tools</span>'}${moreTools}</td>
-        <td style="text-align:right">
-          <button class="btn-icon" data-rbac="products:write" title="Edit" onclick="mcpProductsEdit('${encodeURIComponent(p.id)}')">&#9998;</button>
-          <button class="btn-icon" data-rbac="products:delete" title="Delete" onclick="mcpProductsDelete('${encodeURIComponent(p.id)}')">&#128465;</button>
-        </td>
-      </tr>`;
-    }).join('');
-    box.innerHTML = `<table class="data-table" style="width:100%">
-      <thead><tr><th>id</th><th>Name</th><th>Tenant</th><th>Status</th><th>Tools</th><th></th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>`;
+    if (v === 'table') {
+      box.innerHTML = mcpProductTableHtml(j.products);
+    } else {
+      box.innerHTML = `<div class="pcard-grid">${j.products.map(mcpProductCardHtml).join('')}</div>`;
+    }
     omcpApplyRbacToDom();
   } catch (e) {
     box.innerHTML = '<div class="empty">/api/products unavailable: ' + escHtml(String(e && e.message || e)) + '</div>';
@@ -3231,20 +3458,31 @@ function mcpProductOpen(mode, current) {
     colorEl.value = (current.branding && current.branding.color) || '';
     iconEl.value = (current.branding && current.branding.iconUrl) || '';
   } else {
+    // 'new' mode. When the caller hands us a partial `current`
+    // (the empty-state templates do this), prefill every field
+    // they supplied — the operator only has to pick an id + tweak.
+    // Falsy `current` zeroes everything (legacy "fresh modal" path).
+    const c = current || {};
     titleEl.textContent = 'New Product';
-    idEl.value = '';
+    idEl.value = c.id || '';
     idEl.disabled = false;
-    nameEl.value = '';
-    descEl.value = '';
-    statusEl.value = 'staging';
-    tenantEl.value = '';
-    toolsEl.value = '';
-    verEl.value = '';
-    colorEl.value = '';
-    iconEl.value = '';
+    nameEl.value = c.name || '';
+    descEl.value = c.description || '';
+    statusEl.value = c.status || 'staging';
+    tenantEl.value = c.tenant || '';
+    toolsEl.value = (c.tools || []).join('\n');
+    verEl.value = c.version || '';
+    colorEl.value = (c.branding && c.branding.color) || '';
+    iconEl.value = (c.branding && c.branding.iconUrl) || '';
   }
   document.getElementById('mcp-product-modal').classList.add('open');
-  setTimeout(() => (mode === 'edit' ? nameEl : idEl).focus(), 50);
+  // When opening from a template the id is the one thing the operator
+  // hasn't picked yet; in every other case (edit, blank new) the name
+  // is the most natural focus target.
+  const focusEl = (mode === 'edit') ? nameEl
+    : (current && (current.name || (current.tools && current.tools.length))) ? idEl
+    : idEl;
+  setTimeout(() => focusEl.focus(), 50);
 }
 async function mcpProductsNew() { mcpProductOpen('new'); }
 async function mcpProductsEdit(idEnc) {
@@ -3549,7 +3787,7 @@ function renderSources() {
   const filterBar=`<div class="list-filter">
     <input id="src-filter" type="search" placeholder="Filter sources by name, type or URL…" value="${esc(srcFilter)}" oninput="setSrcFilter(this.value)" aria-label="Filter sources">
     <span class="count">${visible.length} of ${sourcesData.length}</span>
-    <span class="view-toggle" style="margin-left:auto"><button class="${view==='list'?'active':''}" onclick="setSrcView('list')">List</button><button class="${view==='table'?'active':''}" onclick="setSrcView('table')">Table</button></span>
+    <span class="view-toggle" id="src-views" style="margin-left:auto"><button id="src-view-list" class="${view==='list'?'active':''}" onclick="setSrcView('list')">List</button><button id="src-view-table" class="${view==='table'?'active':''}" onclick="setSrcView('table')">Table</button></span>
   </div>`;
   let body;
   if(view==='table'){

@@ -59,7 +59,9 @@ test.describe("Sources filter + sort", () => {
     await page.locator('[data-page="sources"]').click();
 
     // Switch to Table view so sortable headers are present.
-    const tableBtn = page.locator(".view-toggle button", { hasText: "Table" });
+    // Scope to #src-views so the Products page's view-toggle
+    // (which also has a "Table" button) doesn't trip strict-mode.
+    const tableBtn = page.locator("#src-view-table");
     if (await tableBtn.count()) await tableBtn.click();
 
     const nameHeader = page.locator('th.sortable[data-sort-key="name"]');
@@ -81,7 +83,7 @@ test.describe("Sources filter + sort", () => {
     // Persisted: reload + return to Sources Table view + Type header should still be asc.
     await page.reload({ waitUntil: "networkidle" });
     await page.locator('[data-page="sources"]').click();
-    const tableBtn2 = page.locator(".view-toggle button", { hasText: "Table" });
+    const tableBtn2 = page.locator("#src-view-table");
     if (await tableBtn2.count()) await tableBtn2.click();
     await expect(page.locator('th.sortable[data-sort-key="type"]')).toHaveClass(/sort-asc/, { timeout: 5_000 });
   });
