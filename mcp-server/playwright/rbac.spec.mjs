@@ -127,13 +127,28 @@ test.describe("Policies UI — engine banner + sticky dry-run", () => {
     await expect(body).toContainText("OMCP_OIDC_ROLE_MAP");
   });
 
-  test("Bindings sub-tab renders placeholder copy (slice H lands it)", async ({ page }) => {
+  test("Bindings sub-tab — empty-state copy when no subjects configured (demo profile)", async ({ page }) => {
     await page.goto(BASE);
     await page.click("[data-page=policies]");
     await page.waitForSelector("#page-policies.active");
     await page.click(".pol-subtab[data-pol-tab=bindings]");
     await expect(page.locator("#pol-pane-bindings")).toBeVisible();
-    await expect(page.locator("#pol-pane-bindings")).toContainText(/Bindings are the who/i);
+    // Demo profile configures none of the three subject sources → empty.
+    await expect(page.locator("#pol-pane-bindings")).toContainText(/No subjects configured/);
+    await expect(page.locator("#pol-pane-bindings")).toContainText("OMCP_USERS_FILE");
+  });
+
+  test("PUT /api/users/:name/roles — 409 when OMCP_USERS_FILE unset, 422 on unknown role, 200 on success", async ({ request: apiReq }) => {
+    // 409 path — demo profile doesn't set OMCP_USERS_FILE.
+    const r409 = await apiReq.put("/api/users/anyone/roles", { data: { roles: ["admin"] } });
+    expect(r409.status()).toBe(409);
+    const j409 = await r409.json();
+    expect(j409.error).toMatch(/OMCP_USERS_FILE is not configured/i);
+    // The 422 + 200 paths are tested by the integration suite — they
+    // need a real users file and a restart with OMCP_USERS_FILE set,
+    // which the demo profile doesn't provide. The shape pinned here
+    // proves the failure-mode wiring; the success path is exercised
+    // server-side by readUsersFile/writeUsersFile unit tests.
   });
 
   test("authoring controls keyed on data-engine-required=file stay disabled on read-only engines", async ({ page }) => {

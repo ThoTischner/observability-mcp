@@ -37,6 +37,7 @@ import {
 } from "./auth/session.js";
 import {
   readUsersFile,
+  writeUsersFile,
   authenticate,
   type LocalUsersFile,
 } from "./auth/local-users.js";
@@ -1273,6 +1274,64 @@ async function main() {
         oidcGroups: process.env.OMCP_OIDC_ROLE_MAP ? "OMCP_OIDC_ROLE_MAP" : null,
       },
     });
+  });
+
+  // Update a user's roles. Today this is the only binding-shape that
+  // OMCP can actually mutate at runtime: api-key roles aren't stored
+  // anywhere (creds carry sources / tenant / product but not roles),
+  // and OIDC group → role mappings come from OMCP_OIDC_ROLE_MAP which
+  // is read once at boot. The Bindings UI surface api-key + oidc rows
+  // explain the env-source path instead of offering an edit affordance.
+  app.put("/api/users/:username/roles", need("users", "delete"), audit("users", "write"), async (req, res) => {
+    const username = String(req.params.username);
+    const path = process.env.OMCP_USERS_FILE;
+    if (!path) {
+      res.status(409).json({ error: "OMCP_USERS_FILE is not configured — basic-mode user roles can't be edited via the API." });
+      return;
+    }
+    const body = req.body as Record<string, unknown> | undefined;
+    if (!body || !Array.isArray(body.roles) || !body.roles.every((r) => typeof r === "string")) {
+      res.status(400).json({ error: "body must include { roles: string[] }" });
+      return;
+    }
+    const requestedRoles = body.roles as string[];
+    // Reject role names not in the active policy engine's catalogue —
+    // assigning a user a role that grants nothing is almost always a
+    // typo, not intent. Same defence-in-depth posture as the products
+    // typo guard (PR #343).
+    const knownRoles = new Set(policyEngine.roles());
+    const unknown = requestedRoles.filter((r) => !knownRoles.has(r));
+    if (unknown.length > 0) {
+      res.status(422).json({
+        error: `unknown role name(s) for user '${username}': ${unknown.join(", ")}`,
+        code: "OMCP_USER_UNKNOWN_ROLE",
+        unknown,
+        available: Array.from(knownRoles),
+      });
+      return;
+    }
+    const file = await readUsersFile(path);
+    if (!file) {
+      res.status(404).json({ error: `users file at ${path} is unreadable or empty` });
+      return;
+    }
+    const idx = file.users.findIndex((u) => u.username === username);
+    if (idx < 0) {
+      res.status(404).json({ error: `user '${username}' not found` });
+      return;
+    }
+    file.users[idx].roles = requestedRoles;
+    try {
+      await writeUsersFile(path, file);
+    } catch (e) {
+      res.status(500).json({ error: `failed to persist users file: ${(e as Error).message}` });
+      return;
+    }
+    // Refresh the in-memory store so the next login picks up the new
+    // role set without a server restart. maybeReloadUsers stat()s the
+    // file's mtime, which we just bumped via the atomic rename.
+    await maybeReloadUsers();
+    res.json({ ok: true, username, roles: requestedRoles });
   });
 
   // --- /api/audit — management-plane audit feed -------------------------

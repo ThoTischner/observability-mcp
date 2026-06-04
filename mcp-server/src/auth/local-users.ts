@@ -117,6 +117,18 @@ export async function readUsersFile(path: string): Promise<LocalUsersFile | null
   return parsed;
 }
 
+/** Atomic write of the users file. Same tmp+rename pattern the
+ *  products + token-budget snapshot writers use, so a crash mid-write
+ *  leaves the previous file intact — never zero-byte. The file is
+ *  the only persistent source of basic-mode credentials, so a
+ *  half-write would lock every user out. */
+export async function writeUsersFile(path: string, file: LocalUsersFile): Promise<void> {
+  const text = JSON.stringify(file, null, 2) + "\n";
+  const tmp = path + ".tmp";
+  await fs.writeFile(tmp, text, { encoding: "utf8", mode: 0o600 });
+  await fs.rename(tmp, path);
+}
+
 function isUsersFile(v: unknown): v is LocalUsersFile {
   if (!v || typeof v !== "object") return false;
   const o = v as Record<string, unknown>;

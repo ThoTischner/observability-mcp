@@ -2092,15 +2092,37 @@ curl -X PUT http://localhost:3000/api/enterprise/catalog \
         </div>
       </div>
 
-      <!-- Bindings sub-tab — placeholder for Slice G -->
+      <!-- Bindings sub-tab — subject → roles table with inline edit. -->
       <div class="card pol-pane" id="pol-pane-bindings" role="tabpanel" hidden>
-        <div class="card-header"><h2>Bindings</h2></div>
-        <div class="content" style="padding: var(--sp-4);">
-          <p class="t-sm" style="opacity:.85;line-height:1.5;max-width:640px">
-            Bindings are the <em>who</em> — they map subjects (users, API keys, OIDC groups)
-            to one or more roles. The Bindings table lands in the next slice; today's roles
-            view above shows what each role grants.
-          </p>
+        <div class="card-header"><h2>Bindings
+          <button class="info" aria-label="About bindings"
+            data-title="Bindings"
+            data-info="A binding maps a subject (user, API key, OIDC group) to one or more roles. Today only local-user role assignments can be edited at runtime (writes through OMCP_USERS_FILE). API-key roles aren't stored on the credential, and OIDC group → role mappings come from OMCP_OIDC_ROLE_MAP which is read once at boot — those rows show their env source instead of an edit button."
+            onclick="infoPop(this)">?</button>
+        </h2></div>
+        <div id="pol-bindings-body" class="content"><div class="empty">Loading…</div></div>
+      </div>
+
+      <!-- Binding-edit modal — only used for the local-user row. -->
+      <div class="modal-overlay" id="pol-binding-modal">
+        <div class="modal" style="width:min(520px, 92vw)">
+          <div class="modal-header">
+            <h3>Edit binding · <span id="pol-binding-subject"></span></h3>
+            <button class="btn-icon" onclick="closeModal('pol-binding-modal')">&times;</button>
+          </div>
+          <div class="modal-body">
+            <p class="t-sm" style="opacity:.85;margin:0 0 var(--sp-3)">
+              Select the roles to grant <strong id="pol-binding-subject-2"></strong>.
+              Unknown roles are rejected — the catalogue comes from the active engine.
+            </p>
+            <div id="pol-binding-roles" class="content"><div class="empty">Loading…</div></div>
+            <div id="pol-binding-error" class="form-hint" role="alert" aria-live="polite" style="color: var(--danger); display: none;"></div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-ghost" onclick="closeModal('pol-binding-modal')">Cancel</button>
+            <span style="flex:1"></span>
+            <button class="btn btn-primary" onclick="polBindingSave()">Save binding</button>
+          </div>
         </div>
       </div>
 
@@ -2507,6 +2529,156 @@ function polSetTab(name) {
   // Lazy-load Subjects on first visit — it has its own endpoint
   // so deferring the fetch keeps the page-enter cost low.
   if (name === 'subjects') polLoadSubjects();
+  if (name === 'bindings') polLoadBindings();
+}
+
+// Bindings = the (subject → roles) view derived from /api/subjects.
+// We don't have a separate /api/bindings endpoint because the binding
+// data IS the subject data today (users carry roles; api-keys don't;
+// oidc groups map to a single role via the env catalog).
+let POL_BINDING_EDIT = null; // { kind, name } of the row being edited
+async function polLoadBindings() {
+  const body = document.getElementById('pol-bindings-body');
+  if (!body) return;
+  // Reuse the subjects payload if already fetched — same data source.
+  if (!POL_SUBJECTS) {
+    try {
+      const r = await fetch('/api/subjects');
+      if (!r.ok) {
+        body.innerHTML = '<div class="empty">Bindings view requires the <code>users:delete</code> permission (admin role).</div>';
+        return;
+      }
+      POL_SUBJECTS = await r.json();
+    } catch (e) {
+      body.innerHTML = '<div class="empty">Subjects unavailable: ' + escHtml(String(e && e.message || e)) + '</div>';
+      return;
+    }
+  }
+  polRenderBindings(POL_SUBJECTS);
+}
+function polRenderBindings(s) {
+  const body = document.getElementById('pol-bindings-body');
+  if (!body) return;
+  // Are user edits available? Only when OMCP_USERS_FILE is set
+  // (server returns it under sources.users) — otherwise the PUT
+  // endpoint 409s and the operator just gets a confusing failure.
+  const userEditable = !!(s.sources && s.sources.users);
+  const rows = [];
+  for (const u of (s.users || [])) {
+    const roles = (u.roles || []).map((r) => `<span class="pill">${escHtml(r)}</span>`).join(' ') || '<span class="t-sm" style="opacity:.5">—</span>';
+    const action = userEditable
+      ? `<button class="btn btn-ghost btn-sm" data-bind-edit data-bind-kind="user" data-bind-name="${escHtml(u.username)}">Edit</button>`
+      : '<span class="t-sm" style="opacity:.55" title="Set OMCP_USERS_FILE to enable user-role editing">read-only</span>';
+    rows.push(`<tr>
+      <td><code>${escHtml(u.username)}</code></td>
+      <td><span class="tag">user</span></td>
+      <td>${roles}</td>
+      <td>${escHtml(u.tenant || 'default')}</td>
+      <td style="text-align:right">${action}</td>
+    </tr>`);
+  }
+  for (const k of (s.apiKeys || [])) {
+    rows.push(`<tr>
+      <td><code>${escHtml(k.name)}</code></td>
+      <td><span class="tag">api key</span></td>
+      <td><span class="t-sm" style="opacity:.5" title="Bearer credentials don't carry RBAC roles today — the management-plane RBAC gate uses session principals, not /mcp credentials">—</span></td>
+      <td>${escHtml(k.tenant || 'default')}</td>
+      <td style="text-align:right"><span class="t-sm" style="opacity:.55">via <code>OMCP_API_KEYS</code></span></td>
+    </tr>`);
+  }
+  for (const g of (s.oidcGroups || [])) {
+    rows.push(`<tr>
+      <td><code>${escHtml(g.claim)}</code></td>
+      <td><span class="tag">oidc group</span></td>
+      <td><span class="pill">${escHtml(g.role)}</span></td>
+      <td><span class="t-sm" style="opacity:.55">—</span></td>
+      <td style="text-align:right"><span class="t-sm" style="opacity:.55">via <code>OMCP_OIDC_ROLE_MAP</code></span></td>
+    </tr>`);
+  }
+  if (rows.length === 0) {
+    body.innerHTML = `<div class="pol-subjects-empty" style="padding:var(--sp-4)">
+      No subjects configured. Set one of <code>OMCP_USERS_FILE</code> /
+      <code>OMCP_API_KEYS</code> / <code>OMCP_OIDC_ROLE_MAP</code> to populate this view.
+    </div>`;
+    return;
+  }
+  body.innerHTML = `<table class="data-table" style="width:100%">
+    <thead><tr><th>Subject</th><th>Kind</th><th>Roles</th><th>Tenant</th><th></th></tr></thead>
+    <tbody>${rows.join('')}</tbody>
+  </table>`;
+  // Wire the per-row Edit buttons via delegation so role-name strings
+  // can't escape into onclick context (same defence-in-depth as the
+  // role list in Slice F).
+  if (!body.dataset.delegated) {
+    body.addEventListener('click', (ev) => {
+      const btn = ev.target.closest('[data-bind-edit]');
+      if (!btn) return;
+      const kind = btn.getAttribute('data-bind-kind');
+      const name = btn.getAttribute('data-bind-name');
+      if (kind && name) polBindingEdit(kind, name);
+    });
+    body.dataset.delegated = '1';
+  }
+}
+function polBindingEdit(kind, name) {
+  POL_BINDING_EDIT = { kind, name };
+  const subj = document.getElementById('pol-binding-subject');
+  const subj2 = document.getElementById('pol-binding-subject-2');
+  if (subj) subj.textContent = name;
+  if (subj2) subj2.textContent = name;
+  const errEl = document.getElementById('pol-binding-error');
+  if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+  // Build the checklist from the active engine's role catalogue.
+  const rolesBox = document.getElementById('pol-binding-roles');
+  const knownRoles = (POL_SNAPSHOT && POL_SNAPSHOT.roles) || [];
+  const currentRoles = kind === 'user'
+    ? ((POL_SUBJECTS && POL_SUBJECTS.users.find((u) => u.username === name) || {}).roles || [])
+    : [];
+  if (rolesBox) {
+    if (knownRoles.length === 0) {
+      rolesBox.innerHTML = '<div class="empty">No roles declared in the active engine.</div>';
+    } else {
+      rolesBox.innerHTML = knownRoles.map((r) => {
+        const checked = currentRoles.includes(r) ? 'checked' : '';
+        return `<label class="tp-item" style="display:flex;align-items:center;gap:var(--sp-2);padding:var(--sp-1) 0;cursor:pointer">
+          <input type="checkbox" data-pol-role value="${escHtml(r)}" ${checked}>
+          <span style="font-family:'JetBrains Mono', ui-monospace, monospace;font-size:13px">${escHtml(r)}</span>
+        </label>`;
+      }).join('');
+    }
+  }
+  document.getElementById('pol-binding-modal').classList.add('open');
+}
+async function polBindingSave() {
+  if (!POL_BINDING_EDIT) return;
+  const errEl = document.getElementById('pol-binding-error');
+  const setErr = (msg) => { if (errEl) { errEl.textContent = msg; errEl.style.display = ''; } };
+  if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+  if (POL_BINDING_EDIT.kind !== 'user') {
+    setErr('Only local-user bindings are editable at runtime today.');
+    return;
+  }
+  const checks = Array.from(document.querySelectorAll('#pol-binding-roles input[data-pol-role]:checked'))
+    .map((el) => el.value);
+  try {
+    const r = await fetch('/api/users/' + encodeURIComponent(POL_BINDING_EDIT.name) + '/roles', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roles: checks }),
+    });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      setErr(j.error || ('HTTP ' + r.status));
+      return;
+    }
+    closeModal('pol-binding-modal');
+    toast('Roles updated for ' + POL_BINDING_EDIT.name);
+    // Invalidate + refresh the bindings view.
+    POL_SUBJECTS = null;
+    await polLoadBindings();
+  } catch (e) {
+    setErr('Save failed: ' + (e && e.message || e));
+  }
 }
 
 // Cache the subjects payload so re-entering the tab doesn't refetch.
