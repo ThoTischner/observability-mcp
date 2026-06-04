@@ -1947,6 +1947,36 @@ async function main() {
     res.json(p);
   });
 
+  // Agent preview — what would the /mcp tools/list response look
+  // like for a credential bound to this product? Same RBAC + tenant
+  // gate as the singular GET above. The body mirrors the actual
+  // tools/list shape (name + description + category), filtered the
+  // same way the /mcp transport filters it via allowsTool +
+  // registerTool — so the UI's Review pane shows the exact set the
+  // agent will see, not an approximation. Branding metadata travels
+  // alongside so the preview can render with the product's identity.
+  app.get("/api/products/:id/preview", need("products", "read"), async (req, res) => {
+    await products.maybeReload();
+    const sess = (req as AuthedRequest).session;
+    const isAdmin = hasPermission(sess?.roles, "users", "delete");
+    const callerTenant = sess?.tenant || "default";
+    const tenantFilter = isAdmin ? undefined : callerTenant;
+    const id = String(req.params.id);
+    const p = products.get(id, tenantFilter);
+    if (!p) { res.status(404).json({ error: "not found" }); return; }
+    if (!isAdmin && p.status === "staging") { res.status(404).json({ error: "not found" }); return; }
+    const allowList = p.tools && p.tools.length > 0 ? p.tools : undefined;
+    const filteredTools = REGISTERED_TOOLS.filter((t) => allowsTool(allowList, t.name));
+    res.json({
+      product: { id: p.id, name: p.name, version: p.version, branding: p.branding, tenant: p.tenant, status: p.status },
+      // unrestricted = true when the product has no tools allow-list,
+      // i.e. the bound agent sees every registered tool. UI uses this
+      // to render a distinct "no filter" preview banner.
+      unrestricted: !allowList,
+      tools: filteredTools,
+    });
+  });
+
   // Health endpoint for UI dashboard
   app.get("/api/health/:service", async (req, res) => {
     try {

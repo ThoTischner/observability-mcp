@@ -90,6 +90,67 @@ test.describe("Products UI", () => {
     await page.locator("#mcp-products-leitfaden .card-header").click();
   });
 
+  test("Agent preview — /api/products/:id/preview returns filtered tools + card 'Preview as agent' opens the modal", async ({ page, request: apiReq }) => {
+    // The endpoint reflects the same filter the /mcp transport
+    // applies, so this test doubles as a contract pin between the
+    // server's tools/list filter and the UI preview affordance.
+    const resp = await apiReq.get("/api/products/playwright-ops/preview");
+    expect(resp.status()).toBe(200);
+    const body = await resp.json();
+    expect(body.unrestricted).toBe(false);
+    expect(body.tools.map((t) => t.name).sort()).toEqual(["query_logs", "query_metrics"]);
+    // Open the page + click the per-card preview button.
+    await page.goto(BASE);
+    await page.click("[data-page=products]");
+    await page.waitForSelector("#page-products.active");
+    await page.locator(".pcard").first().locator("button:has-text(\"Preview as agent\")").click();
+    await expect(page.locator("#mcp-agent-preview-modal.open")).toBeVisible();
+    await expect(page.locator("#mcp-agent-preview-title")).toContainText("Playwright Ops Bundle");
+    await expect(page.locator("#mcp-agent-preview-list")).toContainText("query_logs");
+    await expect(page.locator("#mcp-agent-preview-list")).toContainText("query_metrics");
+    // Negative control: a tool NOT in the allow-list isn't rendered.
+    await expect(page.locator("#mcp-agent-preview-list")).not.toContainText("get_topology");
+    // Close + sanity check.
+    await page.locator("#mcp-agent-preview-modal button:has-text(\"Close\")").click();
+    await expect(page.locator("#mcp-agent-preview-modal.open")).toBeHidden();
+  });
+
+  test("Wizard Review pane — embedded agent preview reflects the in-form tools selection (no server roundtrip)", async ({ page }) => {
+    // Delete the seeded product so the empty-state path renders the
+    // templates we click in the next step.
+    const api = await request.newContext({ baseURL: BASE });
+    await api.delete("/api/products/playwright-ops");
+    await api.dispose();
+    await page.goto(BASE);
+    await page.click("[data-page=products]");
+    await page.waitForSelector("#page-products.active");
+    // Open via the Ops template — pre-checks 4 tools.
+    await page.locator(".pempty-tpl").first().click();
+    await page.locator("#mcp-product-id").fill("playwright-wiz-preview");
+    // Jump straight to Review.
+    await page.click('.wiz-step-btn[data-step="4"]');
+    await expect(page.locator("#wiz-pane-4")).toBeVisible();
+    // Embedded preview shows the 4 ops-bundle tools.
+    const preview = page.locator("#mcp-wiz-agent-preview");
+    await expect(preview).toBeVisible();
+    for (const t of ["query_logs", "query_metrics", "get_service_health", "detect_anomalies"]) {
+      await expect(preview).toContainText(t);
+    }
+    // A tool NOT in the template is not in the preview.
+    await expect(preview).not.toContainText("get_topology");
+    // Cancel + re-seed.
+    await page.locator("button:has-text(\"Cancel\")").first().click();
+    const api2 = await request.newContext({ baseURL: BASE });
+    await api2.put("/api/products/playwright-ops", {
+      data: {
+        id: "playwright-ops", name: "Playwright Ops Bundle",
+        status: "published", tools: ["query_logs", "query_metrics"],
+        branding: { color: "#3178c6" },
+      },
+    });
+    await api2.dispose();
+  });
+
   test("Wizard — 4 panes, Back/Next navigation, validation gates Identity, Review summary", async ({ page }) => {
     // Delete the seeded product so the empty-state templates path
     // gives us a clean wizard open.

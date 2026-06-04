@@ -1030,6 +1030,18 @@
     .wiz-review-tools { display: flex; flex-wrap: wrap; gap: 4px; }
     .wiz-review-tools .pcard-tool { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 10.5px; padding: 2px 6px; background: var(--surface); border-radius: var(--radius-sm); border: 1px solid var(--border); }
 
+    /* Wizard Review — agent preview panel */
+    .wiz-agent-preview-h { margin: var(--sp-4) 0 var(--sp-2); font-size: 13px; font-weight: 600; }
+    .wiz-agent-preview { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--sp-3); background: var(--surface-2); }
+    .wiz-agent-banner { padding: var(--sp-2) var(--sp-3); margin-bottom: var(--sp-3); border-radius: var(--radius-sm); background: var(--warning-soft); color: var(--warning); font-size: 12px; }
+    .wiz-agent-group { padding: var(--sp-1) 0; }
+    .wiz-agent-group + .wiz-agent-group { border-top: 1px dashed var(--border); padding-top: var(--sp-2); margin-top: var(--sp-2); }
+    .wiz-agent-tool { padding: 4px 0; }
+    .wiz-agent-tool-name { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; font-weight: 500; }
+    .wiz-agent-tool-summary { font-size: 11px; opacity: .75; line-height: 1.4; margin-top: 1px; }
+    .mcp-agent-preview { width: min(640px, 92vw); }
+    .mcp-agent-preview .modal-header { padding-left: var(--sp-3); }
+
     /* Products modal — tools picker (multi-select grouped by category) */
     .tools-picker { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--sp-2); background: var(--surface-2); max-height: 280px; overflow-y: auto; }
     .tools-picker .tp-group { padding: var(--sp-1) 0; }
@@ -2276,6 +2288,28 @@ curl -s http://localhost:3000/api/enterprise/status</pre>
         <button class="btn btn-ghost" id="mcp-wiz-back" onclick="mcpWizBack()" hidden>Back</button>
         <button class="btn btn-primary" id="mcp-wiz-next" onclick="mcpWizNext()">Next</button>
         <button class="btn btn-primary" id="mcp-wiz-save" onclick="mcpProductSave()" hidden>Save Product</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Agent preview modal — invoked from per-card "Preview as agent"
+       button. Same /api/products/:id/preview backend the wizard
+       Review pane could call, but the wizard uses the live registry
+       in-form because the draft hasn't been saved yet. -->
+  <div class="modal-overlay" id="mcp-agent-preview-modal">
+    <div class="modal mcp-agent-preview" style="--mcp-agent-accent: var(--accent)">
+      <div class="modal-header" style="border-left: 4px solid var(--mcp-agent-accent)">
+        <h3 id="mcp-agent-preview-title">Agent preview</h3>
+        <button class="btn-icon" onclick="closeModal('mcp-agent-preview-modal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="mcp-agent-preview-meta" class="t-sm" style="opacity:.7;margin-bottom:var(--sp-3);font-family:'JetBrains Mono', ui-monospace, monospace;"></div>
+        <p class="t-sm" style="opacity:.85">This is the <code>tools/list</code> set a credential bound to this product would receive on its <code>/mcp</code> session.</p>
+        <div id="mcp-agent-preview-list" class="wiz-agent-preview"></div>
+      </div>
+      <div class="modal-footer">
+        <span style="flex:1"></span>
+        <button class="btn btn-primary" onclick="closeModal('mcp-agent-preview-modal')">Close</button>
       </div>
     </div>
   </div>
@@ -3620,6 +3654,7 @@ function mcpProductCardHtml(p) {
       <div class="pcard-tools">${toolsLabel}</div>
     </div>
     <div class="pcard-footer">
+      <button class="btn btn-ghost btn-sm" title="Preview as agent" aria-label="Preview ${escHtml(p.id)} as agent" onclick="mcpProductPreviewAgent('${idAttr}')">Preview as agent</button>
       <div class="pcard-spacer"></div>
       <button class="btn-icon" data-rbac="products:write" title="Edit" aria-label="Edit ${escHtml(p.id)}" onclick="mcpProductsEdit('${idAttr}')">&#9998;</button>
       <button class="btn-icon" data-rbac="products:delete" title="Delete" aria-label="Delete ${escHtml(p.id)}" onclick="mcpProductsDelete('${idAttr}')">&#128465;</button>
@@ -3826,7 +3861,77 @@ function mcpWizRenderReview() {
     <dt>Version</dt><dd>${empty(version)}</dd>
     <dt>Colour</dt><dd>${colorCell}</dd>
     <dt>Icon URL</dt><dd>${icon ? `<code>${escHtml(icon)}</code>` : '<span class="wiz-review-empty">—</span>'}</dd>
-  </dl>`;
+  </dl>
+  <h4 class="wiz-agent-preview-h">Agent preview <span class="t-sm" style="opacity:.6;font-weight:400">— what the bound agent will see in <code>tools/list</code></span></h4>
+  <div id="mcp-wiz-agent-preview" class="wiz-agent-preview"><div class="t-sm" style="opacity:.7">${tools.length === 0
+    ? 'No filter set. Agent would see every registered tool — load the live registry to confirm.'
+    : `Filter active. Agent would see ${tools.length} tool${tools.length===1?'':'s'} from the allow-list.`}</div></div>`;
+  // Resolve the preview from the live tool registry — same source the
+  // server uses to filter /mcp tools/list. We don't hit
+  // /api/products/:id/preview here because the wizard's form-state
+  // hasn't been saved yet (the id may not exist on the server). The
+  // resolution mirrors allowsTool's semantics exactly.
+  mcpLoadToolsRegistry().then(() => {
+    const previewEl = document.getElementById('mcp-wiz-agent-preview');
+    if (!previewEl) return;
+    const allow = new Set(tools);
+    const filtered = (MCP_TOOLS_REGISTRY || []).filter((t) => tools.length === 0 || allow.has(t.name));
+    previewEl.innerHTML = mcpAgentPreviewHtml(filtered, tools.length === 0);
+  });
+}
+
+// Shared renderer for the agent-preview list — used by the wizard
+// Review pane and by the per-card "Preview as agent" action.
+function mcpAgentPreviewHtml(tools, unrestricted) {
+  if (!tools || tools.length === 0) {
+    return '<div class="t-sm" style="opacity:.7">No tools available.</div>';
+  }
+  const order = ['discovery', 'query', 'diagnose', 'topology'];
+  const groups = {};
+  for (const t of tools) (groups[t.category] = groups[t.category] || []).push(t);
+  const labels = { discovery: 'Discovery', query: 'Query', diagnose: 'Diagnose', topology: 'Topology' };
+  const banner = unrestricted
+    ? '<div class="wiz-agent-banner" data-unrestricted="true">Unrestricted — the bound agent sees every registered tool below.</div>'
+    : '';
+  const html = order.filter((c) => groups[c]).map((cat) => {
+    const items = groups[cat].map((t) => `
+      <div class="wiz-agent-tool">
+        <div class="wiz-agent-tool-name">${escHtml(t.name)}</div>
+        <div class="wiz-agent-tool-summary">${escHtml(t.summary)}</div>
+      </div>`).join('');
+    return `<div class="wiz-agent-group">
+      <div class="tp-cat">${escHtml(labels[cat] || cat)}</div>
+      ${items}
+    </div>`;
+  }).join('');
+  return banner + html;
+}
+
+// "Preview as agent" — called from the per-card button. Hits the
+// authoritative server endpoint so the operator sees what the bound
+// agent actually receives in production, not a client-side guess.
+async function mcpProductPreviewAgent(idEnc) {
+  const id = decodeURIComponent(idEnc);
+  let body;
+  try {
+    const r = await fetch('/api/products/' + encodeURIComponent(id) + '/preview');
+    if (!r.ok) { toast('Preview unavailable: HTTP ' + r.status); return; }
+    body = await r.json();
+  } catch (e) { toast('Preview failed: ' + (e && e.message || e)); return; }
+  const accent = (body.product && body.product.branding && /^#[0-9a-fA-F]{3,8}$/.test(body.product.branding.color || ''))
+    ? body.product.branding.color : 'var(--accent)';
+  const dlg = document.getElementById('mcp-agent-preview-modal');
+  const title = document.getElementById('mcp-agent-preview-title');
+  const meta = document.getElementById('mcp-agent-preview-meta');
+  const list = document.getElementById('mcp-agent-preview-list');
+  if (!dlg || !title || !meta || !list) return;
+  title.textContent = body.product.name || body.product.id;
+  meta.innerHTML = `<code>${escHtml(body.product.id)}</code>${body.product.version ? ' · v' + escHtml(body.product.version) : ''} · tenant: ${escHtml(body.product.tenant || 'default')} · status: ${escHtml(body.product.status || 'published')}`;
+  list.innerHTML = mcpAgentPreviewHtml(body.tools || [], !!body.unrestricted);
+  // Apply branding to the modal's left rail for a quick at-a-glance
+  // identity confirmation that the right product was probed.
+  dlg.style.setProperty('--mcp-agent-accent', accent);
+  dlg.classList.add('open');
 }
 
 function mcpProductOpen(mode, current) {
