@@ -90,6 +90,81 @@ test.describe("Products UI", () => {
     await page.locator("#mcp-products-leitfaden .card-header").click();
   });
 
+  test("Wizard — 4 panes, Back/Next navigation, validation gates Identity, Review summary", async ({ page }) => {
+    // Delete the seeded product so the empty-state templates path
+    // gives us a clean wizard open.
+    const api = await request.newContext({ baseURL: BASE });
+    await api.delete("/api/products/playwright-ops");
+    await api.dispose();
+    await page.goto(BASE);
+    await page.click("[data-page=products]");
+    await page.waitForSelector("#page-products.active");
+
+    // Open the modal via a template — wizard starts on step 1.
+    await page.locator(".pempty-tpl").first().click();
+    await expect(page.locator("#mcp-product-modal.open")).toBeVisible();
+
+    // Step 1 (Identity) visible, others hidden.
+    await expect(page.locator("#wiz-pane-1")).toBeVisible();
+    await expect(page.locator("#wiz-pane-2")).toBeHidden();
+    await expect(page.locator("#wiz-pane-3")).toBeHidden();
+    await expect(page.locator("#wiz-pane-4")).toBeHidden();
+    // Stepper has 4 bullets, step 1 is active.
+    await expect(page.locator('.wiz-step-btn[data-active="true"][data-step="1"]')).toBeVisible();
+
+    // Without an id, Next must NOT advance.
+    await page.locator("#mcp-product-id").fill("");
+    await page.click("#mcp-wiz-next");
+    await expect(page.locator("#wiz-pane-1")).toBeVisible();
+    await expect(page.locator("#mcp-product-error")).toBeVisible();
+
+    // Fill id + name, advance to step 2 (Tools).
+    await page.locator("#mcp-product-id").fill("playwright-wizard");
+    // Name pre-filled by the Ops template; verify it.
+    await expect(page.locator("#mcp-product-name")).toHaveValue("Ops Bundle");
+    await page.click("#mcp-wiz-next");
+    await expect(page.locator("#wiz-pane-2")).toBeVisible();
+    await expect(page.locator(".tools-picker")).toBeVisible();
+
+    // Step 3 (Scope & branding).
+    await page.click("#mcp-wiz-next");
+    await expect(page.locator("#wiz-pane-3")).toBeVisible();
+    await page.locator("#mcp-product-color").fill("#7c3aed");
+
+    // Step 4 (Review) — Next button gone, Save visible.
+    await page.click("#mcp-wiz-next");
+    await expect(page.locator("#wiz-pane-4")).toBeVisible();
+    await expect(page.locator("#mcp-wiz-next")).toBeHidden();
+    await expect(page.locator("#mcp-wiz-save")).toBeVisible();
+    // Review summary mentions the chosen id + the brand colour code.
+    await expect(page.locator("#mcp-wiz-review")).toContainText("playwright-wizard");
+    await expect(page.locator("#mcp-wiz-review")).toContainText("#7c3aed");
+    // The colour swatch is rendered.
+    await expect(page.locator(".wiz-review-swatch")).toBeVisible();
+
+    // Back from step 4 → step 3 (Next reappears, Save hides).
+    await page.click("#mcp-wiz-back");
+    await expect(page.locator("#wiz-pane-3")).toBeVisible();
+    await expect(page.locator("#mcp-wiz-save")).toBeHidden();
+    await expect(page.locator("#mcp-wiz-next")).toBeVisible();
+
+    // Stepper bullets are clickable — jump back to step 1 directly.
+    await page.click('.wiz-step-btn[data-step="1"]');
+    await expect(page.locator("#wiz-pane-1")).toBeVisible();
+
+    // Cancel + restore seed for downstream tests.
+    await page.locator("button:has-text(\"Cancel\")").first().click();
+    const api2 = await request.newContext({ baseURL: BASE });
+    await api2.put("/api/products/playwright-ops", {
+      data: {
+        id: "playwright-ops", name: "Playwright Ops Bundle",
+        status: "published", tools: ["query_logs", "query_metrics"],
+        branding: { color: "#3178c6" },
+      },
+    });
+    await api2.dispose();
+  });
+
   test("Tools picker — renders categories, syncs selections to the hidden textarea, prefills from a template", async ({ page }) => {
     // Delete the seeded product so the empty-state templates render
     // a "+ click to open with tools prefilled" path we can exercise.
