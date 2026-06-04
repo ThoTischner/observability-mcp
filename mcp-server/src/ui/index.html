@@ -1003,6 +1003,33 @@
       opacity: .35; pointer-events: none;
     }
 
+    /* Products wizard — multi-step modal */
+    .mcp-product-wizard { width: min(720px, 92vw); max-height: 86vh; display: flex; flex-direction: column; }
+    .mcp-product-wizard .modal-body { flex: 1; overflow-y: auto; }
+    .mcp-product-wizard .modal-footer { display: flex; align-items: center; gap: var(--sp-2); }
+    .wiz-stepper { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--border); background: var(--surface-2); }
+    .wiz-step-btn { display: flex; align-items: center; gap: var(--sp-2); background: none; border: 0; cursor: pointer; color: var(--text-2); padding: 4px 8px; border-radius: var(--radius-sm); font-size: 12px; }
+    .wiz-step-btn:hover { color: var(--text); background: var(--surface); }
+    .wiz-step-btn .wiz-step-num { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: var(--surface); border: 1px solid var(--border); font-size: 11px; font-weight: 600; }
+    .wiz-step-btn[data-active="true"] { color: var(--text); }
+    .wiz-step-btn[data-active="true"] .wiz-step-num { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .wiz-step-btn[data-done="true"] .wiz-step-num { background: var(--success); border-color: var(--success); color: #fff; }
+    .wiz-step-btn[data-done="true"] .wiz-step-num::after { content: "✓"; font-size: 10px; }
+    .wiz-step-btn[data-done="true"] .wiz-step-num > * { display: none; }
+    .wiz-step-line { flex: 1; height: 1px; background: var(--border); min-width: 12px; }
+    .wiz-step-help { padding: 0 0 var(--sp-3); opacity: .85; line-height: 1.5; }
+    .wiz-pane[hidden] { display: none; }
+
+    /* Review pane */
+    .wiz-review-grid { display: grid; grid-template-columns: max-content 1fr; gap: var(--sp-2) var(--sp-3); padding: var(--sp-2) var(--sp-3); background: var(--surface-2); border-radius: var(--radius-sm); border: 1px solid var(--border); }
+    .wiz-review-grid dt { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; font-weight: 600; opacity: .65; padding-top: 2px; }
+    .wiz-review-grid dd { margin: 0; font-size: 13px; word-break: break-word; }
+    .wiz-review-grid dd code { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; }
+    .wiz-review-grid .wiz-review-empty { opacity: .5; font-style: italic; }
+    .wiz-review-grid .wiz-review-swatch { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: middle; margin-right: 6px; border: 1px solid var(--border); }
+    .wiz-review-tools { display: flex; flex-wrap: wrap; gap: 4px; }
+    .wiz-review-tools .pcard-tool { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 10.5px; padding: 2px 6px; background: var(--surface); border-radius: var(--radius-sm); border: 1px solid var(--border); }
+
     /* Products modal — tools picker (multi-select grouped by category) */
     .tools-picker { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--sp-2); background: var(--surface-2); max-height: 280px; overflow-y: auto; }
     .tools-picker .tp-group { padding: var(--sp-1) 0; }
@@ -2138,72 +2165,117 @@ curl -s http://localhost:3000/api/enterprise/status</pre>
     </div>
   </div>
 
-  <!-- MCP Product Modal (Create + Edit) -->
+  <!-- MCP Product Modal (Create + Edit) — 4-step wizard.
+       The form fields keep their stable ids so save() and the
+       existing field-by-field tests stay byte-identical; only the
+       structural grouping + stepper navigation are new. -->
   <div class="modal-overlay" id="mcp-product-modal">
-    <div class="modal">
+    <div class="modal mcp-product-wizard">
       <div class="modal-header">
         <h3 id="mcp-product-modal-title">New Product</h3>
         <button class="btn-icon" onclick="closeModal('mcp-product-modal')">&times;</button>
       </div>
+      <!-- Stepper rail — bullets are clickable so an operator can
+           jump back to any step they've already filled in. -->
+      <div class="wiz-stepper" id="mcp-wiz-stepper" role="tablist" aria-label="Product wizard steps">
+        <button class="wiz-step-btn" data-step="1" role="tab" aria-controls="wiz-pane-1" onclick="mcpWizGoto(1)">
+          <span class="wiz-step-num">1</span><span class="wiz-step-lbl">Identity</span>
+        </button>
+        <span class="wiz-step-line"></span>
+        <button class="wiz-step-btn" data-step="2" role="tab" aria-controls="wiz-pane-2" onclick="mcpWizGoto(2)">
+          <span class="wiz-step-num">2</span><span class="wiz-step-lbl">Tools</span>
+        </button>
+        <span class="wiz-step-line"></span>
+        <button class="wiz-step-btn" data-step="3" role="tab" aria-controls="wiz-pane-3" onclick="mcpWizGoto(3)">
+          <span class="wiz-step-num">3</span><span class="wiz-step-lbl">Scope &amp; branding</span>
+        </button>
+        <span class="wiz-step-line"></span>
+        <button class="wiz-step-btn" data-step="4" role="tab" aria-controls="wiz-pane-4" onclick="mcpWizGoto(4)">
+          <span class="wiz-step-num">4</span><span class="wiz-step-lbl">Review &amp; publish</span>
+        </button>
+      </div>
       <div class="modal-body">
         <input type="hidden" id="mcp-product-mode" value="new">
         <input type="hidden" id="mcp-product-original-id" value="">
-        <div class="form-group">
-          <label for="mcp-product-id">Id</label>
-          <input type="text" id="mcp-product-id" placeholder="e.g. ops-bundle" autocomplete="off">
-          <div class="form-hint">URL-safe identifier. Pattern: <code>[A-Za-z0-9][A-Za-z0-9._-]{0,63}</code>. Immutable once saved.</div>
-        </div>
-        <div class="form-group">
-          <label for="mcp-product-name">Display name</label>
-          <input type="text" id="mcp-product-name" placeholder="e.g. Operations Bundle" autocomplete="off">
-        </div>
-        <div class="form-group">
-          <label for="mcp-product-description">Description <span class="t-sm" style="opacity:.6">(optional)</span></label>
-          <input type="text" id="mcp-product-description" placeholder="One-sentence summary" autocomplete="off">
-        </div>
-        <div class="form-row">
+
+        <!-- Step 1: Identity -->
+        <div class="wiz-pane" id="wiz-pane-1" data-step="1" role="tabpanel">
+          <p class="wiz-step-help t-sm">Give the product a stable id (URL-safe, immutable once saved) and a display name agents will see in <code>tools/list</code>.</p>
           <div class="form-group">
-            <label for="mcp-product-status">Status</label>
-            <select id="mcp-product-status">
-              <option value="staging">staging (admin-only)</option>
-              <option value="published">published (visible to agents)</option>
-            </select>
+            <label for="mcp-product-id">Id</label>
+            <input type="text" id="mcp-product-id" placeholder="e.g. ops-bundle" autocomplete="off">
+            <div class="form-hint">Pattern: <code>[A-Za-z0-9][A-Za-z0-9._-]{0,63}</code>. Immutable once saved.</div>
           </div>
           <div class="form-group">
-            <label for="mcp-product-tenant">Tenant <span class="t-sm" style="opacity:.6">(admin only)</span></label>
-            <input type="text" id="mcp-product-tenant" placeholder="default" autocomplete="off">
-            <div class="form-hint">Blank = same tenant as the calling user.</div>
-          </div>
-        </div>
-        <div class="form-group">
-          <label>Tools allow-list <span class="t-sm" style="opacity:.6">(optional)</span></label>
-          <div id="mcp-product-tools-picker" class="tools-picker">
-            <div class="tools-picker-hint t-sm">Loading…</div>
-          </div>
-          <!-- Hidden textarea kept for back-compat — the picker syncs
-               selections here, and save() still reads from it. -->
-          <textarea id="mcp-product-tools" rows="2" hidden></textarea>
-          <div class="form-hint">Select the tools an agent bound to this product can call. Nothing selected = no filter (every registered tool).</div>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label for="mcp-product-version">Version <span class="t-sm" style="opacity:.6">(optional)</span></label>
-            <input type="text" id="mcp-product-version" placeholder="1.0.0" autocomplete="off">
+            <label for="mcp-product-name">Display name</label>
+            <input type="text" id="mcp-product-name" placeholder="e.g. Operations Bundle" autocomplete="off">
           </div>
           <div class="form-group">
-            <label for="mcp-product-color">Brand colour <span class="t-sm" style="opacity:.6">(optional)</span></label>
-            <input type="text" id="mcp-product-color" placeholder="#3178c6" autocomplete="off">
+            <label for="mcp-product-description">Description <span class="t-sm" style="opacity:.6">(optional)</span></label>
+            <input type="text" id="mcp-product-description" placeholder="One-sentence summary" autocomplete="off">
           </div>
         </div>
-        <div class="form-group">
-          <label for="mcp-product-icon">Icon URL <span class="t-sm" style="opacity:.6">(optional)</span></label>
-          <input type="text" id="mcp-product-icon" placeholder="https://example.com/icons/ops.svg" autocomplete="off">
+
+        <!-- Step 2: Tools -->
+        <div class="wiz-pane" id="wiz-pane-2" data-step="2" role="tabpanel" hidden>
+          <p class="wiz-step-help t-sm">Curate the tools an agent bound to this product can call. Leaving everything unchecked = no filter (every registered tool).</p>
+          <div class="form-group">
+            <div id="mcp-product-tools-picker" class="tools-picker">
+              <div class="tools-picker-hint t-sm">Loading…</div>
+            </div>
+            <!-- Hidden textarea kept for back-compat — the picker syncs
+                 selections here, and save() still reads from it. -->
+            <textarea id="mcp-product-tools" rows="2" hidden></textarea>
+          </div>
         </div>
+
+        <!-- Step 3: Scope & branding -->
+        <div class="wiz-pane" id="wiz-pane-3" data-step="3" role="tabpanel" hidden>
+          <p class="wiz-step-help t-sm">Pick the lifecycle stage, the tenant scope, optional version, and the branding metadata that surfaces on the catalogue card.</p>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="mcp-product-status">Status</label>
+              <select id="mcp-product-status">
+                <option value="staging">staging (admin-only)</option>
+                <option value="published">published (visible to agents)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="mcp-product-tenant">Tenant <span class="t-sm" style="opacity:.6">(admin only)</span></label>
+              <input type="text" id="mcp-product-tenant" placeholder="default" autocomplete="off">
+              <div class="form-hint">Blank = same tenant as the calling user.</div>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="mcp-product-version">Version <span class="t-sm" style="opacity:.6">(optional)</span></label>
+              <input type="text" id="mcp-product-version" placeholder="1.0.0" autocomplete="off">
+            </div>
+            <div class="form-group">
+              <label for="mcp-product-color">Brand colour <span class="t-sm" style="opacity:.6">(optional)</span></label>
+              <input type="text" id="mcp-product-color" placeholder="#3178c6" autocomplete="off">
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="mcp-product-icon">Icon URL <span class="t-sm" style="opacity:.6">(optional)</span></label>
+            <input type="text" id="mcp-product-icon" placeholder="https://example.com/icons/ops.svg" autocomplete="off">
+          </div>
+        </div>
+
+        <!-- Step 4: Review & publish -->
+        <div class="wiz-pane" id="wiz-pane-4" data-step="4" role="tabpanel" hidden>
+          <p class="wiz-step-help t-sm">Confirm everything below, then save. Staging products are admin-only; published products are visible to agents in the selected tenant.</p>
+          <div id="mcp-wiz-review"></div>
+        </div>
+
         <div id="mcp-product-error" class="form-hint" role="alert" aria-live="polite" style="color: var(--danger); display: none;"></div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-ghost" onclick="closeModal('mcp-product-modal')">Cancel</button>
-        <button class="btn btn-primary" onclick="mcpProductSave()">Save Product</button>
+        <span style="flex:1"></span>
+        <button class="btn btn-ghost" id="mcp-wiz-back" onclick="mcpWizBack()" hidden>Back</button>
+        <button class="btn btn-primary" id="mcp-wiz-next" onclick="mcpWizNext()">Next</button>
+        <button class="btn btn-primary" id="mcp-wiz-save" onclick="mcpProductSave()" hidden>Save Product</button>
       </div>
     </div>
   </div>
@@ -3646,6 +3718,117 @@ async function loadMcpProducts() {
 // dialogs. Exposes id + name + description + status + tenant + tools
 // + version + branding in one place, validated client-side before
 // the server's strict parser sees it.
+// Wizard navigation state — current step (1..4) for the active
+// modal session. Reset on every mcpProductOpen call.
+let MCP_WIZ_STEP = 1;
+const MCP_WIZ_LAST = 4;
+
+function mcpWizGoto(step) {
+  if (step < 1 || step > MCP_WIZ_LAST) return;
+  // Validate the current step before allowing forward navigation —
+  // backwards / sidewards navigation always allowed (the operator
+  // may want to revise).
+  if (step > MCP_WIZ_STEP && !mcpWizValidateStep(MCP_WIZ_STEP)) return;
+  MCP_WIZ_STEP = step;
+  mcpWizRender();
+}
+function mcpWizNext() {
+  if (MCP_WIZ_STEP < MCP_WIZ_LAST) mcpWizGoto(MCP_WIZ_STEP + 1);
+}
+function mcpWizBack() {
+  if (MCP_WIZ_STEP > 1) mcpWizGoto(MCP_WIZ_STEP - 1);
+}
+function mcpWizValidateStep(step) {
+  const errEl = document.getElementById('mcp-product-error');
+  errEl.style.display = 'none';
+  errEl.textContent = '';
+  if (step === 1) {
+    const id = document.getElementById('mcp-product-id').value.trim();
+    const name = document.getElementById('mcp-product-name').value.trim();
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(id)) {
+      errEl.textContent = 'Id must match [A-Za-z0-9][A-Za-z0-9._-]{0,63}.';
+      errEl.style.display = '';
+      document.getElementById('mcp-product-id').focus();
+      return false;
+    }
+    if (!name) {
+      errEl.textContent = 'Display name is required.';
+      errEl.style.display = '';
+      document.getElementById('mcp-product-name').focus();
+      return false;
+    }
+  }
+  // Step 2 (tools) + step 3 (scope/branding) have no required fields.
+  return true;
+}
+function mcpWizRender() {
+  // Toggle pane visibility.
+  for (let i = 1; i <= MCP_WIZ_LAST; i++) {
+    const pane = document.getElementById('wiz-pane-' + i);
+    if (pane) pane.hidden = i !== MCP_WIZ_STEP;
+  }
+  // Update stepper bullets — active = current, done = all earlier.
+  const stepper = document.getElementById('mcp-wiz-stepper');
+  if (stepper) {
+    stepper.querySelectorAll('.wiz-step-btn').forEach((btn) => {
+      const n = parseInt(btn.getAttribute('data-step') || '0', 10);
+      btn.setAttribute('data-active', String(n === MCP_WIZ_STEP));
+      btn.setAttribute('data-done', String(n < MCP_WIZ_STEP));
+      btn.setAttribute('aria-selected', String(n === MCP_WIZ_STEP));
+    });
+  }
+  // Footer button visibility.
+  const back = document.getElementById('mcp-wiz-back');
+  const next = document.getElementById('mcp-wiz-next');
+  const save = document.getElementById('mcp-wiz-save');
+  if (back) back.hidden = MCP_WIZ_STEP === 1;
+  if (next) next.hidden = MCP_WIZ_STEP === MCP_WIZ_LAST;
+  if (save) save.hidden = MCP_WIZ_STEP !== MCP_WIZ_LAST;
+  // Render the review summary lazily when entering step 4.
+  if (MCP_WIZ_STEP === MCP_WIZ_LAST) mcpWizRenderReview();
+}
+function mcpWizRenderReview() {
+  const out = document.getElementById('mcp-wiz-review');
+  if (!out) return;
+  const v = (id) => (document.getElementById(id).value || '').trim();
+  const id = v('mcp-product-id');
+  const name = v('mcp-product-name');
+  const desc = v('mcp-product-description');
+  const status = v('mcp-product-status');
+  const tenant = v('mcp-product-tenant');
+  const version = v('mcp-product-version');
+  const color = v('mcp-product-color');
+  const icon = v('mcp-product-icon');
+  const toolsRaw = (document.getElementById('mcp-product-tools').value || '');
+  const tools = toolsRaw.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean);
+  const empty = (s) => s ? escHtml(s) : '<span class="wiz-review-empty">—</span>';
+  // Mirror mcpProductCardHtml's colour-validation regex so the
+  // inline style attribute can't carry an arbitrary CSS value. Even
+  // though escHtml prevents attribute breakout, restricting the
+  // value to a hex literal makes a CSS-context injection
+  // structurally impossible (defence-in-depth — reviewer-agent flag).
+  const safeColor = /^#[0-9a-fA-F]{3,8}$/.test(color) ? color : null;
+  const colorCell = !color
+    ? '<span class="wiz-review-empty">— (no brand colour)</span>'
+    : safeColor
+      ? `<span class="wiz-review-swatch" style="background:${safeColor}"></span><code>${escHtml(color)}</code>`
+      : `<code>${escHtml(color)}</code> <span class="t-sm" style="opacity:.6">(not a hex value)</span>`;
+  const toolsCell = tools.length === 0
+    ? '<span class="wiz-review-empty">no filter — every registered tool</span>'
+    : `<div class="wiz-review-tools">${tools.map((t) => `<span class="pcard-tool">${escHtml(t)}</span>`).join('')}</div>`;
+  out.innerHTML = `<dl class="wiz-review-grid">
+    <dt>Id</dt><dd><code>${empty(id)}</code></dd>
+    <dt>Name</dt><dd>${empty(name)}</dd>
+    <dt>Description</dt><dd>${empty(desc)}</dd>
+    <dt>Status</dt><dd><span class="pill">${empty(status)}</span></dd>
+    <dt>Tenant</dt><dd>${tenant ? escHtml(tenant) : '<span class="wiz-review-empty">(caller\'s tenant)</span>'}</dd>
+    <dt>Tools</dt><dd>${toolsCell}</dd>
+    <dt>Version</dt><dd>${empty(version)}</dd>
+    <dt>Colour</dt><dd>${colorCell}</dd>
+    <dt>Icon URL</dt><dd>${icon ? `<code>${escHtml(icon)}</code>` : '<span class="wiz-review-empty">—</span>'}</dd>
+  </dl>`;
+}
+
 function mcpProductOpen(mode, current) {
   const idEl = document.getElementById('mcp-product-id');
   const nameEl = document.getElementById('mcp-product-name');
@@ -3693,6 +3876,12 @@ function mcpProductOpen(mode, current) {
     iconEl.value = (c.branding && c.branding.iconUrl) || '';
   }
   document.getElementById('mcp-product-modal').classList.add('open');
+  // Reset wizard state to step 1 on every open. Edit mode could
+  // start on step 4 (Review), but starting at step 1 keeps the UX
+  // uniform — an editor stepping through their own config catches
+  // surprises.
+  MCP_WIZ_STEP = 1;
+  mcpWizRender();
   // Build the tools picker from the registry — fetched once on the
   // first modal open and cached client-side. Selected = whatever was
   // already in the (potentially template-prefilled) textarea.
