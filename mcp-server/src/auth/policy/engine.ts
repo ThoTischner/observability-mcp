@@ -105,4 +105,15 @@ export class BuiltinPolicyEngine implements PolicyEngine {
   raw(): Record<string, Permission[]> {
     return this.policy;
   }
+
+  /** Hot-swap the policy in place. Existing gate middleware closed
+   *  over THIS engine instance will see the new map on the next
+   *  evaluate() call — no restart required. The `readonly` modifier
+   *  on `policy` only forbids reassignment of the field (TS); the
+   *  underlying object reference stays the same, so we clear-and-
+   *  refill instead of replacing it. */
+  replace(policy: Record<string, Permission[]>): void {
+    for (const k of Object.keys(this.policy)) delete this.policy[k];
+    for (const [k, v] of Object.entries(policy)) this.policy[k] = v;
+  }
 }

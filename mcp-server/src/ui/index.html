@@ -2081,6 +2081,8 @@ curl -X PUT http://localhost:3000/api/enterprise/catalog \
             data-title="Roles"
             data-info="A role is the WHAT — a named bundle of resource:action grants. Bindings (next sub-tab) decide who carries the role. The matrix view shows the granted (✓) vs not-granted (—) cells for the selected role across every resource and action."
             onclick="infoPop(this)">?</button>
+          <span style="flex:1"></span>
+          <button class="btn btn-primary btn-sm" data-engine-required="file" data-rbac="users:delete" onclick="polRoleAuthorNew()">+ New role</button>
         </h2></div>
         <div class="pol-roles-layout">
           <div class="pol-role-list" id="pol-role-list" role="listbox" aria-label="Roles">
@@ -2101,6 +2103,36 @@ curl -X PUT http://localhost:3000/api/enterprise/catalog \
             onclick="infoPop(this)">?</button>
         </h2></div>
         <div id="pol-bindings-body" class="content"><div class="empty">Loading…</div></div>
+      </div>
+
+      <!-- Role-author modal (file-engine only). Surfaces a name +
+           permission-matrix checkbox grid; saves via
+           PUT /api/policy/roles/:name. -->
+      <div class="modal-overlay" id="pol-role-author-modal">
+        <div class="modal" style="width:min(720px, 92vw)">
+          <div class="modal-header">
+            <h3>New role</h3>
+            <button class="btn-icon" onclick="closeModal('pol-role-author-modal')">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div class="form-group">
+              <label for="pol-role-author-name">Role name</label>
+              <input type="text" id="pol-role-author-name" placeholder="e.g. on-call-sre" autocomplete="off">
+              <div class="form-hint">Pattern: <code>[A-Za-z0-9][A-Za-z0-9._-]{0,63}</code>. New roles append to the policy file; existing names overwrite.</div>
+            </div>
+            <div class="form-group">
+              <label>Permissions</label>
+              <div id="pol-role-author-grid" class="content"></div>
+              <div class="form-hint">Tick cells to grant. Empty rows mean the role has no access to that resource.</div>
+            </div>
+            <div id="pol-role-author-error" class="form-hint" role="alert" aria-live="polite" style="color: var(--danger); display: none;"></div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-ghost" onclick="closeModal('pol-role-author-modal')">Cancel</button>
+            <span style="flex:1"></span>
+            <button class="btn btn-primary" onclick="polRoleAuthorSave()">Save role</button>
+          </div>
+        </div>
       </div>
 
       <!-- Binding-edit modal — only used for the local-user row. -->
@@ -2836,6 +2868,66 @@ function polRolesRender() {
 function polSelectRole(role) {
   POL_SELECTED_ROLE = role;
   polRolesRender();
+}
+
+function polRoleAuthorNew() {
+  // Author modal — render a permission-matrix as a checkbox grid
+  // (rows = resources × cols = actions) plus a role-name input.
+  const nameEl = document.getElementById('pol-role-author-name');
+  const gridEl = document.getElementById('pol-role-author-grid');
+  const errEl = document.getElementById('pol-role-author-error');
+  if (nameEl) nameEl.value = '';
+  if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+  if (gridEl) {
+    const headerCells = POL_ACTIONS.map((a) => `<th>${escHtml(a)}</th>`).join('');
+    const bodyRows = POL_RESOURCES.map((res) => {
+      const cells = POL_ACTIONS.map((act) => `<td style="text-align:center">
+        <input type="checkbox" data-pol-resource="${escHtml(res)}" data-pol-action="${escHtml(act)}" aria-label="${escHtml(res)}:${escHtml(act)}">
+      </td>`).join('');
+      return `<tr><th scope="row"><code>${escHtml(res)}</code></th>${cells}</tr>`;
+    }).join('');
+    gridEl.innerHTML = `<table class="pol-matrix"><thead><tr><th>Resource</th>${headerCells}</tr></thead><tbody>${bodyRows}</tbody></table>`;
+  }
+  document.getElementById('pol-role-author-modal').classList.add('open');
+  setTimeout(() => nameEl && nameEl.focus(), 50);
+}
+async function polRoleAuthorSave() {
+  const nameEl = document.getElementById('pol-role-author-name');
+  const errEl = document.getElementById('pol-role-author-error');
+  const setErr = (msg) => { if (errEl) { errEl.textContent = msg; errEl.style.display = ''; } };
+  if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+  const name = (nameEl && nameEl.value || '').trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name)) {
+    setErr('Role name must match [A-Za-z0-9][A-Za-z0-9._-]{0,63}.');
+    nameEl && nameEl.focus();
+    return;
+  }
+  const checks = Array.from(document.querySelectorAll('#pol-role-author-grid input[type=checkbox]:checked'));
+  const perms = checks.map((el) => ({
+    resource: el.getAttribute('data-pol-resource'),
+    action: el.getAttribute('data-pol-action'),
+  })).filter((p) => p.resource && p.action);
+  try {
+    const r = await fetch('/api/policy/roles/' + encodeURIComponent(name), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ permissions: perms }),
+    });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      setErr(j.error || ('HTTP ' + r.status));
+      return;
+    }
+    closeModal('pol-role-author-modal');
+    toast('Saved role ' + name);
+    // Re-fetch the policy snapshot so the Roles list + matrix
+    // reflect the change without a page reload.
+    POL_SUBJECTS = null;
+    POL_SELECTED_ROLE = name;
+    await loadPolicies();
+  } catch (e) {
+    setErr('Save failed: ' + (e && e.message || e));
+  }
 }
 
 async function loadPolicies() {

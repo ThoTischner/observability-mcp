@@ -61,7 +61,7 @@ import {
 import { resolveOidcConfig, buildOidcRuntime } from "./auth/oidc/runtime.js";
 import { registerOidcRoutes } from "./auth/oidc/endpoints.js";
 import { BuiltinPolicyEngine, type PolicyEngine } from "./auth/policy/engine.js";
-import { loadPolicyFromFile, PolicyLoadError, VALID_RESOURCES, VALID_ACTIONS } from "./auth/policy/loader.js";
+import { loadPolicyFromFile, writePolicyFile, PolicyLoadError, VALID_RESOURCES, VALID_ACTIONS } from "./auth/policy/loader.js";
 import { OpaPolicyEngine } from "./auth/policy/opa.js";
 import { AuditLog } from "./audit/log.js";
 import { buildAuditMiddleware } from "./audit/middleware.js";
@@ -1332,6 +1332,118 @@ async function main() {
     // file's mtime, which we just bumped via the atomic rename.
     await maybeReloadUsers();
     res.json({ ok: true, username, roles: requestedRoles });
+  });
+
+  // Upsert a role in the file-backed RBAC policy. File engine only:
+  // built-in defaults are immutable in source; OPA is the Rego
+  // source of truth. The UI hides the affordance under non-file
+  // engines via the [data-engine-required="file"] CSS gate; the
+  // endpoint enforces the rule too for defence-in-depth.
+  app.put("/api/policy/roles/:name", need("users", "delete"), audit("users", "write"), async (req, res) => {
+    const name = String(req.params.name);
+    // Reject names with shell-unfriendly characters early so the
+    // YAML round-trip can't accidentally produce an exotic key.
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name)) {
+      res.status(400).json({ error: `role name '${name}' must match [A-Za-z0-9][A-Za-z0-9._-]{0,63}` });
+      return;
+    }
+    const policyFile = process.env.OMCP_RBAC_POLICY_FILE?.trim();
+    if (!policyEngine.kind().startsWith("file:")) {
+      // Built-in (immutable source) or OPA (Rego is the source of
+      // truth) — role authoring isn't available. Return distinct
+      // error codes so the UI can show the right hint without
+      // string-matching the message.
+      const code = policyEngine.kind() === "builtin"
+        ? "OMCP_POLICY_ENGINE_BUILTIN"
+        : policyEngine.kind().startsWith("opa:")
+          ? "OMCP_POLICY_ENGINE_OPA"
+          : "OMCP_POLICY_ENGINE_NOT_FILE";
+      res.status(409).json({
+        error: `role authoring requires the file engine — current is '${policyEngine.kind()}'`,
+        code,
+      });
+      return;
+    }
+    if (!policyFile) {
+      res.status(409).json({
+        error: "OMCP_RBAC_POLICY_FILE is not configured — role authoring writes through that file.",
+        code: "OMCP_POLICY_FILE_NOT_SET",
+      });
+      return;
+    }
+    const body = req.body as Record<string, unknown> | undefined;
+    if (!body || !Array.isArray(body.permissions)) {
+      res.status(400).json({ error: "body must include { permissions: [{resource, action}] }" });
+      return;
+    }
+    const cleanPerms: Permission[] = [];
+    for (let i = 0; i < body.permissions.length; i++) {
+      const p = body.permissions[i] as Record<string, unknown>;
+      if (!p || typeof p !== "object" || typeof p.resource !== "string" || typeof p.action !== "string") {
+        res.status(400).json({ error: `body.permissions[${i}] must be { resource: string, action: string }` });
+        return;
+      }
+      if (!VALID_RESOURCES.has(p.resource as Resource)) {
+        res.status(422).json({
+          error: `unknown resource '${p.resource}'`,
+          code: "OMCP_POLICY_UNKNOWN_RESOURCE",
+          unknown: p.resource,
+          available: [...VALID_RESOURCES],
+        });
+        return;
+      }
+      if (!VALID_ACTIONS.has(p.action as Action)) {
+        res.status(422).json({
+          error: `unknown action '${p.action}'`,
+          code: "OMCP_POLICY_UNKNOWN_ACTION",
+          unknown: p.action,
+          available: [...VALID_ACTIONS],
+        });
+        return;
+      }
+      cleanPerms.push({ resource: p.resource as Resource, action: p.action as Action });
+    }
+    // De-duplicate exact (resource, action) pairs so the file
+    // doesn't accumulate redundant entries via re-saves.
+    const seen = new Set<string>();
+    const dedup: Permission[] = [];
+    for (const p of cleanPerms) {
+      const k = p.resource + ":" + p.action;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      dedup.push(p);
+    }
+    // Snapshot the existing map (via raw()) and overlay the upsert.
+    // BuiltinPolicyEngine is the only kind that reaches here per the
+    // checks above.
+    const current: Record<string, Permission[]> = {};
+    if (policyEngine instanceof BuiltinPolicyEngine) {
+      for (const [r, ps] of Object.entries(policyEngine.raw())) {
+        current[r] = ps.slice();
+      }
+    }
+    current[name] = dedup;
+    try {
+      await writePolicyFile(policyFile, current);
+    } catch (e) {
+      if (e instanceof PolicyLoadError) {
+        res.status(422).json({ error: e.message });
+        return;
+      }
+      res.status(500).json({ error: `failed to persist policy: ${(e as Error).message}` });
+      return;
+    }
+    // Hot-swap the in-memory engine so the next gate evaluation
+    // picks up the new role without a restart. `replace()` mutates
+    // in-place, so existing middleware closures over `policyEngine`
+    // see the new map immediately.
+    if (policyEngine instanceof BuiltinPolicyEngine) {
+      const fresh = loadPolicyFromFile(policyFile);
+      if (fresh instanceof BuiltinPolicyEngine) {
+        policyEngine.replace(fresh.raw());
+      }
+    }
+    res.json({ ok: true, name, permissions: dedup });
   });
 
   // --- /api/audit — management-plane audit feed -------------------------

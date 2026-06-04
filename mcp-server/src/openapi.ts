@@ -575,6 +575,34 @@ export function buildOpenApiSpec(version: string): OpenAPIV3_1.Document {
           },
         },
       },
+      "/api/policy/roles/{name}": {
+        put: {
+          tags: ["auth"],
+          summary: "Upsert a role in the file-backed RBAC policy (admin-only, file engine only).",
+          description: "Writes through OMCP_RBAC_POLICY_FILE atomically. 409 if the active engine isn't `file:…` or the env var is unset. Permissions are validated against VALID_RESOURCES + VALID_ACTIONS; unknown values return 422 with code OMCP_POLICY_UNKNOWN_RESOURCE / OMCP_POLICY_UNKNOWN_ACTION. On success the in-memory PolicyEngine is hot-swapped — existing gates pick up the new policy without a server restart.",
+          parameters: [
+            { name: "name", in: "path", required: true, schema: { type: "string" } },
+          ],
+          requestBody: {
+            required: true,
+            content: { "application/json": { schema: {
+              type: "object",
+              required: ["permissions"],
+              properties: { permissions: { type: "array", items: { type: "object", properties: {
+                resource: { type: "string" },
+                action: { type: "string" },
+              } } } },
+            } } },
+          },
+          responses: {
+            "200": { description: "Role saved + hot-swapped." },
+            "400": { description: "Body shape invalid OR role name pattern rejected." },
+            "403": { description: "Missing users:delete permission (admin-only)." },
+            "409": { description: "Active engine isn't `file:…`, or OMCP_RBAC_POLICY_FILE unset (codes: OMCP_POLICY_ENGINE_NOT_FILE / OMCP_POLICY_FILE_NOT_SET)." },
+            "422": { description: "Unknown resource or action (codes: OMCP_POLICY_UNKNOWN_RESOURCE / OMCP_POLICY_UNKNOWN_ACTION)." },
+          },
+        },
+      },
       "/api/users/{username}/roles": {
         put: {
           tags: ["auth"],
