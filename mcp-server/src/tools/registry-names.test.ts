@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { REGISTERED_TOOL_NAMES, unknownToolNames } from "./registry-names.js";
+import { REGISTERED_TOOL_NAMES, REGISTERED_TOOLS, unknownToolNames } from "./registry-names.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const INDEX_TS = join(here, "..", "index.ts");
@@ -50,4 +50,25 @@ test("unknownToolNames — case-sensitive (MCP spec)", () => {
   // worse failure mode than rejecting (mismatched casing wouldn't
   // route to a real tool).
   assert.deepEqual(unknownToolNames(["List_Sources"]), ["List_Sources"]);
+});
+
+test("REGISTERED_TOOLS — every name has a category + summary", () => {
+  for (const t of REGISTERED_TOOLS) {
+    assert.ok(t.name, "name required");
+    assert.ok(t.category, `category required on ${t.name}`);
+    assert.ok(t.summary && t.summary.length > 10, `summary required on ${t.name}`);
+  }
+});
+
+test("REGISTERED_TOOLS — matches REGISTERED_TOOL_NAMES 1:1 (no drift)", () => {
+  const a = REGISTERED_TOOLS.map((t) => t.name).sort();
+  const b = [...REGISTERED_TOOL_NAMES].sort();
+  assert.deepEqual(a, b, "REGISTERED_TOOLS and REGISTERED_TOOL_NAMES must agree");
+});
+
+test("REGISTERED_TOOLS — every category is one of the four valid values", () => {
+  const valid = new Set(["discovery", "query", "diagnose", "topology"]);
+  for (const t of REGISTERED_TOOLS) {
+    assert.ok(valid.has(t.category), `unknown category '${t.category}' on ${t.name}`);
+  }
 });

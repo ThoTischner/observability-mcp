@@ -67,7 +67,7 @@ import { buildAuditMiddleware } from "./audit/middleware.js";
 import { buildBypassBreadcrumb, buildBypassAuditParams } from "./audit/redaction-bypass.js";
 import { readCatalogFile, CatalogStore } from "./catalog/loader.js";
 import { readProductsFile, ProductsStore, validateProduct, writeProductsFile, ProductsLoadError } from "./products/loader.js";
-import { REGISTERED_TOOL_NAMES, unknownToolNames } from "./tools/registry-names.js";
+import { REGISTERED_TOOL_NAMES, REGISTERED_TOOLS, unknownToolNames } from "./tools/registry-names.js";
 import { redactValue } from "./policy/redact.js";
 import { IdentityRateLimiter, resolveToolRatePerMin, parseKeyRateLimits } from "./quota/limiter.js";
 import { TokenBudget, estimateTokensFor, resolveDailyTokenLimit } from "./quota/token-budget.js";
@@ -1016,6 +1016,16 @@ async function main() {
   // Get supported connector types
   app.get("/api/source-types", (_req, res) => {
     res.json(getSupportedTypes());
+  });
+
+  // Get the registry of MCP tools the server can advertise (name +
+  // category + one-line summary). The Products modal uses this to
+  // populate the tools-allowlist picker so a typo can't happen at
+  // authoring time; the server-side typo guard (PR #343) stays as
+  // defence-in-depth. Open to every viewer — there's nothing
+  // sensitive in the catalogue, it's just static metadata.
+  app.get("/api/tools/registry", (_req, res) => {
+    res.json({ tools: REGISTERED_TOOLS });
   });
 
   // Server info — version, loaded plugins, MCP protocol version, build metadata.

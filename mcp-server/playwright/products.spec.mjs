@@ -90,6 +90,53 @@ test.describe("Products UI", () => {
     await page.locator("#mcp-products-leitfaden .card-header").click();
   });
 
+  test("Tools picker — renders categories, syncs selections to the hidden textarea, prefills from a template", async ({ page }) => {
+    // Delete the seeded product so the empty-state templates render
+    // a "+ click to open with tools prefilled" path we can exercise.
+    const api = await request.newContext({ baseURL: BASE });
+    await api.delete("/api/products/playwright-ops");
+    await api.dispose();
+    await page.goto(BASE);
+    await page.click("[data-page=products]");
+    await page.waitForSelector("#page-products.active");
+    await expect(page.locator(".pempty-templates")).toBeVisible();
+    // Click "Ops Bundle" — opens the modal prefilled with 4 tools.
+    await page.locator(".pempty-tpl").nth(0).click();
+    await expect(page.locator("#mcp-product-modal.open")).toBeVisible();
+    // Picker categories present.
+    await expect(page.locator(".tools-picker .tp-cat", { hasText: "Discovery" })).toBeVisible();
+    await expect(page.locator(".tools-picker .tp-cat", { hasText: "Query" })).toBeVisible();
+    await expect(page.locator(".tools-picker .tp-cat", { hasText: "Diagnose" })).toBeVisible();
+    await expect(page.locator(".tools-picker .tp-cat", { hasText: "Topology" })).toBeVisible();
+    // The 4 ops-bundle tools are pre-checked.
+    const opsTools = ["query_logs", "query_metrics", "get_service_health", "detect_anomalies"];
+    for (const t of opsTools) {
+      await expect(page.locator(`.tools-picker input[data-tool="${t}"]`)).toBeChecked();
+    }
+    // Tools NOT in the template are unchecked.
+    await expect(page.locator(`.tools-picker input[data-tool="list_sources"]`)).not.toBeChecked();
+    // Toggle one off and verify the hidden textarea reflects it.
+    await page.locator(`.tools-picker input[data-tool="detect_anomalies"]`).click();
+    const textareaValue = await page.locator("#mcp-product-tools").inputValue();
+    const lines = textareaValue.split("\n").filter(Boolean).sort();
+    expect(lines).toEqual(["get_service_health", "query_logs", "query_metrics"]);
+    // "Select all" enables every tool.
+    await page.locator(".tools-picker .tp-actions button", { hasText: "Select all" }).click();
+    const all = (await page.locator("#mcp-product-tools").inputValue()).split("\n").filter(Boolean);
+    expect(all.length).toBe(8);
+    // Cancel + re-seed for remaining tests.
+    await page.locator("button:has-text(\"Cancel\")").first().click();
+    const api2 = await request.newContext({ baseURL: BASE });
+    await api2.put("/api/products/playwright-ops", {
+      data: {
+        id: "playwright-ops", name: "Playwright Ops Bundle",
+        status: "published", tools: ["query_logs", "query_metrics"],
+        branding: { color: "#3178c6" },
+      },
+    });
+    await api2.dispose();
+  });
+
   test("Empty-state templates prefill the product modal (regression: was a no-op in initial slice)", async ({ page }) => {
     // Delete the seeded product so the empty state with templates
     // renders. afterAll restores ordering for the next workers.

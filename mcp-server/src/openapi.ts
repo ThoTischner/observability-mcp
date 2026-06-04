@@ -153,6 +153,35 @@ export function buildOpenApiSpec(version: string): OpenAPIV3_1.Document {
           },
         },
       },
+      "/api/tools/registry": {
+        get: {
+          tags: ["products"],
+          summary: "MCP tool catalogue — name + category + one-line summary, used by the Products picker.",
+          description: "Static metadata derived from REGISTERED_TOOLS. The Products modal pulls this to populate a multi-select picker grouped by category (discovery / query / diagnose / topology); the server-side typo guard (PR #343) stays as defence-in-depth.",
+          responses: {
+            "200": {
+              description: "Tool registry.",
+              content: { "application/json": { schema: {
+                type: "object",
+                properties: {
+                  tools: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      required: ["name", "category", "summary"],
+                      properties: {
+                        name: { type: "string" },
+                        category: { type: "string", enum: ["discovery", "query", "diagnose", "topology"] },
+                        summary: { type: "string" },
+                      },
+                    },
+                  },
+                },
+              } } },
+            },
+          },
+        },
+      },
       "/api/services": {
         get: {
           tags: ["services"],
