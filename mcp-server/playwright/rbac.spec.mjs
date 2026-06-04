@@ -54,6 +54,59 @@ test.describe("Policies UI — engine banner + sticky dry-run", () => {
     await expect(page.locator(".pol-probe-result")).toContainText("acme");
   });
 
+  test("Roles sub-tab — sub-tab nav renders, role list shows grant counts, matrix for admin has the expected shape", async ({ page }) => {
+    await page.goto(BASE);
+    await page.click("[data-page=policies]");
+    await page.waitForSelector("#page-policies.active");
+    // Sub-tab nav present.
+    await expect(page.locator(".pol-subtab[data-pol-tab=roles]")).toBeVisible();
+    await expect(page.locator(".pol-subtab[data-pol-tab=bindings]")).toBeVisible();
+    await expect(page.locator(".pol-subtab[data-pol-tab=subjects]")).toBeVisible();
+    // Roles is the active sub-tab by default.
+    await expect(page.locator(".pol-subtab[data-pol-tab=roles][data-active=true]")).toBeVisible();
+    // Role list shows the 3 built-in roles each with a grant count.
+    await expect(page.locator(".pol-role-row[data-role=viewer]")).toBeVisible();
+    await expect(page.locator(".pol-role-row[data-role=operator]")).toBeVisible();
+    await expect(page.locator(".pol-role-row[data-role=admin]")).toBeVisible();
+    // The admin row is active by default OR clicking it activates it.
+    const adminRow = page.locator(".pol-role-row[data-role=admin]");
+    await adminRow.click();
+    await expect(adminRow).toHaveAttribute("data-active", "true");
+    // Matrix renders — head row with 4 actions, one row per resource.
+    const matrix = page.locator(".pol-matrix");
+    await expect(matrix).toBeVisible();
+    // Header columns: read, write, delete, bypass (+ Resource header).
+    const headerCells = await matrix.locator("thead th").allTextContents();
+    expect(headerCells).toEqual(["Resource", "read", "write", "delete", "bypass"]);
+    // Admin → sources:delete is granted.
+    const sourcesRow = matrix.locator("tbody tr").filter({ hasText: "sources" });
+    const deleteCell = sourcesRow.locator("td").nth(2); // 0=read, 1=write, 2=delete, 3=bypass
+    await expect(deleteCell).toHaveAttribute("data-grant", "true");
+    await expect(deleteCell).toHaveText("✓");
+    // Admin → redaction:bypass is the special one.
+    const redactionRow = matrix.locator("tbody tr").filter({ hasText: "redaction" });
+    const bypassCell = redactionRow.locator("td").nth(3);
+    await expect(bypassCell).toHaveAttribute("data-grant", "true");
+    // Switch to viewer — its sources:delete must be NOT granted.
+    await page.locator(".pol-role-row[data-role=viewer]").click();
+    const sourcesRow2 = page.locator(".pol-matrix tbody tr").filter({ hasText: "sources" });
+    const deleteCell2 = sourcesRow2.locator("td").nth(2);
+    await expect(deleteCell2).toHaveAttribute("data-grant", "false");
+    await expect(deleteCell2).toHaveText("—");
+  });
+
+  test("Bindings + Subjects sub-tabs render placeholder copy (slice G/H land them)", async ({ page }) => {
+    await page.goto(BASE);
+    await page.click("[data-page=policies]");
+    await page.waitForSelector("#page-policies.active");
+    await page.click(".pol-subtab[data-pol-tab=bindings]");
+    await expect(page.locator("#pol-pane-bindings")).toBeVisible();
+    await expect(page.locator("#pol-pane-bindings")).toContainText(/Bindings are the who/i);
+    await page.click(".pol-subtab[data-pol-tab=subjects]");
+    await expect(page.locator("#pol-pane-subjects")).toBeVisible();
+    await expect(page.locator("#pol-pane-subjects")).toContainText(/OMCP_USERS_FILE/);
+  });
+
   test("authoring controls keyed on data-engine-required=file stay disabled on read-only engines", async ({ page }) => {
     // No author controls ship in this slice — but the CSS contract
     // they will use is already in place. Verify the body attribute

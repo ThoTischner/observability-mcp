@@ -983,6 +983,35 @@
     .pol-engine-banner.eng-opa .pol-eb-dot { background: var(--warning); }
     .pol-engine-banner .pol-eb-pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); font-weight: 500; }
 
+    /* Policies sub-tabs (Roles / Bindings / Subjects) */
+    .pol-subtabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: var(--sp-3); }
+    .pol-subtab { background: none; border: 0; padding: var(--sp-3) var(--sp-4); color: var(--text-2); cursor: pointer; font-size: 13px; position: relative; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+    .pol-subtab:hover { color: var(--text); }
+    .pol-subtab[data-active="true"] { color: var(--text); border-bottom-color: var(--accent); font-weight: 500; }
+    .pol-pane[hidden] { display: none; }
+
+    /* Roles master/detail */
+    .pol-roles-layout { display: grid; grid-template-columns: 260px 1fr; min-height: 320px; }
+    .pol-role-list { border-right: 1px solid var(--border); max-height: 60vh; overflow-y: auto; }
+    .pol-role-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); cursor: pointer; border-bottom: 1px solid var(--border); }
+    .pol-role-row:hover { background: var(--surface-2); }
+    .pol-role-row[data-active="true"] { background: var(--accent-soft); }
+    .pol-role-row .pol-role-name { font-weight: 500; font-size: 13px; }
+    .pol-role-row .pol-role-count { font-size: 11px; opacity: .65; }
+    .pol-role-detail { padding: var(--sp-4); overflow-x: auto; }
+    .pol-role-detail h3 { margin: 0 0 var(--sp-3); font-size: 14px; font-weight: 600; }
+    .pol-matrix { border-collapse: collapse; width: 100%; font-size: 12px; }
+    .pol-matrix th, .pol-matrix td { padding: var(--sp-2); border: 1px solid var(--border); text-align: left; }
+    .pol-matrix thead th { background: var(--surface-2); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; font-weight: 600; opacity: .8; }
+    .pol-matrix tbody th { font-weight: 500; background: var(--surface-2); font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11.5px; }
+    .pol-matrix td { text-align: center; }
+    .pol-matrix .cell-grant { color: var(--success); font-weight: 600; }
+    .pol-matrix .cell-empty { opacity: .25; }
+    @media (max-width: 900px) {
+      .pol-roles-layout { grid-template-columns: 1fr; }
+      .pol-role-list { border-right: 0; border-bottom: 1px solid var(--border); max-height: none; }
+    }
+
     /* Sticky dry-run bar — pinned at the top of the policies page */
     .pol-probe-bar { position: sticky; top: 0; z-index: 5; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--sp-3); margin-bottom: var(--sp-3); box-shadow: 0 1px 2px rgba(0,0,0,.04); }
     .pol-probe-grid { display: grid; grid-template-columns: repeat(5, 1fr) auto; gap: var(--sp-3); align-items: end; }
@@ -2027,14 +2056,66 @@ curl -X PUT http://localhost:3000/api/enterprise/catalog \
         <div id="pol-dry-out"></div>
       </div>
 
-      <div class="card">
-        <div class="card-header"><h2>Active policy
-          <button class="info" aria-label="About the active policy"
-            data-title="Active policy"
-            data-info="Read-only view of the RBAC policy this build is running. Switch the active engine via OMCP_RBAC_POLICY_FILE (file) or OMCP_OPA_URL (OPA); the banner above identifies which is in use."
+      <!-- Sub-tab nav — k8s-style separation of Roles (the WHAT) vs
+           Bindings (the WHO) vs Subjects (the principals). Slice F
+           ships Roles; G + H fill in Bindings + Subjects. -->
+      <nav class="pol-subtabs" role="tablist" aria-label="Policies sections">
+        <button class="pol-subtab" role="tab" aria-controls="pol-pane-roles" data-pol-tab="roles" onclick="polSetTab('roles')">Roles</button>
+        <button class="pol-subtab" role="tab" aria-controls="pol-pane-bindings" data-pol-tab="bindings" onclick="polSetTab('bindings')">Bindings</button>
+        <button class="pol-subtab" role="tab" aria-controls="pol-pane-subjects" data-pol-tab="subjects" onclick="polSetTab('subjects')">Subjects</button>
+      </nav>
+
+      <!-- Roles sub-tab — master/detail: role list on the left, the
+           selected role's permission matrix on the right. -->
+      <div class="card pol-pane" id="pol-pane-roles" role="tabpanel">
+        <div class="card-header"><h2>Roles
+          <button class="info" aria-label="About roles"
+            data-title="Roles"
+            data-info="A role is the WHAT — a named bundle of resource:action grants. Bindings (next sub-tab) decide who carries the role. The matrix view shows the granted (✓) vs not-granted (—) cells for the selected role across every resource and action."
             onclick="infoPop(this)">?</button>
         </h2></div>
-        <div id="pol-roles" class="content"><div class="empty">Loading…</div></div>
+        <div class="pol-roles-layout">
+          <div class="pol-role-list" id="pol-role-list" role="listbox" aria-label="Roles">
+            <div class="empty">Loading…</div>
+          </div>
+          <div class="pol-role-detail" id="pol-role-detail">
+            <div class="empty">Select a role on the left to see its permission matrix.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bindings sub-tab — placeholder for Slice G -->
+      <div class="card pol-pane" id="pol-pane-bindings" role="tabpanel" hidden>
+        <div class="card-header"><h2>Bindings</h2></div>
+        <div class="content" style="padding: var(--sp-4);">
+          <p class="t-sm" style="opacity:.85;line-height:1.5;max-width:640px">
+            Bindings are the <em>who</em> — they map subjects (users, API keys, OIDC groups)
+            to one or more roles. The Bindings table lands in the next slice; today's roles
+            view above shows what each role grants.
+          </p>
+        </div>
+      </div>
+
+      <!-- Subjects sub-tab — placeholder for Slice H -->
+      <div class="card pol-pane" id="pol-pane-subjects" role="tabpanel" hidden>
+        <div class="card-header"><h2>Subjects</h2></div>
+        <div class="content" style="padding: var(--sp-4);">
+          <p class="t-sm" style="opacity:.85;line-height:1.5;max-width:640px">
+            Subjects are the principals an OMCP deployment recognises — local users
+            (<code>OMCP_USERS_FILE</code>), API-key names (<code>OMCP_API_KEYS</code>),
+            and OIDC groups seen at sign-in. The Subjects table aggregates them in the
+            next slice.
+          </p>
+        </div>
+      </div>
+
+      <!-- Kept for back-compat — the legacy snapshot lives here but
+           the new Roles sub-tab supersedes it. JS hides it once
+           Roles renders successfully so we don't duplicate
+           information. -->
+      <div class="card" id="pol-legacy-snapshot" hidden>
+        <div class="card-header"><h2>Active policy (legacy view)</h2></div>
+        <div id="pol-roles" class="content"></div>
       </div>
     </div>
 
@@ -2402,12 +2483,112 @@ function polRenderEngineBanner(j) {
     engineEl.className = 'badge ' + (kind === 'opa' ? 'badge-warn' : kind === 'file' ? 'badge-ok' : '');
   }
 }
+// Policy snapshot — fetched once on page enter, then reused by the
+// sub-tab renderers (Roles matrix today; Bindings + Subjects in
+// later slices). Reset on every loadPolicies() call.
+let POL_SNAPSHOT = null;
+let POL_SELECTED_ROLE = null;
+
+function polSetTab(name) {
+  document.querySelectorAll('.pol-subtab').forEach((btn) => {
+    btn.setAttribute('data-active', String(btn.getAttribute('data-pol-tab') === name));
+    btn.setAttribute('aria-selected', String(btn.getAttribute('data-pol-tab') === name));
+  });
+  document.querySelectorAll('.pol-pane').forEach((p) => {
+    p.hidden = p.id !== 'pol-pane-' + name;
+  });
+}
+
+// Resources × actions catalogue, kept in sync with VALID_RESOURCES +
+// VALID_ACTIONS in src/auth/policy/loader.ts. Pinned client-side so
+// the matrix shows the FULL grid (granted vs not-granted) even when
+// a role has zero grants for a given resource — the empty cells are
+// information too. If the server adds a new resource / action,
+// extend this list; the policy.engine snapshot guards against
+// silent drift through its declared-roles catalogue.
+const POL_RESOURCES = ["sources","services","health","topology","settings","connectors","audit","catalog","users","redaction","products"];
+const POL_ACTIONS = ["read","write","delete","bypass"];
+
+function polRolesRender() {
+  const listEl = document.getElementById('pol-role-list');
+  const detailEl = document.getElementById('pol-role-detail');
+  if (!listEl || !detailEl || !POL_SNAPSHOT) return;
+  const roles = POL_SNAPSHOT.roles || [];
+  if (roles.length === 0) {
+    listEl.innerHTML = '<div class="empty">No roles defined.</div>';
+    detailEl.innerHTML = '<div class="empty">Define a role to see its permission matrix.</div>';
+    return;
+  }
+  if (!POL_SELECTED_ROLE || !roles.includes(POL_SELECTED_ROLE)) {
+    POL_SELECTED_ROLE = roles[0];
+  }
+  // Render the role list with grant counts. Selection is handled
+  // via event delegation on the list container — keeps untrusted
+  // role names (file-loaded policies can use any string) out of the
+  // onclick attribute, where escHtml's HTML-special set doesn't
+  // sanitise JS-string-literal characters like the single quote.
+  listEl.innerHTML = roles.map((role) => {
+    const grants = (POL_SNAPSHOT.policy && POL_SNAPSHOT.policy[role]) || [];
+    const active = role === POL_SELECTED_ROLE;
+    return `<div class="pol-role-row" role="option" data-role="${escHtml(role)}" data-active="${active}">
+      <span class="pol-role-name">${escHtml(role)}</span>
+      <span class="pol-role-count">${grants.length} grant${grants.length === 1 ? '' : 's'}</span>
+    </div>`;
+  }).join('');
+  // Wire delegation once. Idempotent — re-rendering the inner HTML
+  // doesn't lose the listener because it's bound to the outer list
+  // element which persists. Guarded with a marker attribute so a
+  // second loadPolicies call doesn't double-bind.
+  if (!listEl.dataset.delegated) {
+    listEl.addEventListener('click', (ev) => {
+      const row = ev.target.closest('.pol-role-row');
+      if (!row) return;
+      const role = row.getAttribute('data-role');
+      if (role) polSelectRole(role);
+    });
+    listEl.dataset.delegated = '1';
+  }
+  // Render the matrix for the selected role.
+  const grants = (POL_SNAPSHOT.policy && POL_SNAPSHOT.policy[POL_SELECTED_ROLE]) || [];
+  // Build a Set of "resource:action" pairs for O(1) lookup.
+  const granted = new Set();
+  for (const g of grants) granted.add(g.resource + ':' + g.action);
+  const headerCells = POL_ACTIONS.map((a) => `<th>${escHtml(a)}</th>`).join('');
+  const bodyRows = POL_RESOURCES.map((res) => {
+    const cells = POL_ACTIONS.map((act) => {
+      const has = granted.has(res + ':' + act);
+      return has
+        ? `<td class="cell-grant" data-grant="true" title="${escHtml(res)}:${escHtml(act)} granted">✓</td>`
+        : `<td class="cell-empty" data-grant="false">—</td>`;
+    }).join('');
+    return `<tr><th scope="row"><code>${escHtml(res)}</code></th>${cells}</tr>`;
+  }).join('');
+  detailEl.innerHTML = `
+    <h3>${escHtml(POL_SELECTED_ROLE)} <span class="t-sm" style="opacity:.65;font-weight:400">${grants.length} grant${grants.length === 1 ? '' : 's'}</span></h3>
+    <table class="pol-matrix"><thead><tr><th>Resource</th>${headerCells}</tr></thead><tbody>${bodyRows}</tbody></table>
+    <p class="t-sm" style="opacity:.65;margin-top:var(--sp-3)">
+      ✓ = the role grants this resource:action combination. — = no grant. The
+      <em>redaction:bypass</em> column is the operator-side gate for the per-call
+      bypass; the credential must also be allow-listed via OMCP_KEY_BYPASS_REDACTION.
+    </p>
+  `;
+}
+function polSelectRole(role) {
+  POL_SELECTED_ROLE = role;
+  polRolesRender();
+}
+
 async function loadPolicies() {
   const rolesEl = document.getElementById('pol-roles');
   try {
     const r = await fetch('/api/policy');
     if (!r.ok) {
-      rolesEl.innerHTML = '<div class="empty">Policy view requires the <code>users:delete</code> permission (admin role).</div>';
+      if (rolesEl) rolesEl.innerHTML = '';
+      const listEl = document.getElementById('pol-role-list');
+      const detailEl = document.getElementById('pol-role-detail');
+      const msg = '<div class="empty">Policy view requires the <code>users:delete</code> permission (admin role).</div>';
+      if (listEl) listEl.innerHTML = msg;
+      if (detailEl) detailEl.innerHTML = '';
       const engineEl = document.getElementById('pol-engine');
       if (engineEl) engineEl.textContent = '';
       const banner = document.getElementById('pol-engine-banner');
@@ -2420,29 +2601,42 @@ async function loadPolicies() {
     }
     const j = await r.json();
     polRenderEngineBanner(j);
-    const blocks = [];
-    for (const role of (j.roles || [])) {
-      const grants = (j.policy && j.policy[role]) || [];
-      // Group grants by resource for compact rendering.
-      const byRes = {};
-      for (const g of grants) {
-        (byRes[g.resource] = byRes[g.resource] || []).push(g.action);
-      }
-      const rows = Object.entries(byRes).map(([res, actions]) =>
-        `<tr><td><code>${escHtml(res)}</code></td><td>${actions.map(a => `<span class="pill">${escHtml(a)}</span>`).join(' ')}</td></tr>`
-      ).join('');
-      blocks.push(`
-        <div style="padding: var(--sp-3) var(--sp-4)">
-          <h3 style="margin: 0 0 var(--sp-2); display:flex; gap: var(--sp-2); align-items:baseline;">
-            <span>${escHtml(role)}</span>
-            <span class="t-sm" style="opacity:.7">${grants.length} permission${grants.length===1?'':'s'}</span>
-          </h3>
-          <table class="data-table" style="width:100%"><thead><tr><th>Resource</th><th>Actions</th></tr></thead><tbody>${rows || '<tr><td colspan="2" class="empty">no grants</td></tr>'}</tbody></table>
-        </div>`);
+    POL_SNAPSHOT = j;
+    // Default sub-tab = Roles.
+    if (!document.querySelector('.pol-subtab[data-active="true"]')) {
+      polSetTab('roles');
     }
-    rolesEl.innerHTML = blocks.join('') || '<div class="empty">No roles defined.</div>';
+    polRolesRender();
+    // Legacy snapshot card kept hidden — the matrix supersedes it.
+    if (rolesEl) {
+      const blocks = [];
+      for (const role of (j.roles || [])) {
+        const grants = (j.policy && j.policy[role]) || [];
+        const byRes = {};
+        for (const g of grants) {
+          (byRes[g.resource] = byRes[g.resource] || []).push(g.action);
+        }
+        const rows = Object.entries(byRes).map(([res, actions]) =>
+          `<tr><td><code>${escHtml(res)}</code></td><td>${actions.map(a => `<span class="pill">${escHtml(a)}</span>`).join(' ')}</td></tr>`
+        ).join('');
+        blocks.push(`
+          <div style="padding: var(--sp-3) var(--sp-4)">
+            <h3 style="margin: 0 0 var(--sp-2); display:flex; gap: var(--sp-2); align-items:baseline;">
+              <span>${escHtml(role)}</span>
+              <span class="t-sm" style="opacity:.7">${grants.length} permission${grants.length===1?'':'s'}</span>
+            </h3>
+            <table class="data-table" style="width:100%"><thead><tr><th>Resource</th><th>Actions</th></tr></thead><tbody>${rows || '<tr><td colspan="2" class="empty">no grants</td></tr>'}</tbody></table>
+          </div>`);
+      }
+      rolesEl.innerHTML = blocks.join('') || '<div class="empty">No roles defined.</div>';
+    }
   } catch (e) {
-    rolesEl.innerHTML = '<div class="empty">Policy unavailable: ' + escHtml(String(e && e.message || e)) + '</div>';
+    const msg = '<div class="empty">Policy unavailable: ' + escHtml(String(e && e.message || e)) + '</div>';
+    if (rolesEl) rolesEl.innerHTML = msg;
+    const listEl = document.getElementById('pol-role-list');
+    const detailEl = document.getElementById('pol-role-detail');
+    if (listEl) listEl.innerHTML = msg;
+    if (detailEl) detailEl.innerHTML = '';
   }
 }
 async function polDryRun() {
