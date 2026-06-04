@@ -1186,6 +1186,95 @@ async function main() {
     });
   });
 
+  // --- /api/subjects — aggregated principals catalogue ------------------
+  // The third k8s-shaped RBAC view: who the deployment knows about.
+  // Three independent sources, returned in three independent arrays so
+  // the UI can table each section separately:
+  //   - users     : OMCP_USERS_FILE (basic-mode local users). Password
+  //                 hashes are never returned.
+  //   - apiKeys   : OMCP_API_KEYS names (the bearer-token catalogue).
+  //                 Tokens are never returned; only metadata (tenant,
+  //                 bound product, source allow-list, bypass flag).
+  //   - oidcGroups: keys of OMCP_OIDC_ROLE_MAP — every group the
+  //                 operator has explicitly mapped to an OMCP role.
+  //                 Runtime-only groups (claims that arrive without an
+  //                 OMCP-side mapping) are skipped on purpose; they
+  //                 produce no roles by definition.
+  // Gated identically to /api/policy.
+  app.get("/api/subjects", need("users", "delete"), async (_req, res) => {
+    // Local users.
+    const usersOut: Array<{ username: string; name: string; roles: string[]; tenant: string }> = [];
+    if (process.env.OMCP_USERS_FILE) {
+      try {
+        const f = await readUsersFile(process.env.OMCP_USERS_FILE);
+        if (f && Array.isArray(f.users)) {
+          for (const u of f.users) {
+            usersOut.push({
+              username: u.username,
+              name: u.name,
+              roles: u.roles ? u.roles.slice() : [],
+              tenant: u.tenant || "default",
+            });
+          }
+        }
+      } catch (e) {
+        // Read failures don't 500 the whole endpoint — surface an
+        // empty users array; admins can check the boot log for the
+        // file-load diagnostic.
+        console.warn(`[/api/subjects] readUsersFile failed: ${(e as Error).message}`);
+      }
+    }
+    // API key credentials (tokens stripped).
+    const apiKeysOut: Array<{
+      name: string;
+      tenant: string;
+      productId?: string;
+      bypassRedaction: boolean;
+      allowedSources?: string[];
+    }> = [];
+    for (const c of loadCredentials()) {
+      apiKeysOut.push({
+        name: c.name,
+        tenant: c.tenant || "default",
+        productId: c.productId,
+        bypassRedaction: !!c.bypassRedaction,
+        allowedSources: c.allowedSources,
+      });
+    }
+    // OIDC groups → role mappings.
+    const oidcGroupsOut: Array<{ claim: string; role: string }> = [];
+    const roleMapRaw = process.env.OMCP_OIDC_ROLE_MAP;
+    if (roleMapRaw) {
+      try {
+        const parsed = JSON.parse(roleMapRaw);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          for (const [claim, role] of Object.entries(parsed)) {
+            if (typeof role === "string" && claim) {
+              oidcGroupsOut.push({ claim, role });
+            }
+          }
+        }
+      } catch {
+        // The OIDC runtime already rejects an invalid role map at
+        // boot — if parsing fails here it's almost certainly a
+        // transient state during config reload. Surface empty.
+      }
+    }
+    res.json({
+      users: usersOut,
+      apiKeys: apiKeysOut,
+      oidcGroups: oidcGroupsOut,
+      // Surface which env vars actually drive each list so an
+      // admin diagnosing "where is my user?" sees the source path
+      // without having to read the deploy.
+      sources: {
+        users: process.env.OMCP_USERS_FILE || null,
+        apiKeys: process.env.OMCP_API_KEYS ? "OMCP_API_KEYS" : null,
+        oidcGroups: process.env.OMCP_OIDC_ROLE_MAP ? "OMCP_OIDC_ROLE_MAP" : null,
+      },
+    });
+  });
+
   // --- /api/audit — management-plane audit feed -------------------------
   // Read-only, gated by the "audit:read" permission so only viewers /
   // operators / admins (basically anyone authenticated in the default

@@ -27,6 +27,7 @@ test("openapi — every user-visible /api path is documented", () => {
     "/api/audit",
     "/api/usage",
     "/api/policy",
+    "/api/subjects",
     "/api/catalog",
     "/api/products",
     "/api/products/{id}",

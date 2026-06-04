@@ -575,6 +575,43 @@ export function buildOpenApiSpec(version: string): OpenAPIV3_1.Document {
           },
         },
       },
+      "/api/subjects": {
+        get: {
+          tags: ["auth"],
+          summary: "Aggregated subjects view — local users + API-key names + OIDC group mappings (admin-only).",
+          description: "Read-only catalogue of the principals an OMCP deployment knows about. Three independent sources: OMCP_USERS_FILE (users), OMCP_API_KEYS (apiKeys), OMCP_OIDC_ROLE_MAP (oidcGroups). Tokens + password hashes are never returned — only metadata.",
+          responses: {
+            "200": {
+              description: "Subjects payload.",
+              content: { "application/json": { schema: {
+                type: "object",
+                properties: {
+                  users: { type: "array", items: { type: "object", properties: {
+                    username: { type: "string" }, name: { type: "string" },
+                    roles: { type: "array", items: { type: "string" } },
+                    tenant: { type: "string" },
+                  } } },
+                  apiKeys: { type: "array", items: { type: "object", properties: {
+                    name: { type: "string" }, tenant: { type: "string" },
+                    productId: { type: "string" },
+                    bypassRedaction: { type: "boolean" },
+                    allowedSources: { type: "array", items: { type: "string" } },
+                  } } },
+                  oidcGroups: { type: "array", items: { type: "object", properties: {
+                    claim: { type: "string" }, role: { type: "string" },
+                  } } },
+                  sources: { type: "object", properties: {
+                    users: { type: ["string", "null"] },
+                    apiKeys: { type: ["string", "null"] },
+                    oidcGroups: { type: ["string", "null"] },
+                  } },
+                },
+              } } },
+            },
+            "403": { description: "Missing users:delete permission (admin-only)." },
+          },
+        },
+      },
       "/api/products": {
         get: {
           tags: ["products"],
