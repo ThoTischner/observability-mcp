@@ -575,6 +575,32 @@ export function buildOpenApiSpec(version: string): OpenAPIV3_1.Document {
           },
         },
       },
+      "/api/users/{username}/roles": {
+        put: {
+          tags: ["auth"],
+          summary: "Update a local user's role assignments (admin-only, file-backed).",
+          description: "Writes through OMCP_USERS_FILE. Roles are validated against the active policy engine's role catalogue; unknown role names return 422 with OMCP_USER_UNKNOWN_ROLE. The in-memory user store is refreshed atomically after the file write so the next login picks up the new roles without a server restart.",
+          parameters: [
+            { name: "username", in: "path", required: true, schema: { type: "string" } },
+          ],
+          requestBody: {
+            required: true,
+            content: { "application/json": { schema: {
+              type: "object",
+              required: ["roles"],
+              properties: { roles: { type: "array", items: { type: "string" } } },
+            } } },
+          },
+          responses: {
+            "200": { description: "Roles updated." },
+            "400": { description: "Body must be { roles: string[] }." },
+            "403": { description: "Missing users:delete permission (admin-only)." },
+            "404": { description: "User not found OR users file unreadable." },
+            "409": { description: "OMCP_USERS_FILE is not configured — basic-mode user roles can't be edited via the API." },
+            "422": { description: "tools[] references unknown role names. Body includes `unknown` + `available`; error code OMCP_USER_UNKNOWN_ROLE." },
+          },
+        },
+      },
       "/api/subjects": {
         get: {
           tags: ["auth"],

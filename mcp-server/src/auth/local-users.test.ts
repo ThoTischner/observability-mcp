@@ -99,3 +99,45 @@ test("authenticate — returns null for wrong password", () => {
   };
   assert.equal(authenticate("alice", "wrong", store), null);
 });
+
+import { writeUsersFile } from "./local-users.js";
+
+test("writeUsersFile — atomic round-trip preserves shape", async () => {
+  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = await mkdtemp(join(tmpdir(), "omcp-users-"));
+  try {
+    const path = join(dir, "users.json");
+    const file = {
+      users: [
+        { username: "alice", name: "Alice", roles: ["operator", "viewer"], tenant: "acme", passwordHash: "scrypt$dummy" },
+        { username: "bob", name: "Bob", passwordHash: "scrypt$dummy2" },
+      ],
+    };
+    await writeUsersFile(path, file);
+    const back = await readUsersFile(path);
+    assert.ok(back);
+    assert.equal(back.users.length, 2);
+    assert.deepEqual(back.users[0].roles, ["operator", "viewer"]);
+    assert.equal(back.users[0].tenant, "acme");
+    assert.equal(back.users[1].passwordHash, "scrypt$dummy2");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("writeUsersFile — no .tmp leftover after success (atomic rename)", async () => {
+  const { mkdtemp, rm, readdir } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = await mkdtemp(join(tmpdir(), "omcp-users-tmp-"));
+  try {
+    const path = join(dir, "users.json");
+    await writeUsersFile(path, { users: [{ username: "u", name: "U", passwordHash: "scrypt$x" }] });
+    const entries = await readdir(dir);
+    assert.deepEqual(entries.sort(), ["users.json"]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
