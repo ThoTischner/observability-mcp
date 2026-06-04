@@ -1012,6 +1012,14 @@
       .pol-role-list { border-right: 0; border-bottom: 1px solid var(--border); max-height: none; }
     }
 
+    /* Subjects sub-tab — three stacked sections */
+    .pol-subjects-section { padding: var(--sp-3) var(--sp-4); }
+    .pol-subjects-section + .pol-subjects-section { border-top: 1px solid var(--border); }
+    .pol-subjects-section h3 { margin: 0 0 var(--sp-2); font-size: 13px; font-weight: 600; display: flex; align-items: baseline; gap: var(--sp-2); }
+    .pol-subjects-section h3 .pol-subjects-count { font-size: 11px; opacity: .65; font-weight: 400; }
+    .pol-subjects-section h3 .pol-subjects-source { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 10.5px; opacity: .55; margin-left: auto; }
+    .pol-subjects-empty { font-size: 12px; opacity: .65; padding: var(--sp-2) 0; }
+
     /* Sticky dry-run bar — pinned at the top of the policies page */
     .pol-probe-bar { position: sticky; top: 0; z-index: 5; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--sp-3); margin-bottom: var(--sp-3); box-shadow: 0 1px 2px rgba(0,0,0,.04); }
     .pol-probe-grid { display: grid; grid-template-columns: repeat(5, 1fr) auto; gap: var(--sp-3); align-items: end; }
@@ -2096,17 +2104,16 @@ curl -X PUT http://localhost:3000/api/enterprise/catalog \
         </div>
       </div>
 
-      <!-- Subjects sub-tab — placeholder for Slice H -->
+      <!-- Subjects sub-tab — three sections (Users / API keys /
+           OIDC groups). Read-only this slice. -->
       <div class="card pol-pane" id="pol-pane-subjects" role="tabpanel" hidden>
-        <div class="card-header"><h2>Subjects</h2></div>
-        <div class="content" style="padding: var(--sp-4);">
-          <p class="t-sm" style="opacity:.85;line-height:1.5;max-width:640px">
-            Subjects are the principals an OMCP deployment recognises — local users
-            (<code>OMCP_USERS_FILE</code>), API-key names (<code>OMCP_API_KEYS</code>),
-            and OIDC groups seen at sign-in. The Subjects table aggregates them in the
-            next slice.
-          </p>
-        </div>
+        <div class="card-header"><h2>Subjects
+          <button class="info" aria-label="About subjects"
+            data-title="Subjects"
+            data-info="The principals an OMCP deployment recognises: local users (basic auth via OMCP_USERS_FILE), bearer-token names from OMCP_API_KEYS, and OIDC groups the operator mapped to roles via OMCP_OIDC_ROLE_MAP. Slice H lands binding edits; this view is read-only."
+            onclick="infoPop(this)">?</button>
+        </h2></div>
+        <div id="pol-subjects-body" class="content"><div class="empty">Loading…</div></div>
       </div>
 
       <!-- Kept for back-compat — the legacy snapshot lives here but
@@ -2497,6 +2504,87 @@ function polSetTab(name) {
   document.querySelectorAll('.pol-pane').forEach((p) => {
     p.hidden = p.id !== 'pol-pane-' + name;
   });
+  // Lazy-load Subjects on first visit — it has its own endpoint
+  // so deferring the fetch keeps the page-enter cost low.
+  if (name === 'subjects') polLoadSubjects();
+}
+
+// Cache the subjects payload so re-entering the tab doesn't refetch.
+let POL_SUBJECTS = null;
+async function polLoadSubjects() {
+  const body = document.getElementById('pol-subjects-body');
+  if (!body) return;
+  if (POL_SUBJECTS) {
+    polRenderSubjects(POL_SUBJECTS);
+    return;
+  }
+  try {
+    const r = await fetch('/api/subjects');
+    if (!r.ok) {
+      body.innerHTML = '<div class="empty">Subjects view requires the <code>users:delete</code> permission (admin role).</div>';
+      return;
+    }
+    POL_SUBJECTS = await r.json();
+    polRenderSubjects(POL_SUBJECTS);
+  } catch (e) {
+    body.innerHTML = '<div class="empty">Subjects unavailable: ' + escHtml(String(e && e.message || e)) + '</div>';
+  }
+}
+function polRenderSubjects(j) {
+  const body = document.getElementById('pol-subjects-body');
+  if (!body) return;
+  const sources = j.sources || {};
+  const usersHtml = (j.users || []).map((u) => `
+    <tr>
+      <td><code>${escHtml(u.username)}</code></td>
+      <td>${escHtml(u.name)}</td>
+      <td>${(u.roles || []).map((r) => `<span class="pill">${escHtml(r)}</span>`).join(' ') || '<span class="t-sm" style="opacity:.5">—</span>'}</td>
+      <td>${escHtml(u.tenant || 'default')}</td>
+    </tr>`).join('');
+  const apiKeysHtml = (j.apiKeys || []).map((k) => `
+    <tr>
+      <td><code>${escHtml(k.name)}</code></td>
+      <td>${escHtml(k.tenant || 'default')}</td>
+      <td>${k.productId ? `<code>${escHtml(k.productId)}</code>` : '<span class="t-sm" style="opacity:.5">—</span>'}</td>
+      <td>${k.bypassRedaction ? '<span class="pill" style="background:var(--warning-soft);color:var(--warning)">bypass</span>' : '<span class="t-sm" style="opacity:.5">—</span>'}</td>
+      <td>${k.allowedSources && k.allowedSources.length ? k.allowedSources.map((s) => `<code class="t-sm">${escHtml(s)}</code>`).join(' ') : '<span class="t-sm" style="opacity:.5">(all)</span>'}</td>
+    </tr>`).join('');
+  const groupsHtml = (j.oidcGroups || []).map((g) => `
+    <tr>
+      <td><code>${escHtml(g.claim)}</code></td>
+      <td><span class="pill">${escHtml(g.role)}</span></td>
+    </tr>`).join('');
+  const usersTbl = usersHtml
+    ? `<table class="data-table" style="width:100%"><thead><tr><th>Username</th><th>Name</th><th>Roles</th><th>Tenant</th></tr></thead><tbody>${usersHtml}</tbody></table>`
+    : `<div class="pol-subjects-empty">${sources.users ? 'No users in <code>' + escHtml(sources.users) + '</code>.' : 'No local-user file configured — set <code>OMCP_USERS_FILE</code> to enable basic-mode logins.'}</div>`;
+  const apiKeysTbl = apiKeysHtml
+    ? `<table class="data-table" style="width:100%"><thead><tr><th>Name</th><th>Tenant</th><th>Product</th><th>Bypass</th><th>Sources</th></tr></thead><tbody>${apiKeysHtml}</tbody></table>`
+    : `<div class="pol-subjects-empty">${sources.apiKeys ? 'No credentials in <code>OMCP_API_KEYS</code>.' : 'No API-key credentials configured — set <code>OMCP_API_KEYS</code> to gate the <code>/mcp</code> transport with bearer tokens.'}</div>`;
+  const groupsTbl = groupsHtml
+    ? `<table class="data-table" style="width:100%"><thead><tr><th>Group / claim</th><th>Maps to role</th></tr></thead><tbody>${groupsHtml}</tbody></table>`
+    : `<div class="pol-subjects-empty">${sources.oidcGroups ? 'No mappings in <code>OMCP_OIDC_ROLE_MAP</code>.' : 'No OIDC group mapping configured — set <code>OMCP_OIDC_ROLE_MAP</code> when running under <code>OMCP_AUTH=oidc</code>.'}</div>`;
+  body.innerHTML = `
+    <div class="pol-subjects-section">
+      <h3>Users
+        <span class="pol-subjects-count">${(j.users || []).length}</span>
+        <span class="pol-subjects-source">${sources.users ? escHtml(sources.users) : 'OMCP_USERS_FILE'}</span>
+      </h3>
+      ${usersTbl}
+    </div>
+    <div class="pol-subjects-section">
+      <h3>API keys
+        <span class="pol-subjects-count">${(j.apiKeys || []).length}</span>
+        <span class="pol-subjects-source">OMCP_API_KEYS</span>
+      </h3>
+      ${apiKeysTbl}
+    </div>
+    <div class="pol-subjects-section">
+      <h3>OIDC groups
+        <span class="pol-subjects-count">${(j.oidcGroups || []).length}</span>
+        <span class="pol-subjects-source">OMCP_OIDC_ROLE_MAP</span>
+      </h3>
+      ${groupsTbl}
+    </div>`;
 }
 
 // Resources × actions catalogue, kept in sync with VALID_RESOURCES +
@@ -2602,6 +2690,10 @@ async function loadPolicies() {
     const j = await r.json();
     polRenderEngineBanner(j);
     POL_SNAPSHOT = j;
+    // Invalidate subjects cache on each policy reload so the next
+    // Subjects tab visit fetches fresh data (env vars / users file
+    // may have changed since last visit).
+    POL_SUBJECTS = null;
     // Default sub-tab = Roles.
     if (!document.querySelector('.pol-subtab[data-active="true"]')) {
       polSetTab('roles');

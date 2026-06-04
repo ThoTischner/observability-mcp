@@ -95,16 +95,45 @@ test.describe("Policies UI — engine banner + sticky dry-run", () => {
     await expect(deleteCell2).toHaveText("—");
   });
 
-  test("Bindings + Subjects sub-tabs render placeholder copy (slice G/H land them)", async ({ page }) => {
+  test("Subjects sub-tab — /api/subjects returns expected shape + UI sections render", async ({ page, request: apiReq }) => {
+    // Demo profile has no users / api-keys / OIDC mappings — all
+    // three arrays are empty, but the endpoint must still return the
+    // shape with `sources` set to the env-source path / null.
+    const resp = await apiReq.get("/api/subjects");
+    expect(resp.status()).toBe(200);
+    const j = await resp.json();
+    expect(Array.isArray(j.users)).toBe(true);
+    expect(Array.isArray(j.apiKeys)).toBe(true);
+    expect(Array.isArray(j.oidcGroups)).toBe(true);
+    expect(j.sources).toBeTruthy();
+    expect(typeof j.sources.users === "string" || j.sources.users === null).toBe(true);
+
+    // UI: Subjects sub-tab renders the three sections + the
+    // empty-state copy when the env isn't configured.
+    await page.goto(BASE);
+    await page.click("[data-page=policies]");
+    await page.waitForSelector("#page-policies.active");
+    await page.click(".pol-subtab[data-pol-tab=subjects]");
+    await expect(page.locator("#pol-pane-subjects")).toBeVisible();
+    const body = page.locator("#pol-subjects-body");
+    // Three section headings: Users / API keys / OIDC groups.
+    await expect(body.locator("h3", { hasText: "Users" })).toBeVisible();
+    await expect(body.locator("h3", { hasText: "API keys" })).toBeVisible();
+    await expect(body.locator("h3", { hasText: "OIDC groups" })).toBeVisible();
+    // In the demo profile each section shows the appropriate empty-
+    // state copy referencing the env var that drives it.
+    await expect(body).toContainText("OMCP_USERS_FILE");
+    await expect(body).toContainText("OMCP_API_KEYS");
+    await expect(body).toContainText("OMCP_OIDC_ROLE_MAP");
+  });
+
+  test("Bindings sub-tab renders placeholder copy (slice H lands it)", async ({ page }) => {
     await page.goto(BASE);
     await page.click("[data-page=policies]");
     await page.waitForSelector("#page-policies.active");
     await page.click(".pol-subtab[data-pol-tab=bindings]");
     await expect(page.locator("#pol-pane-bindings")).toBeVisible();
     await expect(page.locator("#pol-pane-bindings")).toContainText(/Bindings are the who/i);
-    await page.click(".pol-subtab[data-pol-tab=subjects]");
-    await expect(page.locator("#pol-pane-subjects")).toBeVisible();
-    await expect(page.locator("#pol-pane-subjects")).toContainText(/OMCP_USERS_FILE/);
   });
 
   test("authoring controls keyed on data-engine-required=file stay disabled on read-only engines", async ({ page }) => {
