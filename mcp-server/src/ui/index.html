@@ -1003,6 +1003,21 @@
       opacity: .35; pointer-events: none;
     }
 
+    /* Products modal — tools picker (multi-select grouped by category) */
+    .tools-picker { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--sp-2); background: var(--surface-2); max-height: 280px; overflow-y: auto; }
+    .tools-picker .tp-group { padding: var(--sp-1) 0; }
+    .tools-picker .tp-group + .tp-group { margin-top: var(--sp-2); border-top: 1px dashed var(--border); padding-top: var(--sp-2); }
+    .tools-picker .tp-cat { font-size: 11px; font-weight: 600; opacity: .65; text-transform: uppercase; letter-spacing: .04em; margin-bottom: var(--sp-1); padding: 0 var(--sp-1); }
+    .tools-picker .tp-item { display: flex; align-items: flex-start; gap: var(--sp-2); padding: var(--sp-1) var(--sp-2); border-radius: var(--radius-sm); cursor: pointer; }
+    .tools-picker .tp-item:hover { background: var(--surface); }
+    .tools-picker .tp-item input { margin-top: 3px; flex: 0 0 auto; }
+    .tools-picker .tp-item .tp-text { flex: 1; min-width: 0; }
+    .tools-picker .tp-item .tp-name { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; font-weight: 500; }
+    .tools-picker .tp-item .tp-summary { font-size: 11px; opacity: .7; line-height: 1.4; margin-top: 1px; }
+    .tools-picker .tp-actions { display: flex; gap: var(--sp-2); margin-bottom: var(--sp-2); }
+    .tools-picker .tp-actions button { font-size: 11px; padding: 2px 8px; }
+    .tools-picker .tools-picker-hint { padding: var(--sp-2); opacity: .7; }
+
     /* Products — empty state with templates */
     .pempty { padding: var(--sp-5); text-align: center; }
     .pempty h3 { margin: 0 0 var(--sp-2); font-size: 16px; }
@@ -2161,9 +2176,14 @@ curl -s http://localhost:3000/api/enterprise/status</pre>
           </div>
         </div>
         <div class="form-group">
-          <label for="mcp-product-tools">Tools allow-list <span class="t-sm" style="opacity:.6">(optional)</span></label>
-          <textarea id="mcp-product-tools" rows="3" placeholder="query_logs&#10;query_metrics&#10;get_service_health"></textarea>
-          <div class="form-hint">One MCP tool name per line. Empty = no filter (every registered tool).</div>
+          <label>Tools allow-list <span class="t-sm" style="opacity:.6">(optional)</span></label>
+          <div id="mcp-product-tools-picker" class="tools-picker">
+            <div class="tools-picker-hint t-sm">Loading…</div>
+          </div>
+          <!-- Hidden textarea kept for back-compat — the picker syncs
+               selections here, and save() still reads from it. -->
+          <textarea id="mcp-product-tools" rows="2" hidden></textarea>
+          <div class="form-hint">Select the tools an agent bound to this product can call. Nothing selected = no filter (every registered tool).</div>
         </div>
         <div class="form-row">
           <div class="form-group">
@@ -3364,6 +3384,88 @@ function mcpLeitfadenToggle() {
   try { localStorage.setItem('omcp-mcp-leitfaden-collapsed', nextCollapsed ? '1' : '0'); } catch (e) { /* noop */ }
 }
 
+// Cache the tool registry — fetched once on first modal open and
+// reused thereafter. Falsy means not-yet-loaded; an empty array
+// means the endpoint replied but with no tools (server bug — we
+// fall back to a textarea-style entry in that case).
+let MCP_TOOLS_REGISTRY = null;
+async function mcpLoadToolsRegistry() {
+  if (MCP_TOOLS_REGISTRY) return MCP_TOOLS_REGISTRY;
+  try {
+    const r = await fetch('/api/tools/registry');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json();
+    MCP_TOOLS_REGISTRY = Array.isArray(j.tools) ? j.tools : [];
+    return MCP_TOOLS_REGISTRY;
+  } catch (e) {
+    // Surface but don't break the modal — fall back to []
+    // (operator can still hand-edit via the textarea fallback).
+    MCP_TOOLS_REGISTRY = [];
+    return MCP_TOOLS_REGISTRY;
+  }
+}
+function mcpRenderToolsPicker(selected) {
+  const picker = document.getElementById('mcp-product-tools-picker');
+  const textarea = document.getElementById('mcp-product-tools');
+  if (!picker || !textarea) return;
+  const tools = MCP_TOOLS_REGISTRY || [];
+  if (tools.length === 0) {
+    // Fallback: expose the textarea so the operator can still author
+    // by hand. The server-side typo guard catches mistakes either way.
+    textarea.hidden = false;
+    textarea.value = (selected || []).join('\n');
+    picker.innerHTML = '<div class="tools-picker-hint">Tool registry unavailable — type names one per line.</div>';
+    return;
+  }
+  const selSet = new Set(selected || []);
+  // Group by category, ordered. Keep an "(other)" bucket for any
+  // future category we forgot in the CSS.
+  const order = ['discovery', 'query', 'diagnose', 'topology'];
+  const groups = {};
+  for (const t of tools) (groups[t.category] = groups[t.category] || []).push(t);
+  const labels = { discovery: 'Discovery', query: 'Query', diagnose: 'Diagnose', topology: 'Topology' };
+  const html = order.filter((c) => groups[c]).map((cat) => {
+    const items = groups[cat].map((t) => {
+      const checked = selSet.has(t.name) ? 'checked' : '';
+      return `<label class="tp-item">
+        <input type="checkbox" data-tool="${escHtml(t.name)}" ${checked} onchange="mcpToolsPickerSync()">
+        <span class="tp-text">
+          <span class="tp-name">${escHtml(t.name)}</span>
+          <span class="tp-summary">${escHtml(t.summary)}</span>
+        </span>
+      </label>`;
+    }).join('');
+    return `<div class="tp-group">
+      <div class="tp-cat">${escHtml(labels[cat] || cat)}</div>
+      ${items}
+    </div>`;
+  }).join('');
+  picker.innerHTML = `
+    <div class="tp-actions">
+      <button type="button" class="btn btn-ghost" onclick="mcpToolsPickerAll(true)">Select all</button>
+      <button type="button" class="btn btn-ghost" onclick="mcpToolsPickerAll(false)">Clear</button>
+    </div>
+    ${html}
+  `;
+  // Keep the hidden textarea in sync with the initial selection.
+  textarea.value = (selected || []).join('\n');
+}
+function mcpToolsPickerSync() {
+  const picker = document.getElementById('mcp-product-tools-picker');
+  const textarea = document.getElementById('mcp-product-tools');
+  if (!picker || !textarea) return;
+  const checked = Array.from(picker.querySelectorAll('input[type=checkbox][data-tool]:checked'))
+    .map((el) => el.getAttribute('data-tool'))
+    .filter(Boolean);
+  textarea.value = checked.join('\n');
+}
+function mcpToolsPickerAll(on) {
+  const picker = document.getElementById('mcp-product-tools-picker');
+  if (!picker) return;
+  picker.querySelectorAll('input[type=checkbox][data-tool]').forEach((el) => { el.checked = on; });
+  mcpToolsPickerSync();
+}
+
 // Empty-state product templates. Cloning a template prefills the
 // modal — the operator only has to pick an id + tweak before save.
 // Templates are pure UI; the server doesn't know about them.
@@ -3591,6 +3693,13 @@ function mcpProductOpen(mode, current) {
     iconEl.value = (c.branding && c.branding.iconUrl) || '';
   }
   document.getElementById('mcp-product-modal').classList.add('open');
+  // Build the tools picker from the registry — fetched once on the
+  // first modal open and cached client-side. Selected = whatever was
+  // already in the (potentially template-prefilled) textarea.
+  mcpLoadToolsRegistry().then(() => {
+    const seeded = (toolsEl.value || '').split(/[\n,]+/).map((s) => s.trim()).filter(Boolean);
+    mcpRenderToolsPicker(seeded);
+  });
   // When opening from a template the id is the one thing the operator
   // hasn't picked yet; in every other case (edit, blank new) the name
   // is the most natural focus target.

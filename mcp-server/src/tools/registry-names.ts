@@ -26,6 +26,31 @@ export const REGISTERED_TOOL_NAMES = [
 
 export type RegisteredToolName = typeof REGISTERED_TOOL_NAMES[number];
 
+/** Functional category of a tool, surfaced in /api/tools/registry and
+ *  used by the Products UI to group the multi-select picker. Keeps
+ *  operator-facing taxonomy stable even when tool descriptions evolve. */
+export type ToolCategory = "discovery" | "query" | "diagnose" | "topology";
+
+export interface ToolRegistryEntry {
+  name: RegisteredToolName;
+  category: ToolCategory;
+  /** One-liner — what the tool does, no fluff. The full multi-paragraph
+   *  description lives in createMcpServer's registerTool() call; this
+   *  is the catalogue summary the picker shows alongside the name. */
+  summary: string;
+}
+
+export const REGISTERED_TOOLS: readonly ToolRegistryEntry[] = [
+  { name: "list_sources",       category: "discovery", summary: "List configured observability backends + reachability." },
+  { name: "list_services",      category: "discovery", summary: "Discover service names across every connected backend." },
+  { name: "query_metrics",      category: "query",     summary: "Fetch the raw time-series for one metric of one service over a window." },
+  { name: "query_logs",         category: "query",     summary: "Fetch matching log lines for one service over a window." },
+  { name: "get_service_health", category: "diagnose",  summary: "Aggregated health verdict for one service (metrics + logs)." },
+  { name: "detect_anomalies",   category: "diagnose",  summary: "Scan for anomalous services using z-score / heuristics." },
+  { name: "get_topology",       category: "topology",  summary: "Return the infrastructure topology graph (resources + edges)." },
+  { name: "get_blast_radius",   category: "topology",  summary: "Given a resource, return the impact set if its host(s) fail." },
+] as const;
+
 /** Validate a candidate Product tools[] array. Returns the unknown
  *  names (empty array = all OK). Pure helper — the caller decides
  *  how to surface the rejection (the API handler emits a 422 with a
