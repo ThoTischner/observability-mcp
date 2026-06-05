@@ -48,12 +48,18 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
 {{/*
-A plugin trust root is required whenever fail-closed verification is on
-(verify.enabled) OR the runtime UI/upload install endpoints are enabled
-(uiInstall.enabled — the server refuses to install unverified code).
+Mount a trust-root Secret only when the operator has actually
+provided one (inline PEM or existingSecret reference). Since v2.0
+plugins.verify.enabled is default-on; without a PEM the loader
+gracefully falls back to builtins, so a Secret mount would only
+break pod scheduling on a non-existent volume. uiInstall.enabled
+also requires a trust root, but values.yaml documents that as a
+precondition — without one the operator gets a clear runtime
+rejection from ENABLE_UI_INSTALL instead of a missing-Secret
+schedule failure.
 */}}
 {{- define "observability-mcp.needsTrustRoot" -}}
-{{- if or .Values.plugins.verify.enabled .Values.plugins.uiInstall.enabled -}}true{{- end -}}
+{{- if or .Values.plugins.verify.trustRootPem .Values.plugins.verify.existingSecret -}}true{{- end -}}
 {{- end -}}
 
 {{/*
