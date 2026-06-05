@@ -65,6 +65,8 @@ import { loadPolicyFromFile, writePolicyFile, PolicyLoadError, VALID_RESOURCES, 
 import { OpaPolicyEngine } from "./auth/policy/opa.js";
 import { AuditLog } from "./audit/log.js";
 import { buildAuditMiddleware } from "./audit/middleware.js";
+import { WebhookSink } from "./audit/sinks/webhook.js";
+import type { AuditSink } from "./audit/sinks/types.js";
 import { buildBypassBreadcrumb, buildBypassAuditParams } from "./audit/redaction-bypass.js";
 import { readCatalogFile, CatalogStore } from "./catalog/loader.js";
 import { readProductsFile, ProductsStore, validateProduct, writeProductsFile, ProductsLoadError } from "./products/loader.js";
@@ -910,8 +912,36 @@ async function main() {
   // request. Writes JSONL to disk when OMCP_MGMT_AUDIT_FILE is set;
   // otherwise an in-memory ring of the last 500 entries keeps the
   // /api/audit endpoint useful in the demo / single-user case.
-  const mgmtAudit = new AuditLog({ file: process.env.OMCP_MGMT_AUDIT_FILE });
+  // External audit sinks — opt-in via env. Each chained entry is
+  // mirrored to every configured sink; the on-disk JSONL master
+  // remains the source of truth (the hash chain is never split).
+  const auditSinks: AuditSink[] = [];
+  if (process.env.OMCP_AUDIT_WEBHOOK_URL) {
+    auditSinks.push(
+      new WebhookSink({
+        url: process.env.OMCP_AUDIT_WEBHOOK_URL,
+        token: process.env.OMCP_AUDIT_WEBHOOK_TOKEN,
+        deadLetterFile: process.env.OMCP_AUDIT_WEBHOOK_DLQ,
+      }),
+    );
+    console.log(
+      "AuditLog: webhook sink enabled -> %s%s",
+      process.env.OMCP_AUDIT_WEBHOOK_URL,
+      process.env.OMCP_AUDIT_WEBHOOK_DLQ
+        ? ` (DLQ: ${process.env.OMCP_AUDIT_WEBHOOK_DLQ})`
+        : "",
+    );
+  }
+  const mgmtAudit = new AuditLog({
+    file: process.env.OMCP_MGMT_AUDIT_FILE,
+    sinks: auditSinks,
+  });
   await mgmtAudit.bootstrap();
+  process.on("SIGTERM", () => {
+    mgmtAudit
+      .flushSinks()
+      .catch((err) => console.warn("AuditLog flushSinks failed:", err));
+  });
   const audit = (resource: string, action: string) =>
     buildAuditMiddleware({ audit: mgmtAudit, resource, action });
 
