@@ -30,7 +30,6 @@ function withEnv(overrides: Record<string, string | undefined>, fn: () => void):
 test("PluginLoader: VERIFY_PLUGINS defaults to ON when env var unset", () => {
   withEnv({ VERIFY_PLUGINS: undefined, PLUGIN_TRUST_ROOT: undefined }, () => {
     const loader = new PluginLoader({ pluginsDir: tmp() });
-    // @ts-expect-error access private field for verification
     assert.equal(loader["verify"], true, "verify default should be true (fail-closed)");
   });
 });
@@ -38,7 +37,6 @@ test("PluginLoader: VERIFY_PLUGINS defaults to ON when env var unset", () => {
 test("PluginLoader: VERIFY_PLUGINS=false opts out explicitly", () => {
   withEnv({ VERIFY_PLUGINS: "false" }, () => {
     const loader = new PluginLoader({ pluginsDir: tmp() });
-    // @ts-expect-error access private field for verification
     assert.equal(loader["verify"], false);
   });
 });
@@ -47,7 +45,6 @@ test("PluginLoader: VERIFY_PLUGINS=0 / no / off also opt out", () => {
   for (const v of ["0", "no", "off", "FALSE", "Off"]) {
     withEnv({ VERIFY_PLUGINS: v }, () => {
       const loader = new PluginLoader({ pluginsDir: tmp() });
-      // @ts-expect-error
       assert.equal(loader["verify"], false, `value ${v} should disable verify`);
     });
   }
@@ -57,7 +54,6 @@ test("PluginLoader: VERIFY_PLUGINS=true / 1 / yes keep verify on", () => {
   for (const v of ["true", "1", "yes", "TRUE", "Yes"]) {
     withEnv({ VERIFY_PLUGINS: v }, () => {
       const loader = new PluginLoader({ pluginsDir: tmp() });
-      // @ts-expect-error
       assert.equal(loader["verify"], true);
     });
   }
@@ -66,12 +62,10 @@ test("PluginLoader: VERIFY_PLUGINS=true / 1 / yes keep verify on", () => {
 test("PluginLoader: opts.verify overrides env var", () => {
   withEnv({ VERIFY_PLUGINS: "false" }, () => {
     const onLoader = new PluginLoader({ pluginsDir: tmp(), verify: true });
-    // @ts-expect-error
     assert.equal(onLoader["verify"], true);
   });
   withEnv({ VERIFY_PLUGINS: "true" }, () => {
     const offLoader = new PluginLoader({ pluginsDir: tmp(), verify: false });
-    // @ts-expect-error
     assert.equal(offLoader["verify"], false);
   });
 });
