@@ -188,6 +188,68 @@ This keeps the catalog in the same review loop as code: every
 product change has an author, a reason in the PR body, and a
 revert path.
 
+## Virtual MCP server endpoints (since v2.0 / Phase F9)
+
+Every published Product is automatically exposed on its own
+Streamable HTTP endpoint at `/mcp/v/<product-id>`. An MCP client
+that connects there sees ONLY the tools bound to that Product —
+the rest of the gateway's tool surface is invisible.
+
+| Endpoint | Surface |
+|---|---|
+| `POST /mcp` | All tools (caller's allow-list still applies) |
+| `POST /mcp/v/<id>` | Only the Product's `tools` (intersected with the caller's allow-list) |
+
+### When to use
+
+- **Hand a Product to one consumer**: pass them
+  `https://gateway.example.internal/mcp/v/payments-rca` plus a
+  credential, they configure their MCP client (Claude Desktop /
+  Cursor / etc.) against the per-Product URL, and they see exactly
+  the curated tool set you composed — no need to also issue them a
+  `OMCP_KEY_PRODUCTS` binding.
+- **Per-team curation**: one Product per agent crew, each crew
+  pointing at its own URL.
+- **Demos / kiosks**: a public endpoint with a tightly-scoped
+  Product is safer than a broad `/mcp` with a key.
+
+### Tenant + auth
+
+The endpoint resolves the Product in the caller's tenant. A
+cross-tenant lookup returns `404` (the same existence-hiding stance
+the rest of the tenancy layer takes), so two tenants can both have
+a Product called `rca` without seeing each other.
+
+Sessions are bound to the Product they were issued under: a session
+minted on `/mcp/v/foo` cannot be re-used to call `/mcp/v/bar`
+(returns `404`). The session-id header is opaque to the client;
+this binding is enforced server-side.
+
+### Example
+
+```bash
+# Configure Claude Desktop:
+{
+  "mcpServers": {
+    "payments-rca": {
+      "url": "https://gateway.example.internal/mcp/v/payments-rca",
+      "headers": { "Authorization": "Bearer <your-key>" }
+    }
+  }
+}
+```
+
+The client's `tools/list` will return only the tools the Product
+declares. Everything else (auth, rate limits, audit, tenancy)
+behaves exactly like the root `/mcp` endpoint.
+
+### Staging products
+
+Products with `status: staging` are admin-only — their `/mcp/v/`
+endpoint returns `404` to any caller, so you can stage a Product
+and review it via `/api/products/:id` without making it reachable
+to consumers.
+
 ## See also
 
 - [access-control.md](access-control.md) — the wider RBAC + audit

@@ -2561,6 +2561,12 @@ async function main() {
   // MCP Streamable HTTP transport — stateful sessions
   const transports = new Map<string, StreamableHTTPServerTransport>();
   const sessionLastActive = new Map<string, number>();
+  // Phase F9: per-session tag identifying the virtual-server slug a
+  // session was issued under (or undefined for the root /mcp surface).
+  // Used to prevent a session minted on /mcp/v/foo from being probed
+  // via /mcp/v/bar — the GET/DELETE handlers refuse the cross-product
+  // lookup.
+  const sessionProduct = new Map<string, string | undefined>();
   const SESSION_TTL_MS = 30 * 60 * 1000; // 30 min idle timeout
 
   // Clean up idle sessions every 5 minutes
@@ -2570,6 +2576,7 @@ async function main() {
       if (now - lastActive > SESSION_TTL_MS) {
         transports.delete(sid);
         sessionLastActive.delete(sid);
+        sessionProduct.delete(sid);
         console.log(`Session ${sid} expired (idle)`);
       }
     }
@@ -2757,6 +2764,126 @@ async function main() {
       await transport.handleRequest(req, res);
       transports.delete(sessionId);
       sessionLastActive.delete(sessionId);
+      sessionProduct.delete(sessionId);
+    } else {
+      res.status(400).json({ error: "No active session" });
+    }
+  });
+
+  // Phase F9: virtual servers — every Product gets its own MCP
+  // endpoint at /mcp/v/<slug> that exposes only the tools bound to
+  // that Product, with the caller's existing tenant + RBAC scoping
+  // preserved. The narrow ctx flows into createMcpServer's
+  // registerTool gate, so the surface a /mcp/v/<slug> client sees is
+  // strictly product.tools (intersected with any pre-existing
+  // allowedTools the credential already carries).
+  function intersectAllowed(
+    a: string[] | undefined,
+    b: string[] | undefined,
+  ): string[] | undefined {
+    if (!a) return b;
+    if (!b) return a;
+    const bSet = new Set(b);
+    return a.filter((t) => bSet.has(t));
+  }
+
+  async function resolveVirtualProduct(
+    req: import("express").Request,
+    res: import("express").Response,
+    baseCtx: RequestContext,
+  ): Promise<{ product: { tools?: string[]; id: string }; ctx: RequestContext } | null> {
+    const slug = req.params.slug;
+    if (!slug || typeof slug !== "string") {
+      res.status(404).json({ error: "virtual server not found" });
+      return null;
+    }
+    // Hot-reload aware so newly-published products are visible
+    // without restart (same pattern /mcp uses for product changes).
+    await products.maybeReload().catch(() => undefined);
+    const tenant = baseCtx.tenant || "default";
+    const product = products.get(slug, tenant);
+    if (!product || product.status === "staging") {
+      // 404 (not 403) for cross-tenant or missing — matches the
+      // existence-hiding stance of the rest of the tenancy layer.
+      res.status(404).json({ error: "virtual server not found" });
+      return null;
+    }
+    const allowedTools = intersectAllowed(baseCtx.allowedTools, product.tools);
+    const ctx: RequestContext = { ...baseCtx, allowedTools };
+    return { product, ctx };
+  }
+
+  app.post("/mcp/v/:slug", async (req, res) => {
+    const baseCtx = await gateCtx(req, res);
+    if (!baseCtx) return;
+    const resolved = await resolveVirtualProduct(req, res, baseCtx);
+    if (!resolved) return;
+    const { ctx, product } = resolved;
+    const sessionId = req.headers["mcp-session-id"] as string | undefined;
+    let transport: StreamableHTTPServerTransport;
+    if (sessionId && transports.has(sessionId)) {
+      // Cross-product session probe is rejected: the session is
+      // bound to whichever virtual server issued it.
+      if (sessionProduct.get(sessionId) !== product.id) {
+        res.status(404).json({ error: "virtual server not found" });
+        return;
+      }
+      transport = transports.get(sessionId)!;
+    } else {
+      transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => randomUUID(),
+      });
+      transport.onclose = () => {
+        for (const [sid, t] of transports) {
+          if (t === transport) {
+            transports.delete(sid);
+            sessionProduct.delete(sid);
+            break;
+          }
+        }
+        mcpActiveSessions.set(transports.size);
+      };
+      const sessionMcpServer = createMcpServer(ctx);
+      await sessionMcpServer.connect(transport);
+    }
+    await transport.handleRequest(req, res, req.body);
+    const sid = res.getHeader("mcp-session-id") as string;
+    if (sid) {
+      if (!transports.has(sid)) {
+        transports.set(sid, transport);
+        sessionProduct.set(sid, product.id);
+      }
+      sessionLastActive.set(sid, Date.now());
+    }
+    mcpActiveSessions.set(transports.size);
+  });
+
+  app.get("/mcp/v/:slug", async (req, res) => {
+    const baseCtx = await gateCtx(req, res);
+    if (!baseCtx) return;
+    const resolved = await resolveVirtualProduct(req, res, baseCtx);
+    if (!resolved) return;
+    const sessionId = req.headers["mcp-session-id"] as string;
+    const transport = transports.get(sessionId);
+    if (!transport || sessionProduct.get(sessionId) !== resolved.product.id) {
+      res.status(400).json({ error: "No active session" });
+      return;
+    }
+    await transport.handleRequest(req, res);
+  });
+
+  app.delete("/mcp/v/:slug", async (req, res) => {
+    const baseCtx = await gateCtx(req, res);
+    if (!baseCtx) return;
+    const resolved = await resolveVirtualProduct(req, res, baseCtx);
+    if (!resolved) return;
+    const sessionId = req.headers["mcp-session-id"] as string;
+    const transport = transports.get(sessionId);
+    if (transport && sessionProduct.get(sessionId) === resolved.product.id) {
+      await transport.handleRequest(req, res);
+      transports.delete(sessionId);
+      sessionLastActive.delete(sessionId);
+      sessionProduct.delete(sessionId);
     } else {
       res.status(400).json({ error: "No active session" });
     }
