@@ -46,6 +46,29 @@ export const manifestSchema = z.object({
       message: 'integrity must be "sha256-<base64>"',
     })
     .optional(),
+  // Lifecycle hooks the plugin wants to fire at. Each entry points to
+  // a module path INSIDE the plugin's bundled files. The loader
+  // resolves the module relative to the plugin root, imports its
+  // default export as the handler, and registers it on the gateway's
+  // HookRegistry. Hot-reloadable: install/upgrade of a plugin
+  // re-registers its hooks without restart.
+  hooks: z
+    .array(
+      z.object({
+        kind: z.enum([
+          "tool_pre_invoke",
+          "tool_post_invoke",
+          "resource_pre_fetch",
+          "resource_post_fetch",
+          "prompt_pre_fetch",
+          "prompt_post_fetch",
+        ]),
+        module: z.string().min(1),
+        priority: z.number().int().optional(),
+        mode: z.enum(["enforce", "permissive", "disabled"]).optional(),
+      }),
+    )
+    .optional(),
 });
 
 export type ValidatedConnectorManifest = z.infer<typeof manifestSchema>;

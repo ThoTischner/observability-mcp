@@ -87,6 +87,7 @@ import { PluginVerificationError } from "./connectors/verify.js";
 import { selfRegistry, withToolMetrics, apiRequests, mcpActiveSessions } from "./metrics/self.js";
 import { initOtel } from "./observability/otel.js";
 import { WebSocketServerTransport } from "./transport/websocket.js";
+import { HookRegistry } from "./sdk/hooks.js";
 import { buildOpenApiSpec } from "./openapi.js";
 import { listSourcesHandler } from "./tools/list-sources.js";
 import { listServicesHandler } from "./tools/list-services.js";
@@ -355,8 +356,51 @@ async function main() {
   // tool not in it. Anonymous + Product-less sessions leave
   // allowedTools undefined and see every tool — the bypass is the
   // back-compat path the open-source default relies on.
+  //
+  // The wrapper also wires Phase F7 hook fan-out: every tool dispatch
+  // fires tool_pre_invoke before the handler and tool_post_invoke after.
+  // Plugins can deny the call (allow:false → isError CallToolResult),
+  // mutate the args before dispatch, or mutate the result before it
+  // reaches the caller. When no hooks are registered (the default in
+  // the OSS demo) the wrapper is a thin pass-through.
   const registerTool = ((name: string, ...rest: unknown[]) => {
     if (!allowsTool(ctx.allowedTools, name)) return undefined as never;
+    if (rest.length > 0 && typeof rest[rest.length - 1] === "function") {
+      const originalHandler = rest[rest.length - 1] as (...a: unknown[]) => unknown;
+      const wrappedHandler = async (args: unknown, extra: unknown) => {
+        const hookCtxBase = {
+          principal: ctx.principalId,
+          tenant: ctx.tenant || "default",
+          target: name,
+        };
+        const pre = await hookRegistry.fire(
+          "tool_pre_invoke",
+          { ...hookCtxBase, kind: "tool_pre_invoke" as const },
+          { args },
+        );
+        if (!pre.allow) {
+          return {
+            content: [{ type: "text", text: pre.reason ?? "denied by plugin hook" }],
+            isError: true,
+          };
+        }
+        const effectiveArgs = (pre.payload as { args?: unknown } | undefined)?.args ?? args;
+        const result = await originalHandler(effectiveArgs, extra);
+        const post = await hookRegistry.fire(
+          "tool_post_invoke",
+          { ...hookCtxBase, kind: "tool_post_invoke" as const },
+          { args: effectiveArgs, result },
+        );
+        if (!post.allow) {
+          return {
+            content: [{ type: "text", text: post.reason ?? "denied by plugin hook" }],
+            isError: true,
+          };
+        }
+        return (post.payload as { result?: unknown } | undefined)?.result ?? result;
+      };
+      rest[rest.length - 1] = wrappedHandler;
+    }
     return (mcpServer.tool as unknown as (...a: unknown[]) => unknown)(name, ...rest) as never;
   }) as typeof mcpServer.tool;
 
@@ -944,6 +988,14 @@ async function main() {
   });
   const audit = (resource: string, action: string) =>
     buildAuditMiddleware({ audit: mgmtAudit, resource, action });
+
+  // Plugin lifecycle hook registry — populated by the loader at boot
+  // (one entry per manifest `hooks[]` entry) and mutable at runtime
+  // when a connector is installed via /api/connectors/install. Each
+  // tool dispatch in createMcpServer fans through this registry's
+  // tool_pre_invoke / tool_post_invoke chains; resource and prompt
+  // hooks plug into their respective seams as they ship.
+  const hookRegistry = new HookRegistry();
 
   // Service catalog: optional operator-curated ownership / criticality /
   // on-call metadata, keyed on the service name list_services returns.
