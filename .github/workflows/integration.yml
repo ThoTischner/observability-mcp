@@ -216,6 +216,25 @@ jobs:
         if: always()
         run: docker rm -f mcp-test 2>/dev/null || true
 
+      - name: MCP 2025-11-25 conformance harness
+        # Proves every release upholds the wire contract for the
+        # supported spec revision. Adding a new revision = add a new
+        # harness file + bump /api/conformance. See
+        # docs/mcp-conformance.md.
+        run: |
+          docker run --rm \
+            -w /app -v "$PWD/mcp-server:/app" \
+            --network=host \
+            -e OMCP_CONFORMANCE_URL=http://localhost:3000/mcp \
+            node:20-alpine sh -c \
+            "npx --yes tsx --test src/conformance/mcp-2025-11-25.test.ts"
+
+      - name: /api/conformance probe
+        run: |
+          body=$(curl -fsS http://localhost:3000/api/conformance)
+          echo "$body" | jq .
+          echo "$body" | jq -e '.revisions | index("2025-11-25")' > /dev/null
+
       - name: Dump logs on failure
         if: failure()
         run: |
