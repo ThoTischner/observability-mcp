@@ -207,6 +207,77 @@ These will be separate PRs so each can pass smoke independently:
 
 The first three PRs unlock airgapped deployments. Everything after is incremental polish — milestones 1–11 are complete.
 
+## Lifecycle hooks (since v2.0)
+
+A plugin can declare lifecycle hooks in its `manifest.json` to interpose
+on every tool / resource / prompt dispatch. The gateway fires them in
+priority order, around the underlying handler, with a payload the hook
+may inspect or mutate.
+
+```json
+{
+  "schemaVersion": 1,
+  "name": "redact-pii",
+  "displayName": "Redact PII",
+  "version": "0.1.0",
+  "description": "Mask emails + IPs in tool results.",
+  "signalTypes": ["logs"],
+  "hooks": [
+    { "kind": "tool_post_invoke", "module": "./hook.js", "priority": 50 }
+  ]
+}
+```
+
+### Hook kinds
+
+| Kind | Fires | Payload shape |
+|---|---|---|
+| `tool_pre_invoke` | Before each `tools/call` handler | `{ args }` |
+| `tool_post_invoke` | After each `tools/call` handler | `{ args, result }` |
+| `resource_pre_fetch` | Before each `resources/read` | `{ uri }` |
+| `resource_post_fetch` | After each `resources/read` | `{ uri, contents }` |
+| `prompt_pre_fetch` | Before each `prompts/get` | `{ name, arguments }` |
+| `prompt_post_fetch` | After each `prompts/get` | `{ name, arguments, messages }` |
+
+### Handler contract
+
+Each hook module's default export is:
+
+```ts
+export default async function (
+  ctx: { principal: string; tenant: string; kind: HookKind; target: string },
+  payload: Record<string, unknown>,
+): Promise<{ allow: boolean; payload?: Record<string, unknown>; reason?: string }>;
+```
+
+- `allow: false` short-circuits the chain. The caller sees an `isError`
+  `CallToolResult` carrying the `reason` text.
+- A returned `payload` REPLACES the current payload. Use this to redact
+  / transform / enrich.
+- Throwing in `enforce` mode (the default) blocks the call with the
+  thrown message as the reason. `permissive` mode logs and continues
+  with the prior payload. `disabled` skips the entry entirely.
+
+### Priority and ordering
+
+Lower number runs earlier (default 100). Two hooks with the same
+priority order arbitrarily; rely on explicit numbers when ordering
+matters.
+
+### Hot-reload
+
+When a plugin is installed via `/api/connectors/install` (with
+`ENABLE_UI_INSTALL=true` and a configured trust root), its hooks are
+registered in-place on the shared `HookRegistry` — no pod restart
+needed. Re-registering with the same `(pluginName, kind)` replaces
+the prior entry, so upgrades are atomic.
+
+### Example: redact-pii
+
+Ships in `plugins/redact-pii/` and demonstrates a minimal
+`tool_post_invoke` that masks email + IPv4 addresses in the tool
+result.
+
 ## Open questions
 
 - **Plugin process model.** Same-process for v1. Re-evaluate if a malicious connector becomes a real threat — could move to worker_threads with a message-passed adapter; needs cost/benefit analysis.

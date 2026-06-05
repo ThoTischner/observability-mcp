@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "name": "redact-pii",
+  "displayName": "Redact PII",
+  "version": "0.1.0",
+  "description": "Example tool_post_invoke hook that masks email addresses and IPv4 addresses in tool results before they reach the caller.",
+  "signalTypes": ["logs"],
+  "license": "Apache-2.0",
+  "hooks": [
+    {
+      "kind": "tool_post_invoke",
+      "module": "./hook.js",
+      "priority": 50
+    }
+  ]
+}
