@@ -84,6 +84,7 @@ import { isValidConnectorName, installTarball } from "./connectors/install.js";
 import { PluginVerificationError } from "./connectors/verify.js";
 import { selfRegistry, withToolMetrics, apiRequests, mcpActiveSessions } from "./metrics/self.js";
 import { initOtel } from "./observability/otel.js";
+import { WebSocketServerTransport } from "./transport/websocket.js";
 import { buildOpenApiSpec } from "./openapi.js";
 import { listSourcesHandler } from "./tools/list-sources.js";
 import { listServicesHandler } from "./tools/list-services.js";
@@ -2645,13 +2646,123 @@ async function main() {
     }
   });
 
+  // Bearer-token resolver for WebSocket upgrade requests. Browsers
+  // can't set Authorization on a WS handshake, so we accept the token
+  // from any of: Authorization: Bearer X, ?token=X, or the
+  // Sec-WebSocket-Protocol subprotocol "bearer.X" (echoed back by the
+  // server when accepted so clients see which subprotocol won).
+  function extractWsToken(req: import("http").IncomingMessage): {
+    token?: string;
+    selectedSubprotocol?: string;
+  } {
+    const auth = req.headers["authorization"];
+    if (typeof auth === "string") {
+      const m = auth.match(/^Bearer\s+(.+)$/i);
+      if (m) return { token: m[1] };
+    }
+    try {
+      const url = new URL(req.url ?? "/", "http://localhost");
+      const q = url.searchParams.get("token");
+      if (q) return { token: q };
+    } catch {
+      /* malformed URL */
+    }
+    const sp = req.headers["sec-websocket-protocol"];
+    if (typeof sp === "string") {
+      const offered = sp.split(",").map((s) => s.trim());
+      const bearer = offered.find((p) => p.startsWith("bearer."));
+      if (bearer) return { token: bearer.slice("bearer.".length), selectedSubprotocol: bearer };
+    }
+    return {};
+  }
+
+  async function gateWsCtx(
+    req: import("http").IncomingMessage,
+  ): Promise<{ ctx: RequestContext; selectedSubprotocol?: string } | { reject: number; reason: string }> {
+    const { token, selectedSubprotocol } = extractWsToken(req);
+    if (!credentialsConfigured()) {
+      return { ctx: defaultContext(), selectedSubprotocol };
+    }
+    if (!token) {
+      return { reject: 4401, reason: "unauthorized: token required" };
+    }
+    const cred = resolveToken(token, loadCredentials());
+    if (!cred) {
+      return { reject: 4401, reason: "unauthorized: invalid token" };
+    }
+    const credTenant = cred.tenant || "default";
+    const decision = toolRateLimiter.check(`${credTenant} ${cred.name}`);
+    if (!decision.allowed) {
+      return { reject: 4429, reason: "rate limit exceeded for identity" };
+    }
+    let allowedTools: string[] | undefined;
+    if (cred.productId) {
+      await products.maybeReload().catch(() => undefined);
+      const p = products.get(cred.productId, credTenant);
+      if (p && p.tools && p.tools.length > 0) allowedTools = p.tools.slice();
+    }
+    return {
+      ctx: principalContext(cred.name, cred.allowedSources, {
+        allowBypassRedaction: cred.bypassRedaction,
+        tenant: cred.tenant,
+        allowedTools,
+      }),
+      selectedSubprotocol,
+    };
+  }
+
   const PORT = parseInt(process.env.PORT || "3000");
-  app.listen(PORT, () => {
+  const httpServer = app.listen(PORT, () => {
     ready = true;
     console.log(`observability-mcp server running on port ${PORT}`);
     console.log(`  MCP endpoint: http://localhost:${PORT}/mcp`);
+    console.log(`  MCP (WS):     ws://localhost:${PORT}/mcp/ws`);
     console.log(`  Web UI: http://localhost:${PORT}`);
     console.log(`  Connectors: ${registry.getAll().map((c) => c.name).join(", ")}`);
+  });
+
+  // Mount the WebSocket MCP transport. One McpServer instance per
+  // accepted socket; per-connection state is carried in
+  // WebSocketServerTransport.sessionId so concurrent clients stay
+  // isolated. Dynamic import so the `ws` package only loads on
+  // platforms that actually use this transport.
+  const { WebSocketServer } = await import("ws");
+  const wss = new WebSocketServer({ noServer: true });
+
+  httpServer.on("upgrade", async (req, socket, head) => {
+    if (!req.url) {
+      socket.destroy();
+      return;
+    }
+    const path = req.url.split("?")[0];
+    if (path !== "/mcp/ws") {
+      socket.destroy();
+      return;
+    }
+    const auth = await gateWsCtx(req);
+    if ("reject" in auth) {
+      // Custom 4xxx codes during upgrade aren't expressible via HTTP
+      // status, so we accept the upgrade just long enough to close
+      // with the WS-level close code that carries our reason.
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        ws.close(auth.reject === 4429 ? 1013 : 1008, auth.reason);
+      });
+      return;
+    }
+    wss.handleUpgrade(req, socket, head, async (ws) => {
+      try {
+        const transport = new WebSocketServerTransport(ws);
+        const sessionMcpServer = createMcpServer(auth.ctx);
+        await sessionMcpServer.connect(transport);
+      } catch (err) {
+        console.warn("WS /mcp/ws session setup failed:", err);
+        try {
+          ws.close(1011, "server error");
+        } catch {
+          /* socket already gone */
+        }
+      }
+    });
   });
 }
 
