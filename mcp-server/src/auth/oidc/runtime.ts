@@ -24,6 +24,7 @@
 
 import { OidcClient, type OidcConfig } from "./client.js";
 import { DEFAULT_TENANT, tenantFromClaim } from "../../tenancy/context.js";
+import { getProfile, DEFAULT_PROFILE, type VendorProfile } from "./profiles.js";
 
 export interface OidcRuntimeConfig {
   issuer: string;
@@ -37,6 +38,9 @@ export interface OidcRuntimeConfig {
   /** Dotted claim path to read the tenant from. Empty / missing → all
    *  OIDC sessions land in the "default" tenant. */
   tenantClaim: string;
+  /** Vendor profile id (generic / github / google / microsoft-entra /
+   *  okta / keycloak) — surfaced in /api/info for diagnostics. */
+  profile?: string;
 }
 
 export interface ResolveOidcResult {
@@ -86,17 +90,31 @@ export function resolveOidcConfig(env: NodeJS.ProcessEnv = process.env): Resolve
     }
   }
 
+  // Vendor profile resolves IdP-shaped defaults (scopes / rolesClaim /
+  // tenantClaim) when OMCP_OIDC_PROFILE is set. Explicit env vars
+  // always win — profiles only fill the gaps an operator chose not to
+  // set, so this is fully backwards-compatible with pre-F6 configs.
+  const profileName = nonEmpty(env.OMCP_OIDC_PROFILE);
+  const profile: VendorProfile =
+    (profileName && getProfile(profileName)) || DEFAULT_PROFILE;
+  if (profileName && !getProfile(profileName)) {
+    return {
+      error: `OMCP_OIDC_PROFILE=${profileName} is not a known profile (try one of: generic, keycloak, github, google, microsoft-entra, okta)`,
+    };
+  }
+
   return {
     config: {
       issuer: issuer!.replace(/\/$/, ""),
       clientId: clientId!,
       clientSecret: nonEmpty(env.OMCP_OIDC_CLIENT_SECRET),
       redirectUri: redirectUri!,
-      scopes: nonEmpty(env.OMCP_OIDC_SCOPES) ?? "openid profile email",
-      rolesClaim: nonEmpty(env.OMCP_OIDC_ROLES_CLAIM) ?? "groups",
+      scopes: nonEmpty(env.OMCP_OIDC_SCOPES) ?? profile.scopes,
+      rolesClaim: nonEmpty(env.OMCP_OIDC_ROLES_CLAIM) ?? profile.rolesClaim,
       roleMap,
       logoutRedirect: nonEmpty(env.OMCP_OIDC_LOGOUT_REDIRECT) ?? "/",
-      tenantClaim: nonEmpty(env.OMCP_OIDC_TENANT_CLAIM) ?? "",
+      tenantClaim: nonEmpty(env.OMCP_OIDC_TENANT_CLAIM) ?? profile.tenantClaim,
+      profile: profile.name,
     },
   };
 }
