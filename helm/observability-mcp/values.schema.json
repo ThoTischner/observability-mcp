@@ -64,6 +64,16 @@
         "required": ["name"]
       }
     },
+    "otel": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "endpoint": { "type": "string" },
+        "headers": { "type": "string" },
+        "serviceName": { "type": "string" }
+      }
+    },
     "plugins": {
       "type": "object",
       "additionalProperties": false,
