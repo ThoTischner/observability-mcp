@@ -24,6 +24,7 @@ test("resolveOidcConfig — happy path with required vars only", () => {
     roleMap: {},
     logoutRedirect: "/",
     tenantClaim: "",
+    profile: "generic",
   });
 });
 

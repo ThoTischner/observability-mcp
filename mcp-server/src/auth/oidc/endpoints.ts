@@ -11,6 +11,7 @@
  */
 
 import type { Application, Request, Response } from "express";
+import rateLimit from "express-rate-limit";
 
 import type { OidcRuntime } from "./runtime.js";
 import { issueSession, setCookieHeader, clearCookieHeader, type SessionConfig } from "../session.js";
@@ -22,6 +23,15 @@ import {
   readFlowCookie,
   isSafeReturnTo,
 } from "./flow-cookie.js";
+import {
+  dcrEnabled,
+  dcrStorePath,
+  validateDcrRequest,
+  mintRegistration,
+  appendRegistration,
+  toResponse,
+  DcrValidationError,
+} from "./dcr.js";
 
 export interface OidcEndpointDeps {
   sessionCfg: SessionConfig;
@@ -126,6 +136,51 @@ export function registerOidcRoutes(app: Application, deps: OidcEndpointDeps): vo
     // navigates the user.
     res.status(204).end();
   });
+
+  // RFC 7591 Dynamic Client Registration. Off by default; flip
+  // OMCP_OIDC_DCR_ENABLED=true to accept self-registration POSTs
+  // (Claude.ai / Cursor / future MCP clients use this to introduce
+  // themselves to the gateway). Registrations land at
+  // OMCP_OIDC_DCR_STORE (default /tmp/oidc-dcr.json, mode 0600).
+  if (dcrEnabled()) {
+    const storePath = dcrStorePath();
+    // Per-source-IP throttle: 10 registrations per IP per hour. The
+    // endpoint is unauthenticated by design (RFC 7591) so without a
+    // limiter a single misbehaving client can fill the JSON store.
+    // Operators that need a different rate front the gateway with
+    // their ingress limiter and lift this floor accordingly.
+    const dcrLimiter = rateLimit({
+      windowMs: 60 * 60 * 1000,
+      max: 10,
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: { error: "rate_limit_exceeded", error_description: "DCR rate limit hit; try later" },
+    });
+    app.post("/api/auth/oidc/register", dcrLimiter, async (req, res) => {
+      try {
+        const validated = validateDcrRequest(
+          (req.body ?? {}) as Record<string, unknown>,
+        );
+        const sourceIp =
+          (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ||
+          req.ip ||
+          "unknown";
+        const reg = mintRegistration(validated, sourceIp);
+        await appendRegistration(storePath, reg);
+        res.status(201).json(toResponse(reg));
+      } catch (e) {
+        if (e instanceof DcrValidationError) {
+          // RFC 7591 §3.2.2 error response shape.
+          res.status(400).json({
+            error: e.error,
+            error_description: e.message,
+          });
+          return;
+        }
+        respondError(res, 500, "registration_failed", (e as Error).message);
+      }
+    });
+  }
 }
 
 function respondError(res: Response, status: number, code: string, message: string): void {
