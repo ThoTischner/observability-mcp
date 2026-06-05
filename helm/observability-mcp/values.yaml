@@ -14,11 +14,46 @@ fullnameOverride: ""
 
 replicaCount: 1
 
-# The MCP server holds session state per Streamable HTTP session, so
-# multiple replicas need sticky-session ingress (or an external session
-# store, which is on the roadmap). Default is 1.
+# The MCP server holds session state per Streamable HTTP session. For
+# multi-replica deployments enable the shared session store (see
+# `redis` below) so OIDC flow state, MCP session metadata, and DCR
+# registrations are visible to every replica. Without the store,
+# either keep replicaCount=1 or front the Service with sticky-session
+# ingress.
 strategy:
   type: Recreate
+  # When replicaCount > 1 and the session store is enabled, override
+  # to RollingUpdate via --set strategy.type=RollingUpdate.
+
+# Pod Disruption Budget. Only rendered when replicaCount > 1. Default
+# minAvailable: 1 keeps at least one pod up during voluntary
+# disruptions (drain, eviction, rollout).
+podDisruptionBudget:
+  minAvailable: 1
+
+# Shared session store backend. Enables true multi-replica HA: OIDC
+# flow state, MCP session metadata, DCR registrations, and federation
+# cache become visible to every replica. Off by default (in-memory,
+# single-replica). When enabled, set the URL of an external Redis
+# (the chart does NOT ship a Redis subchart — bring your own).
+#
+# When this is on, raise replicaCount and switch strategy.type to
+# RollingUpdate via --set.
+redis:
+  enabled: false
+  # Connection URL (redis:// or rediss://). Templated into
+  # OMCP_REDIS_URL on the deployment.
+  url: ""
+  # Per-key prefix so multiple deployments can share one Redis
+  # without colliding. Default omcp:.
+  keyPrefix: ""
+
+# Sticky-session ingress annotation. Set this when running >1 replica
+# WITHOUT the shared session store (best-effort: each session sticks
+# to one replica). Most operators should enable the session store
+# instead.
+ingressSticky:
+  enabled: false
 
 serviceAccount:
   create: true

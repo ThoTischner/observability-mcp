@@ -99,6 +99,14 @@ spec:
             - name: ENABLE_UI_INSTALL
               value: "true"
             {{- end }}
+            {{- if .Values.redis.enabled }}
+            - name: OMCP_REDIS_URL
+              value: {{ .Values.redis.url | quote }}
+            {{- if .Values.redis.keyPrefix }}
+            - name: OMCP_REDIS_KEY_PREFIX
+              value: {{ .Values.redis.keyPrefix | quote }}
+            {{- end }}
+            {{- end }}
             {{- if .Values.otel.enabled }}
             - name: OMCP_OTEL_ENABLED
               value: "true"
