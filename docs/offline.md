@@ -33,8 +33,10 @@ external call to boot or serve health, this fails.
 ## Running fully air-gapped
 
 - No runtime `npm install` (dependencies are baked into the image).
-- Plugin tarballs can be baked in; set `PLUGIN_REQUIRE_SIGNATURE=true` to
-  reject anything unsigned.
+- Plugin tarballs can be baked in. Signature verification is **on by
+  default** (`VERIFY_PLUGINS=true` since v2.0) — provide `PLUGIN_TRUST_ROOT`
+  so the bundled plugins load. To intentionally accept unsigned plugins
+  for a development workflow, set `VERIFY_PLUGINS=false`.
 - Leave `PROMETHEUS_URL` / `LOKI_URL` empty and add sources later via the Web
   UI or `config/sources.yaml` — the server starts healthy with no sources.
 

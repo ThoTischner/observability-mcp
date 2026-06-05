@@ -38,7 +38,7 @@ helm install obs-mcp ./helm/observability-mcp \
 | `podSecurityContext.runAsNonRoot` | `true` | Hardened defaults |
 | `plugins.image` | `ghcr.io/thotischner/observability-mcp-plugins:latest` | Official signed connector bundle; an init container extracts it into `/app/plugins` (no registry access from the main pod). Connectors stay inert until a matching source is configured. `""` disables it (builtin Prometheus/Loki only) |
 | `plugins.paths` | `[]` | Subdirs of `/plugins` to extract (empty = all) |
-| `plugins.verify.enabled` | `false` | Fail-closed connector verification (`VERIFY_PLUGINS`) — builtin Prometheus/Loki are never gated |
+| `plugins.verify.enabled` | `true` | Fail-closed connector verification (`VERIFY_PLUGINS`) — builtin Prometheus/Loki are never gated. Set to `false` to load unsigned filesystem plugins (not recommended for production) |
 | `plugins.verify.trustRootPem` | `""` | PEM public key trust root (rendered into a Secret) |
 | `plugins.verify.existingSecret` | `""` | Instead reference a Secret with key `trust-root.pem` |
 | `plugins.uiInstall.enabled` | `false` | Enable the fail-closed Web UI / API connector install + upload endpoints (`ENABLE_UI_INSTALL`). Requires a trust root (`plugins.verify.trustRootPem`/`existingSecret`) |

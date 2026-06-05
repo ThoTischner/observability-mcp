@@ -45,9 +45,11 @@ export class PluginLoader {
   private disabled: Set<string>;
 
   // Fail-closed verification for filesystem plugins. Builtins are part
-  // of the trusted image and are never gated. Default off so existing
-  // deployments are unchanged; recommended on in prod/airgapped (the
-  // Helm chart sets it).
+  // of the trusted image and are never gated. Default ON — operators
+  // who want to load unsigned filesystem plugins must opt out with
+  // VERIFY_PLUGINS=false. Without a trust root configured, no
+  // filesystem plugins load (only builtins), so the demo and any
+  // deployment without /app/plugins is unaffected.
   private verify: boolean;
   private trustRootPath?: string;
   private trustRoot?: KeyObject;
@@ -64,7 +66,7 @@ export class PluginLoader {
       .map((s) => s.trim())
       .filter(Boolean);
     this.disabled = new Set([...(opts.disabled ?? []), ...envDisabled]);
-    this.verify = opts.verify ?? /^(1|true|yes)$/i.test(process.env.VERIFY_PLUGINS ?? "");
+    this.verify = opts.verify ?? !/^(0|false|no|off)$/i.test(process.env.VERIFY_PLUGINS ?? "true");
     this.trustRootPath = opts.trustRoot ?? process.env.PLUGIN_TRUST_ROOT;
   }
 
