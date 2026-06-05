@@ -19,6 +19,7 @@
 
 import { createHash } from "node:crypto";
 import { appendFile, readFile } from "node:fs/promises";
+import type { AuditSink } from "./sinks/types.js";
 
 export interface AuditEntry {
   /** RFC-3339 UTC timestamp. */
@@ -53,6 +54,11 @@ export interface AuditLogConfig {
   file?: string;
   /** How many recent entries to keep in memory regardless of file mode. */
   inMemoryCap?: number;
+  /** Mirror every chained entry to one or more external sinks
+   * (Splunk/SIEM webhook, S3 archive, ...). The on-disk JSONL chain
+   * stays the authoritative master — sinks are best-effort mirrors
+   * and never block record(). */
+  sinks?: AuditSink[];
 }
 
 export const DEFAULT_IN_MEMORY_CAP = 500;
@@ -61,6 +67,7 @@ const GENESIS_HASH = "0".repeat(64);
 export class AuditLog {
   private readonly cap: number;
   private readonly file: string | undefined;
+  private readonly sinks: AuditSink[];
   private ring: AuditEntry[] = [];
   private lastHash: string = GENESIS_HASH;
   private seq = 0;
@@ -70,6 +77,7 @@ export class AuditLog {
   constructor(cfg: AuditLogConfig = {}) {
     this.cap = cfg.inMemoryCap ?? DEFAULT_IN_MEMORY_CAP;
     this.file = cfg.file;
+    this.sinks = cfg.sinks ?? [];
   }
 
   /**
@@ -128,7 +136,40 @@ export class AuditLog {
         }),
       );
     }
+    // Fan out to any external sinks (webhook, archive, ...). Sinks
+    // are mirrors: failures are swallowed inside the sink so a sick
+    // SIEM never takes down the gateway. The JSONL master remains
+    // the authoritative chain.
+    for (const sink of this.sinks) {
+      // Intentionally not awaited: record() must stay fast and
+      // independent of receiver health.
+      sink.write(entry).catch((err: unknown) => {
+        console.warn(
+          "AuditLog: sink %s write failed: %s",
+          sink.name,
+          err instanceof Error ? err.message : String(err),
+        );
+      });
+    }
     return entry;
+  }
+
+  /** Flush every configured sink. Called from SIGTERM and tests. */
+  async flushSinks(): Promise<void> {
+    await this.writeQueue;
+    await Promise.all(
+      this.sinks.map((s) =>
+        s.flush
+          ? s.flush().catch((err: unknown) =>
+              console.warn(
+                "AuditLog: sink %s flush failed: %s",
+                s.name,
+                err instanceof Error ? err.message : String(err),
+              ),
+            )
+          : Promise.resolve(),
+      ),
+    );
   }
 
   /** Snapshot of the in-memory ring (most recent last). */

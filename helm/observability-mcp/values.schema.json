@@ -74,6 +74,24 @@
         "serviceName": { "type": "string" }
       }
     },
+    "audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "file": { "type": "string" },
+        "webhook": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "url": { "type": "string" },
+            "token": { "type": "string" },
+            "existingSecret": { "type": "string" },
+            "deadLetterFile": { "type": "string" }
+          }
+        }
+      }
+    },
     "plugins": {
       "type": "object",
       "additionalProperties": false,

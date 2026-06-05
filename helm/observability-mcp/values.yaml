@@ -163,6 +163,30 @@ otel:
   # Override resource service.name (otherwise defaults to
   # "observability-mcp").
   serviceName: ""
+
+# Audit-log external sinks. The on-disk JSONL chain (configured via
+# auditFile / OMCP_MGMT_AUDIT_FILE) stays the authoritative master.
+# These sinks mirror every chained entry to an external system so
+# SIEM / archive / compliance pipelines can consume the same stream
+# without reading the local file. See docs/audit-sinks.md.
+audit:
+  # Persistent JSONL master file. When unset the audit log lives in
+  # an in-memory ring (500 entries) — fine for the demo, not for
+  # compliance.
+  file: ""
+  webhook:
+    enabled: false
+    # POST URL — every chained entry becomes one POST with the
+    # entry's JSON body.
+    url: ""
+    # Bearer token put on every request. For real deployments
+    # reference a Secret via existingSecret.
+    token: ""
+    existingSecret: ""
+    # File path for entries that exhausted retries — the operator
+    # can replay them once the receiver recovers. Empty disables DLQ
+    # (entries are then dropped after the final retry, logged).
+    deadLetterFile: ""
   # - name: MCP_LOG_LEVEL
   #   value: info
   # - name: OMCP_AUTH

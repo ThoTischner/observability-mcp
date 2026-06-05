@@ -115,6 +115,25 @@ spec:
             - name: OMCP_OTEL_SERVICE_VERSION
               value: {{ include "observability-mcp.imageTag" . | quote }}
             {{- end }}
+            {{- if .Values.audit.file }}
+            - name: OMCP_MGMT_AUDIT_FILE
+              value: {{ .Values.audit.file | quote }}
+            {{- end }}
+            {{- if .Values.audit.webhook.enabled }}
+            - name: OMCP_AUDIT_WEBHOOK_URL
+              value: {{ .Values.audit.webhook.url | quote }}
+            {{- if .Values.audit.webhook.deadLetterFile }}
+            - name: OMCP_AUDIT_WEBHOOK_DLQ
+              value: {{ .Values.audit.webhook.deadLetterFile | quote }}
+            {{- end }}
+            {{- if or .Values.audit.webhook.token .Values.audit.webhook.existingSecret }}
+            - name: OMCP_AUDIT_WEBHOOK_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.audit.webhook.existingSecret | default (printf "%s-audit-webhook" (include "observability-mcp.fullname" .)) }}
+                  key: token
+            {{- end }}
+            {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
