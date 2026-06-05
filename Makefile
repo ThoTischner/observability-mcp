@@ -182,6 +182,22 @@ ui-smoke: ## Build and run the Playwright UI smoke suite against the demo stack
 	  -e OMCP_UI_BASE=http://localhost:3000 \
 	  omcp-ui-smoke:local
 
+# MCP 2025-11-25 spec conformance harness. Boots the demo if not
+# already up, points the harness at /mcp, runs node:test. CI
+# (`.github/workflows/integration.yml`) runs the same target as a
+# required check so a spec regression cannot land on main.
+conformance: ## Run the MCP 2025-11-25 conformance test suite against the demo stack
+	@for i in $$(seq 1 60); do \
+	  curl -fsS http://localhost:3000/healthz >/dev/null 2>&1 && break; \
+	  if [ $$i -eq 1 ]; then echo "Waiting for /healthz..."; fi; \
+	  sleep 2; \
+	done
+	docker run --rm -w /app -v "$(PWD)/mcp-server:/app" \
+	  --network=host \
+	  -e OMCP_CONFORMANCE_URL=http://localhost:3000/mcp \
+	  node:20-alpine sh -c \
+	  "npx --yes tsx --test src/conformance/mcp-2025-11-25.test.ts"
+
 ##@ Release
 
 release-dryrun: ## Print what the auto-release workflow would publish

@@ -986,6 +986,40 @@ async function main() {
   // enough to skip the request-counter middleware.
   let ready = false;
   app.get("/healthz", (_req, res) => res.type("text").send("ok"));
+
+  // Procurement-time probe: the MCP spec revisions and transports the
+  // gateway supports. Static today — kept as a separate endpoint so a
+  // discovery tool / RFP probe / catalog scanner can resolve our
+  // compliance posture without sending a real MCP handshake.
+  // See docs/mcp-conformance.md for the test suite that proves it.
+  app.get("/api/conformance", (_req, res) => {
+    res.json({
+      revisions: ["2025-11-25"],
+      transports: ["streamable-http", "stdio", "websocket"],
+      methods: {
+        // Methods exercised by the conformance harness. "supported"
+        // is the union of methods that return a non -32601 envelope
+        // for any conforming caller. Per-method spec compliance is
+        // proven by src/conformance/mcp-2025-11-25.test.ts.
+        supported: [
+          "initialize",
+          "notifications/initialized",
+          "ping",
+          "tools/list",
+          "tools/call",
+        ],
+        optional: [
+          "resources/list",
+          "resources/read",
+          "prompts/list",
+          "prompts/get",
+          "logging/setLevel",
+        ],
+      },
+      harnessPath: "mcp-server/src/conformance/mcp-2025-11-25.test.ts",
+      docs: "docs/mcp-conformance.md",
+    });
+  });
   app.get("/readyz", (_req, res) => {
     if (ready) return res.type("text").send("ok");
     return res.status(503).type("text").send("starting");
