@@ -85,10 +85,12 @@ spec:
                   name: {{ include "observability-mcp.authSecretName" . }}
                   key: token
             {{- end }}
-            {{- if .Values.plugins.verify.enabled }}
+            # Always render the flag explicitly so a Helm override of
+            # plugins.verify.enabled wins over the server's default-on
+            # behaviour. Quoted so "false" reaches the container as the
+            # literal string the loader recognises as an opt-out.
             - name: VERIFY_PLUGINS
-              value: "true"
-            {{- end }}
+              value: {{ .Values.plugins.verify.enabled | quote }}
             {{- if include "observability-mcp.needsTrustRoot" . }}
             - name: PLUGIN_TRUST_ROOT
               value: /app/trust/trust-root.pem

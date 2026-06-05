@@ -174,8 +174,12 @@ plugins:
   paths: []
   # Fail-closed signature + integrity verification (VERIFY_PLUGINS).
   # Builtin connectors are part of the trusted image and are never gated.
+  # Default ON since v2.0 — to load unsigned filesystem plugins set
+  # enabled=false explicitly. Without a trust root configured, no
+  # filesystem plugins load (only builtins), which is the safe default
+  # for any cluster that did not opt into signed plugin distribution.
   verify:
-    enabled: false
+    enabled: true
     # PEM public key used as the trust root. Provide it inline (rendered
     # into a Secret) OR point existingSecret at a Secret that has the
     # key `trust-root.pem`.

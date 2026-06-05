@@ -120,7 +120,7 @@ All three are **off by default** and fail-closed: set `ENABLE_UI_INSTALL=true` *
 
 ### Verifying plugin provenance
 
-Provenance verification is **offline and built in** — no `cosign`, no Fulcio/Rekor, no network (an airgapped site cannot reach a transparency log). The server checks a local trust root with Node's built-in crypto: a plugin loads only when its `manifest.json` `integrity` (sha256 of the entry file) matches *and* the detached `manifest.json.sig` verifies against `PLUGIN_TRUST_ROOT`. Enable with `VERIFY_PLUGINS=true` (filesystem plugins) — see [`docs/plugin-architecture.md`](plugin-architecture.md#verification-airgapped-trust-root) for producing the artifacts. Runtime install/upload is *always* verified regardless of `VERIFY_PLUGINS`.
+Provenance verification is **offline and built in** — no `cosign`, no Fulcio/Rekor, no network (an airgapped site cannot reach a transparency log). The server checks a local trust root with Node's built-in crypto: a plugin loads only when its `manifest.json` `integrity` (sha256 of the entry file) matches *and* the detached `manifest.json.sig` verifies against `PLUGIN_TRUST_ROOT`. Verification is **on by default** since v2.0 (`VERIFY_PLUGINS` defaults to `true`); see [`docs/plugin-architecture.md`](plugin-architecture.md#verification-airgapped-trust-root) for producing the artifacts. Runtime install/upload is *always* verified regardless of `VERIFY_PLUGINS`.
 
 ## Configuration without the Web UI
 
