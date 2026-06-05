@@ -88,6 +88,8 @@ import { selfRegistry, withToolMetrics, apiRequests, mcpActiveSessions } from ".
 import { initOtel } from "./observability/otel.js";
 import { WebSocketServerTransport } from "./transport/websocket.js";
 import { HookRegistry } from "./sdk/hooks.js";
+import { UpstreamClient } from "./federation/upstream.js";
+import { FederationRegistry, parseFederationEnv } from "./federation/registry.js";
 import { buildOpenApiSpec } from "./openapi.js";
 import { listSourcesHandler } from "./tools/list-sources.js";
 import { listServicesHandler } from "./tools/list-services.js";
@@ -692,6 +694,31 @@ async function main() {
     }
   );
 
+  // Phase F10: federated tools — every upstream MCP server's tools
+  // show up here under `<prefix>.<upstream-tool>`. The handler is a
+  // pure proxy: it forwards args verbatim and returns the upstream's
+  // CallToolResult unchanged. The wrapping registerTool() at the top
+  // of this function still fires F7 lifecycle hooks + the F1
+  // Product-allow-list gate, so federated tools obey the same policy
+  // surface as native ones.
+  for (const info of federationRegistry.getNamespacedTools()) {
+    // Upstream's inputSchema is forwarded verbatim. The SDK's
+    // tool() overload signatures don't carry an obvious type for a
+    // dynamic-shape schema, so we cast to `any` at the boundary and
+    // let the upstream contract speak for the validation.
+    (registerTool as unknown as (...args: unknown[]) => unknown)(
+      info.namespacedName,
+      info.description || `Federated from upstream ${info.sourceName}.`,
+      info.inputSchema ?? {},
+      async (args: unknown) => {
+        await enforceEntitledAccess(ctx, { tool: info.namespacedName });
+        return withToolMetrics(info.namespacedName, () =>
+          federationRegistry.callNamespacedTool(info.namespacedName, args),
+        );
+      },
+    );
+  }
+
     return mcpServer;
   }
 
@@ -996,6 +1023,40 @@ async function main() {
   // tool_pre_invoke / tool_post_invoke chains; resource and prompt
   // hooks plug into their respective seams as they ship.
   const hookRegistry = new HookRegistry();
+
+  // Federation registry — populated from OMCP_FEDERATION_UPSTREAMS at
+  // boot. Each upstream connects, fetches tools/list, and exposes its
+  // tools under `<prefix>.<upstream-tool-name>` on the gateway's
+  // surface. Failures are logged + the upstream is left in `degraded`
+  // (no tools) so the gateway boots regardless of upstream health.
+  const federationRegistry = new FederationRegistry();
+  for (const cfg of parseFederationEnv()) {
+    const client = new UpstreamClient({
+      name: cfg.name,
+      url: cfg.url,
+      bearerToken: cfg.bearerToken,
+    });
+    federationRegistry.add(client);
+    client.connect().catch((err: unknown) => {
+      console.warn(
+        "federation upstream %s initial connect failed: %s",
+        cfg.name,
+        err instanceof Error ? err.message : String(err),
+      );
+    });
+  }
+  if (federationRegistry.list().length > 0) {
+    console.log(
+      "federation: %d upstream(s) configured: %s",
+      federationRegistry.list().length,
+      federationRegistry.list().map((u) => `${u.name}=${u.url}`).join(", "),
+    );
+  }
+  process.on("SIGTERM", () => {
+    federationRegistry
+      .closeAll()
+      .catch((err) => console.warn("federation closeAll failed:", err));
+  });
 
   // Service catalog: optional operator-curated ownership / criticality /
   // on-call metadata, keyed on the service name list_services returns.
