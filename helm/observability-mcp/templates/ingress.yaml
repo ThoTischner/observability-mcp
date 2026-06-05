@@ -5,9 +5,19 @@ metadata:
   name: {{ include "observability-mcp.fullname" . }}
   labels:
     {{- include "observability-mcp.labels" . | nindent 4 }}
-  {{- with .Values.ingress.annotations }}
+  {{- if or .Values.ingress.annotations .Values.ingressSticky.enabled }}
   annotations:
+    {{- with .Values.ingress.annotations }}
     {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- if .Values.ingressSticky.enabled }}
+    # Sticky session via cookie — required when running multiple
+    # replicas WITHOUT the shared session store, so each MCP session
+    # consistently routes back to the replica that owns it.
+    nginx.ingress.kubernetes.io/affinity: "cookie"
+    nginx.ingress.kubernetes.io/session-cookie-name: "omcp-affinity"
+    nginx.ingress.kubernetes.io/session-cookie-path: "/"
+    {{- end }}
   {{- end }}
 spec:
   {{- with .Values.ingress.className }}

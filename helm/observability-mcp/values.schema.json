@@ -74,6 +74,31 @@
         "serviceName": { "type": "string" }
       }
     },
+    "podDisruptionBudget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "minAvailable": {
+          "oneOf": [{ "type": "integer", "minimum": 0 }, { "type": "string" }]
+        }
+      }
+    },
+    "redis": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "url": { "type": "string" },
+        "keyPrefix": { "type": "string" }
+      }
+    },
+    "ingressSticky": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" }
+      }
+    },
     "audit": {
       "type": "object",
       "additionalProperties": false,
