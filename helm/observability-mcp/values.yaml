@@ -143,6 +143,26 @@ sources:
 #                                  boot misconfig; OFF by default (fail-closed)
 # Detailed runbook: docs/access-control.md
 extraEnv: []
+
+# OpenTelemetry self-tracing of the gateway. Opt-in: when enabled,
+# the Node SDK auto-instruments HTTP so every /api/* and /mcp request
+# becomes a span exported to the configured OTLP endpoint. The
+# resource is tagged service.name=observability-mcp + the chart's
+# image tag as service.version + the pod hostname as
+# service.instance.id. See docs/self-observability.md.
+otel:
+  enabled: false
+  # OTLP/HTTP traces endpoint. Typical values:
+  #   http://tempo:4318/v1/traces        (in-cluster Tempo)
+  #   http://otel-collector:4318/v1/traces
+  endpoint: "http://localhost:4318/v1/traces"
+  # Comma-separated key=value pairs forwarded as OTLP request
+  # headers (e.g. "Authorization=Bearer ..."). Reference a Secret via
+  # extraEnv if the value is sensitive.
+  headers: ""
+  # Override resource service.name (otherwise defaults to
+  # "observability-mcp").
+  serviceName: ""
   # - name: MCP_LOG_LEVEL
   #   value: info
   # - name: OMCP_AUTH

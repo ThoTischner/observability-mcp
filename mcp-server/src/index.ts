@@ -83,6 +83,7 @@ import {
 import { isValidConnectorName, installTarball } from "./connectors/install.js";
 import { PluginVerificationError } from "./connectors/verify.js";
 import { selfRegistry, withToolMetrics, apiRequests, mcpActiveSessions } from "./metrics/self.js";
+import { initOtel } from "./observability/otel.js";
 import { buildOpenApiSpec } from "./openapi.js";
 import { listSourcesHandler } from "./tools/list-sources.js";
 import { listServicesHandler } from "./tools/list-services.js";
@@ -221,6 +222,14 @@ async function main() {
     !!process.env.MCP_STDIO;
   if (STDIO) {
     console.log = (...a: unknown[]) => console.error(...a);
+  }
+
+  // OpenTelemetry self-tracing — opt-in via OMCP_OTEL_ENABLED. Init
+  // before express() so HTTP auto-instrumentation captures every
+  // /api/* and /mcp request. Skipped in stdio mode (no HTTP surface
+  // and the auto-instrumentation would emit noise per stdio call).
+  if (!STDIO) {
+    await initOtel({ serviceVersion: process.env.npm_package_version });
   }
 
   let config = loadConfig();

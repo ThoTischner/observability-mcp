@@ -99,6 +99,22 @@ spec:
             - name: ENABLE_UI_INSTALL
               value: "true"
             {{- end }}
+            {{- if .Values.otel.enabled }}
+            - name: OMCP_OTEL_ENABLED
+              value: "true"
+            - name: OMCP_OTEL_ENDPOINT
+              value: {{ .Values.otel.endpoint | quote }}
+            {{- if .Values.otel.headers }}
+            - name: OMCP_OTEL_HEADERS
+              value: {{ .Values.otel.headers | quote }}
+            {{- end }}
+            {{- if .Values.otel.serviceName }}
+            - name: OMCP_OTEL_SERVICE_NAME
+              value: {{ .Values.otel.serviceName | quote }}
+            {{- end }}
+            - name: OMCP_OTEL_SERVICE_VERSION
+              value: {{ include "observability-mcp.imageTag" . | quote }}
+            {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
