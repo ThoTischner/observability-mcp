@@ -90,6 +90,8 @@ import { WebSocketServerTransport } from "./transport/websocket.js";
 import { HookRegistry } from "./sdk/hooks.js";
 import { UpstreamClient } from "./federation/upstream.js";
 import { FederationRegistry, parseFederationEnv } from "./federation/registry.js";
+import { buildCsrfIssuer, buildCsrfEnforcer, csrfBypassFromEnv } from "./auth/csrf.js";
+import { checkOutboundUrl, ssrfGuardFromEnv } from "./middleware/ssrfGuard.js";
 import { buildOpenApiSpec } from "./openapi.js";
 import { listSourcesHandler } from "./tools/list-sources.js";
 import { listServicesHandler } from "./tools/list-services.js";
@@ -184,20 +186,23 @@ function getAvailableMetricNames(registry: ConnectorRegistry): string {
 
 /** Validate source URL: must be http/https, reject obviously dangerous targets */
 function validateSourceUrl(url: string): string | null {
+  // Phase F11: delegate to the shared SSRF guard. Strict by default;
+  // operators add OMCP_ALLOW_PRIVATE_BACKENDS=true to allow in-cluster
+  // backends. Cloud-metadata IPs (AWS 169.254.169.254, GCE
+  // fd00:ec2::254) are rejected regardless.
+  const v = checkOutboundUrl(url, ssrfGuardFromEnv());
+  if (!v.allow) return v.reason ?? `URL "${url}" is rejected by the SSRF guard`;
+  // Extra Google-metadata-hostname check (DNS-based, not in the
+  // numeric guard).
   try {
-    const parsed = new URL(url);
-    if (!["http:", "https:"].includes(parsed.protocol)) {
-      return `Invalid URL scheme "${parsed.protocol}". Only http and https are allowed.`;
-    }
-    // Block cloud metadata endpoints
-    const host = parsed.hostname.toLowerCase();
-    if (host === "169.254.169.254" || host === "metadata.google.internal") {
+    const host = new URL(url).hostname.toLowerCase();
+    if (host === "metadata.google.internal") {
       return "Access to cloud metadata endpoints is not allowed.";
     }
-    return null;
   } catch {
-    return `Invalid URL: "${url}"`;
+    /* already caught by checkOutboundUrl */
   }
+  return null;
 }
 
 // Hard cap for a downloaded/uploaded connector tarball (defence against
@@ -884,6 +889,19 @@ async function main() {
   // there is no string-match-based "is this public?" branch anywhere.
   app.use(buildSessionAttacher(authRuntime));
   const requireSession = buildRequireSession(authRuntime);
+
+  // Phase F11: CSRF — double-submit cookie pattern, enforced on every
+  // mutating /api/* request. The issuer runs top-of-pipe so any page
+  // render leaves a CSRF token cookie the SPA can read + echo back.
+  // Bearer-token clients (CI, agents, MCP clients) bypass by default
+  // since they can't be a browser confused-deputy.
+  const csrfCfg = {
+    bypassBearer: csrfBypassFromEnv(),
+    secureCookie: (r: import("express").Request) =>
+      r.secure || r.headers["x-forwarded-proto"] === "https",
+  };
+  app.use(buildCsrfIssuer(csrfCfg));
+  app.use("/api", buildCsrfEnforcer(csrfCfg));
 
   // Active policy engine — built-in DEFAULT_POLICY by default. When
   // OMCP_RBAC_POLICY_FILE is set we load it and ALWAYS abort on
