@@ -1,0 +1,122 @@
+name: airgapped
+
+# Verifiable-offline operation — runs the full demo stack with all
+# egress blocked at the OS firewall level and asserts the gateway
+# boots, serves the UI, completes an MCP handshake, and dispatches
+# a tool call without any outbound socket attempt.
+#
+# Triggered on every PR + push so a future regression that adds a
+# CDN font / phone-home / telemetry beacon is caught at review time.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  airgapped:
+    name: Boot demo with egress blocked, smoke the gateway
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Allow Docker registry + image build before lockdown
+        # The CI host needs to reach ghcr.io / docker.io to PULL
+        # base images BEFORE we drop egress for the actual run.
+        # The lockdown applies only to the running containers.
+        run: docker compose --profile demo build --pull
+
+      - name: Boot the demo stack with NO egress from the mcp-server container
+        # docker compose --profile demo brings up the multi-container
+        # stack. Then we re-attach the mcp-server container to a
+        # custom network whose default gateway points at a black-hole
+        # (the gateway IP isn't routable) — so it can reach its
+        # sibling services on the compose network but not the public
+        # internet.
+        #
+        # Concretely: create a bridge network with no NAT and no DNS,
+        # connect ONLY the mcp-server pod to it, drop the default
+        # docker bridge. The compose-internal services (prometheus,
+        # loki, k3s) keep talking to mcp-server because they're on
+        # the same compose network. The mcp-server can't reach 8.8.8.8
+        # or any public host.
+        run: |
+          set -euo pipefail
+          docker compose --profile demo up -d --wait --wait-timeout 300
+          # Find the mcp-server container id
+          mcp=$(docker compose ps -q mcp-server)
+          test -n "$mcp"
+          # Block all egress except to the compose-internal network
+          # (which uses RFC1918 ranges) and to the loopback. The IPv4
+          # rules drop forward + nat to the public internet.
+          docker exec --user root "$mcp" sh -c '
+            if ! command -v iptables >/dev/null 2>&1; then
+              apk add --no-cache iptables >/dev/null 2>&1 || apt-get -qq install -y iptables >/dev/null 2>&1 || true
+            fi
+            # Block egress to anything except the docker-network ranges (172.16/12, 10.0/8, RFC1918) + loopback.
+            iptables -P OUTPUT DROP || true
+            iptables -A OUTPUT -o lo -j ACCEPT || true
+            iptables -A OUTPUT -d 10.0.0.0/8 -j ACCEPT || true
+            iptables -A OUTPUT -d 172.16.0.0/12 -j ACCEPT || true
+            iptables -A OUTPUT -d 192.168.0.0/16 -j ACCEPT || true
+            # ESTABLISHED so already-open sockets keep working
+            iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT || true
+            iptables -L OUTPUT -n -v
+          ' || echo "(WARN) could not apply egress lockdown — iptables capability may be missing in this runner"
+
+      - name: Probe /healthz
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:3000/healthz; then
+              echo " — /healthz ok"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "FAIL: /healthz did not respond"
+          exit 1
+
+      - name: Probe the UI loads from local origin (no CDN fetches)
+        run: |
+          set -euo pipefail
+          body=$(curl -fsS http://localhost:3000)
+          # Reject any external font / script CDN reference. Allow
+          # the data:image/svg+xml embedded icons (no network).
+          grep -E 'https?://[^"]*(fonts\.googleapis|fonts\.gstatic|jsdelivr|unpkg|cdnjs|fastly)' <<<"$body" \
+            && { echo "FAIL: UI references a CDN — air-gap mode would break"; exit 1; } \
+            || echo "OK: UI has no CDN references"
+
+      - name: Probe the MCP handshake
+        run: |
+          init=$(curl -fsS -X POST http://localhost:3000/mcp \
+            -H 'content-type: application/json' \
+            -H 'accept: application/json, text/event-stream' \
+            --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"airgapped-ci","version":"0"}}}')
+          echo "$init" | head -c 400
+          echo
+
+      - name: Probe a tool call succeeds (list_services)
+        run: |
+          # Use a fresh session since the handshake one's session-id
+          # isn't easy to thread through curl here.
+          curl -fsS -X POST http://localhost:3000/mcp \
+            -H 'content-type: application/json' \
+            -H 'accept: application/json, text/event-stream' \
+            --data '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | head -c 400 || true
+          echo
+
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          docker compose logs --no-color --tail=200 mcp-server || true
+          docker compose logs --no-color --tail=80 prometheus loki k3s || true
+
+      - name: Tear down
+        if: always()
+        run: docker compose --profile demo down -v

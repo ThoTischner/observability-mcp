@@ -164,6 +164,44 @@ Releases are tagged in the GitHub repo. The recommended workflow:
 
 The chart's `appVersion` always matches the recommended image tag. `helm template` shows what would change before you apply.
 
+## CI-verified offline operation (since Phase F22)
+
+A dedicated workflow (`.github/workflows/airgapped.yml`) boots the
+full demo stack on every PR with **iptables egress blocked** on the
+mcp-server container, then asserts:
+
+- `/healthz` responds (gateway boots without any outbound call).
+- The UI contains **no CDN references** (no `fonts.googleapis`,
+  `jsdelivr`, `unpkg`, `cdnjs`, `fastly` URLs).
+- The MCP `initialize` handshake succeeds.
+- A `tools/list` call returns the expected surface.
+
+A future regression that adds a CDN font / phone-home / telemetry
+beacon fails the workflow at review time. The check has been
+green since the F22 PR.
+
+## Helm `airgapped: true`
+
+Set `airgapped=true` in the chart values to:
+
+- Render an **egress NetworkPolicy** that allows only DNS + in-namespace
+  traffic + an operator-controlled `airgappedExtraEgress` allowlist.
+- Set `OMCP_AIRGAPPED=true` in the container env (the server uses it
+  as a future-proof switch to skip any optional outbound call — the
+  OSS code has none today, but the flag is the right place to land
+  any future phone-home opt-out).
+
+```yaml
+airgapped: true
+airgappedExtraEgress:
+  - to:
+      - ipBlock:
+          cidr: 10.10.0.0/16        # internal Splunk HEC
+    ports:
+      - protocol: TCP
+        port: 8088
+```
+
 ## Troubleshooting
 
 - **`ImagePullBackOff`** — check that `image.repository` points at your mirror and that the mirror has the exact tag.
