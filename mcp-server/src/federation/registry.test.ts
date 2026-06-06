@@ -184,6 +184,40 @@ test("parseFederationEnv: http + stdio entries co-exist", () => {
   assert.equal(parsed[1]?.kind, "stdio");
 });
 
+test("parseFederationEnv: ws:// + wss:// entries parse with kind=ws", () => {
+  const parsed = parseFederationEnv({
+    OMCP_FEDERATION_UPSTREAMS: "plain=ws://gw/mcp/ws,secure=wss://gw/mcp/ws",
+  });
+  assert.equal(parsed.length, 2);
+  assert.deepEqual(parsed[0], { kind: "ws", name: "plain", url: "ws://gw/mcp/ws" });
+  assert.deepEqual(parsed[1], { kind: "ws", name: "secure", url: "wss://gw/mcp/ws" });
+});
+
+test("parseFederationEnv: ws upstreams do NOT carry bearer tokens (URL-only)", () => {
+  // Even when a matching OMCP_FEDERATION_TOKEN_X is set, the ws entry
+  // shouldn't grow a bearerToken field — the SDK transport only
+  // accepts the URL.
+  const parsed = parseFederationEnv({
+    OMCP_FEDERATION_UPSTREAMS: "x=wss://gw/mcp/ws",
+    OMCP_FEDERATION_TOKEN_X: "would-be-ignored",
+  });
+  assert.equal(parsed[0]?.kind, "ws");
+  // The ws branch has no `bearerToken` property at all.
+  assert.equal((parsed[0] as unknown as Record<string, unknown>).bearerToken, undefined);
+});
+
+test("parseFederationEnv: all four transport variants co-exist", () => {
+  const parsed = parseFederationEnv({
+    OMCP_FEDERATION_UPSTREAMS:
+      "a=https://gw/mcp,b=http://gw/mcp,c=ws://gw/mcp/ws,d=stdio:/bin/mcp",
+  });
+  assert.equal(parsed.length, 4);
+  assert.deepEqual(
+    parsed.map((p) => p.kind),
+    ["http", "http", "ws", "stdio"],
+  );
+});
+
 test("parseFederationEnv: skips malformed entries with a warning, keeps the rest", () => {
   const parsed = parseFederationEnv({
     OMCP_FEDERATION_UPSTREAMS:

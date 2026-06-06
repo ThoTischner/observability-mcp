@@ -11,6 +11,12 @@
 //               channels. The classic MCP transport, useful when the
 //               upstream is a CLI-style server (omcp inspector-config,
 //               a local-only MCP, an in-cluster sidecar).
+//   - "ws"    — WebSocket to a ws:// or wss:// URL. Useful when the
+//               upstream gateway exposes MCP via the WS subprotocol
+//               rather than streamable HTTP. No bearer-auth header
+//               (the SDK transport only accepts a URL); operators
+//               that need auth append it as a query string or run
+//               the gateway behind an authenticating reverse proxy.
 //
 // Auth forwarding modes:
 //   - "none" — no auth header on outbound calls
@@ -23,6 +29,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { WebSocketClientTransport } from "@modelcontextprotocol/sdk/client/websocket.js";
 
 interface UpstreamCommonConfig {
   /** Stable source name (used in the namespace prefix + audit entries). */
@@ -56,7 +63,16 @@ export interface UpstreamStdioConfig extends UpstreamCommonConfig {
   env?: Record<string, string>;
 }
 
-export type UpstreamConfig = UpstreamHttpConfig | UpstreamStdioConfig;
+export interface UpstreamWebsocketConfig extends UpstreamCommonConfig {
+  transport: "ws";
+  /** Upstream WebSocket URL — `ws://` or `wss://`. */
+  url: string;
+}
+
+export type UpstreamConfig =
+  | UpstreamHttpConfig
+  | UpstreamStdioConfig
+  | UpstreamWebsocketConfig;
 
 export interface UpstreamToolInfo {
   /** Local namespaced name: `<prefix>.<upstreamName>`. */
@@ -79,7 +95,7 @@ export class UpstreamClient {
    *  so the UI doesn't have to special-case the transport kind. */
   readonly url: string;
   readonly namespacePrefix: string;
-  readonly transportKind: "http" | "stdio";
+  readonly transportKind: "http" | "stdio" | "ws";
   private cfg: UpstreamConfig;
   private client?: Client;
   // `unknown` because the SDK exposes a different concrete type per
@@ -95,8 +111,14 @@ export class UpstreamClient {
   constructor(cfg: UpstreamConfig) {
     this.cfg = cfg;
     this.name = cfg.name;
-    this.transportKind = cfg.transport === "stdio" ? "stdio" : "http";
-    this.url = this.transportKind === "http" ? (cfg as UpstreamHttpConfig).url : `stdio:${(cfg as UpstreamStdioConfig).command}`;
+    this.transportKind =
+      cfg.transport === "stdio" ? "stdio" :
+      cfg.transport === "ws" ? "ws" :
+      "http";
+    this.url =
+      this.transportKind === "stdio" ? `stdio:${(cfg as UpstreamStdioConfig).command}` :
+      this.transportKind === "ws" ? (cfg as UpstreamWebsocketConfig).url :
+      (cfg as UpstreamHttpConfig).url;
     this.namespacePrefix = cfg.namespacePrefix ?? cfg.name;
     this.refreshIntervalMs = cfg.refreshIntervalMs ?? 5 * 60 * 1000;
   }
@@ -200,6 +222,11 @@ export class UpstreamClient {
         args: cfg.args ?? [],
         env: cfg.env,
       });
+    }
+
+    if (this.transportKind === "ws") {
+      const cfg = this.cfg as UpstreamWebsocketConfig;
+      return new WebSocketClientTransport(new URL(cfg.url));
     }
 
     const cfg = this.cfg as UpstreamHttpConfig;

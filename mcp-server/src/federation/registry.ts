@@ -59,15 +59,20 @@ export class FederationRegistry {
  * Parse the OMCP_FEDERATION_UPSTREAMS env into a list of upstream
  * configs. Shape:
  *
- *   "name1=https://gw.a/mcp,name2=https://gw.b/mcp,name3=stdio:/usr/bin/mcp arg1 arg2"
+ *   "a=https://gw.a/mcp,b=stdio:/usr/bin/mcp arg1,c=wss://gw.c/mcp/ws"
  *
- * Each upstream's bearer token (HTTP transport only) is read from
- * OMCP_FEDERATION_TOKEN_<UPPERCASE-NAME> (dots → underscores), so
- * tokens stay out of the URL list itself.
+ * Transport selection:
+ *   - `https?://`   → HTTP (Streamable). Bearer token from
+ *                     OMCP_FEDERATION_TOKEN_<UPPERCASE-NAME>.
+ *   - `ws://`/`wss://` → WebSocket. No bearer header (the SDK
+ *                     transport only accepts a URL); embed auth
+ *                     in the URL or front the gateway with a
+ *                     proxy.
+ *   - `stdio:<cmd>` → spawn a child process; `\` escapes spaces
+ *                     in the command/argv list.
  *
- * Stdio entries are written as `name=stdio:<command> [arg ...]`. The
- * command may be quoted with `\` escapes to embed spaces. Stdio
- * upstreams don't carry bearer tokens — they're local-only.
+ * Tokens never appear in the URL list itself for HTTP — kept
+ * separate so they don't leak into logs / audit entries.
  */
 export interface ParsedUpstreamHttp {
   kind: "http";
@@ -83,7 +88,16 @@ export interface ParsedUpstreamStdio {
   args: string[];
 }
 
-export type ParsedUpstream = ParsedUpstreamHttp | ParsedUpstreamStdio;
+export interface ParsedUpstreamWebsocket {
+  kind: "ws";
+  name: string;
+  url: string;
+}
+
+export type ParsedUpstream =
+  | ParsedUpstreamHttp
+  | ParsedUpstreamStdio
+  | ParsedUpstreamWebsocket;
 
 /** Split a "command arg1 arg2" string honouring backslash escapes
  *  so an operator can embed a literal space with `\ `. Nothing
@@ -134,8 +148,12 @@ export function parseFederationEnv(env: NodeJS.ProcessEnv = process.env): Parsed
       entries.push({ kind: "stdio", name, command, args });
       continue;
     }
+    if (/^wss?:\/\//.test(spec)) {
+      entries.push({ kind: "ws", name, url: spec });
+      continue;
+    }
     if (!/^https?:\/\//.test(spec)) {
-      console.warn(`OMCP_FEDERATION_UPSTREAMS entry "${name}" url "${spec}" must start with http:// or https:// (or stdio:) — skipping`);
+      console.warn(`OMCP_FEDERATION_UPSTREAMS entry "${name}" url "${spec}" must start with http://, https://, ws://, wss:// (or stdio:) — skipping`);
       continue;
     }
     const tokenEnv = `OMCP_FEDERATION_TOKEN_${name.toUpperCase().replace(/[-.]/g, "_")}`;

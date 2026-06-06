@@ -27,6 +27,11 @@ Set `OMCP_FEDERATION_UPSTREAMS` to a comma-separated list of
 
 - **HTTP** (default): `name=https://upstream.host/mcp` — must end at
   the upstream's Streamable HTTP `/mcp` endpoint.
+- **WebSocket**: `name=ws://upstream.host/mcp/ws` or `name=wss://…`.
+  Targets the upstream's WebSocket transport. No bearer-auth header
+  is added (the SDK transport only accepts a URL) — embed auth
+  credentials in the URL or front the gateway with an
+  authenticating reverse proxy.
 - **Stdio**: `name=stdio:<command> [args...]` — spawn a child process
   that speaks MCP over its stdio channels. Useful when the upstream
   is a CLI-style MCP (e.g. an `omcp inspector-config` instance, a
@@ -39,8 +44,8 @@ export OMCP_FEDERATION_UPSTREAMS="payments=https://payments-mcp.internal/mcp,ris
 export OMCP_FEDERATION_TOKEN_PAYMENTS="bearer-for-payments-gw"
 export OMCP_FEDERATION_TOKEN_RISK="bearer-for-risk-gw"
 
-# Mix of HTTP + stdio upstreams
-export OMCP_FEDERATION_UPSTREAMS="prod=https://gw/mcp,weather=stdio:node /opt/weather-mcp/server.js --quiet"
+# Mix of HTTP + WebSocket + stdio upstreams
+export OMCP_FEDERATION_UPSTREAMS="prod=https://gw/mcp,realtime=wss://gw/mcp/ws,weather=stdio:node /opt/weather-mcp/server.js --quiet"
 ```
 
 HTTP upstreams' static bearer tokens (forwarded as

@@ -50,6 +50,17 @@ test("UpstreamClient: explicit transport='http' is also accepted", () => {
   assert.equal(c.transportKind, "http");
 });
 
+test("UpstreamClient: ws transport surfaces the ws:// URL", () => {
+  const cfg: UpstreamConfig = {
+    transport: "ws",
+    name: "gw",
+    url: "wss://gw.example.com/mcp/ws",
+  };
+  const c = new UpstreamClient(cfg);
+  assert.equal(c.transportKind, "ws");
+  assert.equal(c.url, "wss://gw.example.com/mcp/ws");
+});
+
 test("UpstreamClient: empty args defaults to [] on stdio", () => {
   const cfg: UpstreamConfig = {
     transport: "stdio",
