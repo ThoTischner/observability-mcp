@@ -149,6 +149,23 @@ lint: ## helm lint + tsc --noEmit
 	docker run --rm -w /app -v "$(PWD)/mcp-server:/app" node:20-alpine \
 	  sh -c "npm install --silent --no-audit --no-fund && npx tsc --noEmit"
 
+# The published SDK (packages/sdk) vendors two files from the
+# canonical in-tree copy (mcp-server/src/sdk): hooks.ts and
+# manifest-schema.ts. The package's index.ts + cli/ are
+# package-specific and NOT mirrored. `sdk-sync` regenerates the
+# mirror from the canonical source so you never hand-copy; the
+# sdk-publish workflow's `diff -q` parity check is the CI verifier.
+# Run this after editing either canonical file, then commit both.
+sdk-sync: ## Copy the canonical SDK files into the published packages/sdk mirror
+	cp mcp-server/src/sdk/hooks.ts           packages/sdk/src/hooks.ts
+	cp mcp-server/src/sdk/manifest-schema.ts packages/sdk/src/manifest-schema.ts
+	@echo "synced hooks.ts + manifest-schema.ts → packages/sdk/src/"
+
+sdk-parity: ## Verify the packages/sdk mirror matches the canonical SDK (same check as CI)
+	diff -q mcp-server/src/sdk/hooks.ts           packages/sdk/src/hooks.ts
+	diff -q mcp-server/src/sdk/manifest-schema.ts packages/sdk/src/manifest-schema.ts
+	@echo "SDK parity OK"
+
 # Proves the server boots and serves health with NO internet and NO sources
 # configured — the "verifiable offline mode" guarantee, end to end.
 test-offline: build ## Boot the image on an egress-blocked network and assert healthy
