@@ -145,6 +145,21 @@
             "existingSecret": { "type": "string" },
             "deadLetterFile": { "type": "string" }
           }
+        },
+        "s3": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "bucket": { "type": "string" },
+            "region": { "type": "string" },
+            "prefix": { "type": "string" },
+            "endpoint": { "type": "string" },
+            "forcePathStyle": { "type": "boolean" },
+            "flushIntervalMs": { "type": "integer", "minimum": 0 },
+            "maxBufferSize": { "type": "integer", "minimum": 1 },
+            "deadLetterFile": { "type": "string" }
+          }
         }
       }
     },

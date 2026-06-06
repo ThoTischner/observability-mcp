@@ -189,6 +189,32 @@ spec:
                   key: token
             {{- end }}
             {{- end }}
+            {{- if .Values.audit.s3.enabled }}
+            - name: OMCP_AUDIT_S3_BUCKET
+              value: {{ .Values.audit.s3.bucket | quote }}
+            - name: OMCP_AUDIT_S3_REGION
+              value: {{ .Values.audit.s3.region | default "us-east-1" | quote }}
+            {{- if .Values.audit.s3.prefix }}
+            - name: OMCP_AUDIT_S3_PREFIX
+              value: {{ .Values.audit.s3.prefix | quote }}
+            {{- end }}
+            {{- if .Values.audit.s3.endpoint }}
+            - name: OMCP_AUDIT_S3_ENDPOINT
+              value: {{ .Values.audit.s3.endpoint | quote }}
+            {{- end }}
+            {{- if .Values.audit.s3.forcePathStyle }}
+            - name: OMCP_AUDIT_S3_FORCE_PATH_STYLE
+              value: "true"
+            {{- end }}
+            - name: OMCP_AUDIT_S3_FLUSH_INTERVAL_MS
+              value: {{ .Values.audit.s3.flushIntervalMs | default 60000 | quote }}
+            - name: OMCP_AUDIT_S3_MAX_BUFFER
+              value: {{ .Values.audit.s3.maxBufferSize | default 1000 | quote }}
+            {{- if .Values.audit.s3.deadLetterFile }}
+            - name: OMCP_AUDIT_S3_DLQ
+              value: {{ .Values.audit.s3.deadLetterFile | quote }}
+            {{- end }}
+            {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

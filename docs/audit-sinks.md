@@ -108,9 +108,51 @@ sink failure worth investigating.
 - ✅ `JsonlFileSink` — the existing on-disk master (always on when a
   file is configured).
 - ✅ `WebhookSink` — described above.
-- ⏳ `S3CompatibleSink` — hourly rollup to S3 / MinIO. Planned; until
-  it lands an operator can wire a webhook receiver that batches and
-  uploads.
+- ✅ `S3Sink` — see below.
+
+### S3 / S3-compatible (`s3`)
+
+Buffers audit entries in memory; every flush window (default 60 s)
+or when the buffer crosses the cap (default 1000), concatenates the
+batch as newline-delimited JSON and PUTs one object under
+
+```
+s3://<bucket>/<prefix>/YYYY/MM/DD/HH/<minute>-<seqStart>-<seqEnd>.jsonl
+```
+
+The time bucket comes from the FIRST entry's `ts` so a late-arriving
+entry stays grouped with its peers — replay tooling can scan a
+minute-folder and get a stable view.
+
+Works against any S3-compatible backend: AWS S3, MinIO, Cloudflare
+R2, Backblaze B2, Wasabi. Use the AWS SDK default credential chain
+(env, IRSA, EC2 IMDS, profile) for AWS; for the others supply an
+explicit `endpoint` and `forcePathStyle: true`.
+
+Helm:
+
+```yaml
+audit:
+  file: /var/lib/observability-mcp/audit.jsonl
+  s3:
+    enabled: true
+    bucket: my-org-audit
+    region: eu-west-1
+    prefix: omcp/
+    # For MinIO / R2 / B2:
+    # endpoint: https://minio.internal:9000
+    # forcePathStyle: true
+    flushIntervalMs: 60000
+    maxBufferSize: 1000
+    deadLetterFile: /var/lib/observability-mcp/audit-s3-dlq.jsonl
+```
+
+The DLQ catches batches that hit a hard S3 error. An operator can
+replay them once the backend recovers with any S3 PUT client.
+
+Cost note. AWS charges per PUT; the per-minute rollup keeps the
+PUT count to 60/hour even at thousands of entries/second. Per-entry
+PUT would be ~50x more expensive on a busy gateway.
 
 ## Failure mode
 
