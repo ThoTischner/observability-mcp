@@ -27,6 +27,7 @@ question instead of juggling N vendor servers and their query languages.*
 [![SBOM SPDX](https://img.shields.io/badge/SBOM-SPDX-1976D2?logo=spdx&logoColor=white)](SECURITY.md#container-image--ghcr--scanned--cosign-signed--syft-sbom)
 [![SLSA provenance](https://img.shields.io/badge/SLSA-build_provenance-455A64?logo=slsa&logoColor=white)](SECURITY.md#container-image--ghcr--scanned--cosign-signed--syft-sbom)
 [![Connector Hub](https://img.shields.io/badge/connector-hub-38bdf8?logo=googlechrome&logoColor=white)](https://thotischner.github.io/observability-mcp/hub/)
+[![SafeSkill 50/100](https://img.shields.io/badge/SafeSkill-50%2F100_Use%20with%20Caution-orange)](https://safeskill.dev/scan/thotischner-observability-mcp)
 
 ![observability-mcp — guided tour of the web UI](docs/demo.gif)
 
