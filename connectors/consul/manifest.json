@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "name": "consul",
+  "displayName": "Consul",
+  "version": "1.0.0",
+  "description": "HashiCorp Consul Connect service-mesh topology connector — reads Consul's catalog + intentions API to emit service-mesh services and CALLS edges. Edge confidence 1.0 for Action=allow intentions; 0.5 for deny (still surfaced so operators can see configured-but-denied paths).",
+  "signalTypes": ["topology"],
+  "homepage": "https://github.com/ThoTischner/observability-mcp",
+  "license": "Apache-2.0",
+  "capabilities": {
+    "listServices": true,
+    "listResources": true,
+    "listEdges": true,
+    "getTopologySnapshot": true,
+    "watchTopology": true
+  },
+  "compat": {
+    "serverVersion": ">=3.0.0"
+  },
+  "integrity": "sha256-geQNh5aLx62zb+wyORpjYin1aZmB/9yxcvVq7sXYE8k="
+}
