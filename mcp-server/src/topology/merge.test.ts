@@ -10,7 +10,7 @@ function r(id: string, kind: string, opts: { source?: string; labels?: Record<st
     kind,
     name: opts.name ?? id,
     source: opts.source ?? "test",
-    labels: opts.labels,
+    labels: opts.labels ?? {},
     attributes: opts.canonical ? { canonicalName: opts.canonical } : undefined,
   };
 }
@@ -20,7 +20,7 @@ function e(from: string, to: string, relation = "RUNS_ON", source = "test"): Edg
 }
 
 function snap(resources: Resource[], edges: Edge[] = []): TopologySnapshot {
-  return { resources, edges, revision: 1 };
+  return { source: "test", resources, edges, revision: 1 };
 }
 
 test("canonicalNameFor: attributes.canonicalName wins, lowercased", () => {
