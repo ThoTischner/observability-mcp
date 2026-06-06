@@ -59,6 +59,7 @@ nav:
   - Home: index.md
   - Getting Started:
       - getting-started.md
+      - Install via Helm: install-helm.md
       - MCP Inspector quickstart: quickstart-inspector.md
       - Dev loop: dev-loop.md
       - configuration.md
