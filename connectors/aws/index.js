@@ -22,22 +22,41 @@
 // thin `_send(client, command)` indirection so unit tests inject a fake
 // `send` and don't need real AWS credentials.
 
-import { EC2Client, DescribeInstancesCommand } from "@aws-sdk/client-ec2";
-import {
-  ECSClient,
-  ListClustersCommand,
-  ListServicesCommand,
-  ListTasksCommand,
-  DescribeServicesCommand,
-  DescribeTasksCommand,
-} from "@aws-sdk/client-ecs";
-import {
-  EKSClient,
-  ListClustersCommand as EksListClustersCommand,
-  DescribeClusterCommand as EksDescribeClusterCommand,
-  ListNodegroupsCommand,
-  DescribeNodegroupCommand,
-} from "@aws-sdk/client-eks";
+// SDK is loaded lazily inside connect() — keeps the CI test runner
+// dependency-free (unit tests inject fake clients with `.send` and
+// command-name structural matching). Operators get the real SDK
+// from the installed @aws-sdk/* packages declared in package.json.
+let _sdk = null;
+async function loadSdk() {
+  if (_sdk) return _sdk;
+  const [ec2, ecs, eks] = await Promise.all([
+    import("@aws-sdk/client-ec2"),
+    import("@aws-sdk/client-ecs"),
+    import("@aws-sdk/client-eks"),
+  ]);
+  _sdk = {
+    EC2Client: ec2.EC2Client,
+    DescribeInstancesCommand: ec2.DescribeInstancesCommand,
+    ECSClient: ecs.ECSClient,
+    EcsListClustersCommand: ecs.ListClustersCommand,
+    ListServicesCommand: ecs.ListServicesCommand,
+    ListTasksCommand: ecs.ListTasksCommand,
+    DescribeServicesCommand: ecs.DescribeServicesCommand,
+    DescribeTasksCommand: ecs.DescribeTasksCommand,
+    EKSClient: eks.EKSClient,
+    EksListClustersCommand: eks.ListClustersCommand,
+    EksDescribeClusterCommand: eks.DescribeClusterCommand,
+    ListNodegroupsCommand: eks.ListNodegroupsCommand,
+    DescribeNodegroupCommand: eks.DescribeNodegroupCommand,
+  };
+  return _sdk;
+}
+
+// `_call(client, type, input)` wraps `client.send(new TypeCommand(input))`
+// behind a single indirection so the production code path constructs the
+// SDK command objects, and the test path matches on `command.constructor.name`
+// against bare-object stubs. Slightly more verbose than direct `new
+// Command()` use but removes the module-level SDK dependency.
 
 const SNAPSHOT_TTL_MS = 30_000;
 
@@ -99,17 +118,64 @@ export class AwsConnector {
       process.env.AWS_REGION ||
       process.env.AWS_DEFAULT_REGION ||
       "us-east-1";
+
+    // Test mode: clients + command factories are pre-injected.
+    if (config._ec2 && config._ecs && config._eks) {
+      this._ec2 = config._ec2;
+      this._ecs = config._ecs;
+      this._eks = config._eks;
+      // Stub command constructors so production-shape `new Cmd(input)`
+      // still goes through with the test's `command.constructor.name`
+      // matching unchanged. Each Cmd is a tiny class that names
+      // itself and stashes the input — that's all the fake send()
+      // function inspects.
+      const stub = (name) => {
+        const C = class { constructor(input) { this.input = input || {}; } };
+        Object.defineProperty(C, "name", { value: name });
+        return C;
+      };
+      this._cmd = {
+        DescribeInstancesCommand: stub("DescribeInstancesCommand"),
+        EcsListClustersCommand: stub("ListClustersCommand"),
+        ListServicesCommand: stub("ListServicesCommand"),
+        ListTasksCommand: stub("ListTasksCommand"),
+        DescribeServicesCommand: stub("DescribeServicesCommand"),
+        DescribeTasksCommand: stub("DescribeTasksCommand"),
+        EksListClustersCommand: stub("ListClustersCommand"),
+        EksDescribeClusterCommand: stub("DescribeClusterCommand"),
+        ListNodegroupsCommand: stub("ListNodegroupsCommand"),
+        DescribeNodegroupCommand: stub("DescribeNodegroupCommand"),
+      };
+      return;
+    }
+
+    // Production mode: lazy-load the SDK on first connect. Keeps the
+    // CI unit-test job dependency-free since unit tests always go
+    // through the injected-client path above.
+    const sdk = await loadSdk();
     const ctorArgs = { region: this._region };
-    this._ec2 = config._ec2 || new EC2Client(ctorArgs);
-    this._ecs = config._ecs || new ECSClient(ctorArgs);
-    this._eks = config._eks || new EKSClient(ctorArgs);
+    this._ec2 = new sdk.EC2Client(ctorArgs);
+    this._ecs = new sdk.ECSClient(ctorArgs);
+    this._eks = new sdk.EKSClient(ctorArgs);
+    this._cmd = {
+      DescribeInstancesCommand: sdk.DescribeInstancesCommand,
+      EcsListClustersCommand: sdk.EcsListClustersCommand,
+      ListServicesCommand: sdk.ListServicesCommand,
+      ListTasksCommand: sdk.ListTasksCommand,
+      DescribeServicesCommand: sdk.DescribeServicesCommand,
+      DescribeTasksCommand: sdk.DescribeTasksCommand,
+      EksListClustersCommand: sdk.EksListClustersCommand,
+      EksDescribeClusterCommand: sdk.EksDescribeClusterCommand,
+      ListNodegroupsCommand: sdk.ListNodegroupsCommand,
+      DescribeNodegroupCommand: sdk.DescribeNodegroupCommand,
+    };
   }
 
   async healthCheck() {
     // One cheap SDK call. Returns latency in ms; SDK timeouts surface
     // as a structured error the registry's healthCheck wrapper logs.
     const t0 = Date.now();
-    await this._ec2.send(new DescribeInstancesCommand({ MaxResults: 5 }));
+    await this._ec2.send(new this._cmd.DescribeInstancesCommand({ MaxResults: 5 }));
     return { status: "up", latencyMs: Date.now() - t0 };
   }
 
@@ -200,7 +266,7 @@ export class AwsConnector {
     // --- EC2 -----------------------------------------------------------
     const ec2Reservations = await paginate(
       this._ec2,
-      (NextToken) => new DescribeInstancesCommand({ NextToken }),
+      (NextToken) => new this._cmd.DescribeInstancesCommand({ NextToken }),
       (r) => r.Reservations || [],
     );
     const ec2ById = new Map();
@@ -228,7 +294,7 @@ export class AwsConnector {
     // --- ECS -----------------------------------------------------------
     const ecsClusters = await paginate(
       this._ecs,
-      (nextToken) => new ListClustersCommand({ nextToken }),
+      (nextToken) => new this._cmd.EcsListClustersCommand({ nextToken }),
       (r) => r.clusterArns || [],
     );
     for (const arn of ecsClusters) {
@@ -246,12 +312,12 @@ export class AwsConnector {
       // Services + tasks
       const serviceArns = await paginate(
         this._ecs,
-        (nextToken) => new ListServicesCommand({ cluster: arn, nextToken }),
+        (nextToken) => new this._cmd.ListServicesCommand({ cluster: arn, nextToken }),
         (r) => r.serviceArns || [],
       );
       if (serviceArns.length > 0) {
         const descRes = await this._ecs.send(
-          new DescribeServicesCommand({ cluster: arn, services: serviceArns.slice(0, 10) }),
+          new this._cmd.DescribeServicesCommand({ cluster: arn, services: serviceArns.slice(0, 10) }),
         );
         for (const svc of descRes.services || []) {
           const svcRes = {
@@ -281,12 +347,12 @@ export class AwsConnector {
       // Tasks → RUNS_ON the EC2 host (when launchType EC2).
       const taskArns = await paginate(
         this._ecs,
-        (nextToken) => new ListTasksCommand({ cluster: arn, nextToken }),
+        (nextToken) => new this._cmd.ListTasksCommand({ cluster: arn, nextToken }),
         (r) => r.taskArns || [],
       );
       if (taskArns.length > 0) {
         const tasksDesc = await this._ecs.send(
-          new DescribeTasksCommand({ cluster: arn, tasks: taskArns.slice(0, 100) }),
+          new this._cmd.DescribeTasksCommand({ cluster: arn, tasks: taskArns.slice(0, 100) }),
         );
         for (const t of tasksDesc.tasks || []) {
           const taskId = t.taskArn?.split("/").pop();
@@ -330,11 +396,11 @@ export class AwsConnector {
     // --- EKS -----------------------------------------------------------
     const eksClusters = await paginate(
       this._eks,
-      (nextToken) => new EksListClustersCommand({ nextToken }),
+      (nextToken) => new this._cmd.EksListClustersCommand({ nextToken }),
       (r) => r.clusters || [],
     );
     for (const clusterName of eksClusters) {
-      const desc = await this._eks.send(new EksDescribeClusterCommand({ name: clusterName }));
+      const desc = await this._eks.send(new this._cmd.EksDescribeClusterCommand({ name: clusterName }));
       const cluster = desc.cluster;
       const clusterRes = {
         id: id.eksCluster(region, clusterName),
@@ -352,12 +418,12 @@ export class AwsConnector {
 
       const nodegroups = await paginate(
         this._eks,
-        (nextToken) => new ListNodegroupsCommand({ clusterName, nextToken }),
+        (nextToken) => new this._cmd.ListNodegroupsCommand({ clusterName, nextToken }),
         (r) => r.nodegroups || [],
       );
       for (const ng of nodegroups) {
         const ngDesc = await this._eks.send(
-          new DescribeNodegroupCommand({ clusterName, nodegroupName: ng }),
+          new this._cmd.DescribeNodegroupCommand({ clusterName, nodegroupName: ng }),
         );
         const ngRes = {
           id: id.eksNodegroup(region, clusterName, ng),
