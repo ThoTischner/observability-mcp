@@ -703,7 +703,9 @@ async function main() {
     },
     async (args) => {
       await enforceEntitledAccess(ctx, { tool: "detect_anomalies", source: (args as any)?.source, service: (args as any)?.service });
-      return withToolMetrics("detect_anomalies", () => detectAnomaliesHandler(registry, args, ctx));
+      // P1: pass the anomaly-history sink so detected scores flow
+      // into the TSDB and `get_anomaly_history` returns real data.
+      return withToolMetrics("detect_anomalies", () => detectAnomaliesHandler(registry, args, ctx, anomalyHistory));
     }
   );
 
@@ -1363,6 +1365,16 @@ async function main() {
         redaction: REDACTION_ENABLED,
         trustProxy: !!(process.env.OMCP_TRUST_PROXY && process.env.OMCP_TRUST_PROXY !== "false"),
         toolRatePerMin: resolveToolRatePerMin(process.env.OMCP_TOOL_RATE_PER_MIN),
+        // P1: posture flags so dashboards can alert when a shipped
+        // capability is configured but doing nothing useful.
+        anomalyHistoryActive: anomalyHistory.isEnabled(),
+        tracesCapabilityCount: registry
+          .getAll()
+          .filter((c) => typeof c.queryTraces === "function").length,
+        pluginsVerified: !/^(0|false|no|off)$/i.test(process.env.VERIFY_PLUGINS ?? "true"),
+        scimEnabled: !!process.env.OMCP_SCIM_TOKEN,
+        federationUpstreams: (process.env.OMCP_FEDERATION_UPSTREAMS ?? "")
+          .split(",").map((s) => s.trim()).filter(Boolean).length,
       },
       plugins: loader.list().map((p) => ({
         name: p.name,

@@ -43,10 +43,28 @@ const KEY_METRICS = ["cpu", "memory", "error_rate", "latency_p99", "request_rate
 const CRITICAL_LOG_PATTERN =
   /\b(out\s?of\s?memory|oom|outofmemory|heap (usage|exhaust)|memory leak|panic|fatal|deadlock|segfault|stack overflow|cannot allocate)\b/i;
 
+// Optional dependency. When provided, every metric-derived anomaly
+// score is mirrored to the TSDB sink so `get_anomaly_history` can
+// replay it later. Wiring this lives at the call site in index.ts
+// — keeping the handler pure-injectable means unit tests don't need
+// a fake sink.
+export interface AnomalyHistorySink {
+  record(entry: {
+    ts: string;
+    service: string;
+    tenant: string;
+    score: number;
+    method: string;
+    severity: string;
+    signal?: string;
+  }): Promise<void> | void;
+}
+
 export async function detectAnomaliesHandler(
   registry: ConnectorRegistry,
   args: { service?: string; duration?: string; sensitivity?: string },
-  ctx: RequestContext = defaultContext()
+  ctx: RequestContext = defaultContext(),
+  history?: AnomalyHistorySink
 ) {
   const duration = args.duration || "10m";
   const threshold = SENSITIVITY_THRESHOLDS[args.sensitivity || "medium"] || 2.0;
@@ -89,9 +107,10 @@ export async function detectAnomaliesHandler(
             const deviationPercent = anomaly.baselineValue === 0
               ? 100
               : Math.round(((anomaly.recentValue - anomaly.baselineValue) / anomaly.baselineValue) * 100);
+            const severityLabel = Math.abs(anomaly.score) >= 6 ? "high" : Math.abs(anomaly.score) >= 4 ? "medium" : "low";
             allAnomalies.push({
               metric,
-              severity: Math.abs(anomaly.score) >= 6 ? "high" : Math.abs(anomaly.score) >= 4 ? "medium" : "low",
+              severity: severityLabel,
               description: `${metric}: ${anomaly.reason}`,
               currentValue: anomaly.recentValue,
               baselineValue: anomaly.baselineValue,
@@ -99,6 +118,24 @@ export async function detectAnomaliesHandler(
               source: connector.name,
               service: serviceName,
             });
+            // Phase P1: mirror the score to the TSDB sink (no-op if no
+            // sink wired). Best-effort — a slow / down sink must never
+            // block the detector loop, which is why we don't await.
+            if (history) {
+              try {
+                void history.record({
+                  ts: new Date().toISOString(),
+                  service: serviceName,
+                  tenant: ctx.tenant || "default",
+                  score: Math.abs(anomaly.score),
+                  method: anomaly.method === "seasonal" ? "seasonality"
+                        : anomaly.method === "robust-z" ? "mad"
+                        : anomaly.method,
+                  severity: severityLabel === "high" ? "critical" : severityLabel === "medium" ? "warn" : "info",
+                  signal: metric,
+                });
+              } catch { /* swallow — best-effort */ }
+            }
           }
         } catch {
           // Skip metrics that don't exist for this service

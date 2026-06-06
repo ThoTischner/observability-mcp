@@ -238,3 +238,53 @@ describe("get_blast_radius tool", () => {
     assert.equal(apiBucket.ownershipRootKind, "deployment");
   });
 });
+
+// --- Multi-source merge (Phase P1 wiring) ----------------------------
+// `aggregateTopology` now delegates to `mergeTopologies` when 2+
+// snapshots are present so the same logical workload reported by
+// e.g. Kubernetes + a cloud connector collapses into one node.
+// Single-snapshot calls pass through unchanged (guarded so we don't
+// mis-merge intra-source siblings that share an `app:` label).
+
+describe("aggregateTopology — multi-source merger (P1 wire)", () => {
+  it("collapses cross-source duplicates that share a canonical label", async () => {
+    // Source A (k8s): one Deployment "checkout" in prod
+    const aRes: Resource[] = [
+      { id: "k8s:deployment:prod/checkout", kind: "deployment", name: "checkout", source: "k8s",
+        labels: { "app.kubernetes.io/name": "checkout" } },
+    ];
+    // Source B (trace provider): the same logical service
+    const bRes: Resource[] = [
+      { id: "tempo:service:checkout", kind: "trace_service", name: "checkout", source: "tempo",
+        labels: { "service.name": "checkout" } },
+    ];
+
+    const loader = new PluginLoader();
+    const reg = new ConnectorRegistry(loader);
+    const connA = new FakeTopologyConnector(aRes, []);
+    const connB = new FakeTopologyConnector(bRes, []);
+    await connA.connect({ name: "k8s", type: "fake", url: "", enabled: true });
+    await connB.connect({ name: "tempo", type: "fake", url: "", enabled: true });
+    const loaderInternal = loader as unknown as { connectors: Map<string, unknown> };
+    loaderInternal.connectors.set("fake-a", { name: "fake-a", source: "builtin", factory: () => connA });
+    loaderInternal.connectors.set("fake-b", { name: "fake-b", source: "builtin", factory: () => connB });
+    await reg.addSource({ name: "k8s", type: "fake-a", url: "", enabled: true });
+    await reg.addSource({ name: "tempo", type: "fake-b", url: "", enabled: true });
+
+    const out = parseTool(await getTopologyHandler(reg, {}));
+    // 2 sources reported in summary
+    assert.equal(out.sources.length, 2);
+    // But ONE resource after merge (deployment + trace_service of the
+    // same canonical name collapse via MERGEABLE_KIND_PAIRS).
+    assert.equal(out.resources.length, 1);
+    assert.equal(out.resources[0].name, "checkout");
+  });
+
+  it("single-source passes through unchanged (no intra-source merging)", async () => {
+    // The existing 4-pod fixture has two pods sharing `app: api`.
+    // With a single snapshot the merger must NOT collapse them.
+    const reg = await makeRegistry();
+    const out = parseTool(await getTopologyHandler(reg, {}));
+    assert.equal(out.resources.length, fixture().resources.length);
+  });
+});
