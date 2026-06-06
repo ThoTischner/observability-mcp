@@ -1,0 +1,22 @@
+{
+  "name": "@observability-mcp/connector-gcp",
+  "version": "1.0.0",
+  "description": "GCP topology connector for observability-mcp — discovers Compute Engine, Cloud Run, and GKE via the Google Cloud SDK.",
+  "type": "module",
+  "main": "./index.js",
+  "license": "Apache-2.0",
+  "files": ["index.js", "manifest.json"],
+  "observabilityMcp": {
+    "kind": "connector",
+    "name": "gcp",
+    "manifest": "./manifest.json"
+  },
+  "scripts": {
+    "test": "node --test index.test.mjs"
+  },
+  "dependencies": {
+    "@google-cloud/compute": "^4.13.0",
+    "@google-cloud/run": "^1.6.0",
+    "@google-cloud/container": "^5.16.0"
+  }
+}

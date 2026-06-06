@@ -1,0 +1,19 @@
+{
+  "catalogVersion": 1,
+  "name": "gcp",
+  "displayName": "GCP",
+  "description": "GCP topology connector — discovers Compute Engine instances, Cloud Run services, and GKE clusters + nodepools via the Google Cloud SDK. Auth via Application Default Credentials.",
+  "vendor": "observability-mcp",
+  "homepage": "https://github.com/ThoTischner/observability-mcp",
+  "tier": "official",
+  "signalTypes": ["topology"],
+  "versions": [
+    {
+      "version": "1.0.0",
+      "releasedAt": "2026-06-06",
+      "serverCompat": ">=3.0.0",
+      "integrity": "sha256-UpA8fttAX2D8u2jscy2eymJWQDTKOCwgfTSzIGwiXhs=",
+      "changelog": "Initial release: GCE + Cloud Run + GKE topology discovery. OWNED_BY edges link GKE nodepools to clusters. 30s snapshot TTL. Lazy SDK load — connector boots cleanly even when @google-cloud/* not installed (loader smoke contract)."
+    }
+  ]
+}
