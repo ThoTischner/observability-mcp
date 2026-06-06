@@ -1039,6 +1039,25 @@
       .pol-probe-grid { grid-template-columns: 1fr 1fr; }
     }
 
+    /* Batch evaluate heat-map (P4) */
+    .pol-batch { display: grid; grid-template-columns: 360px 1fr; gap: var(--sp-4); align-items: start; }
+    .pol-batch .form-row { display: flex; flex-direction: column; gap: var(--sp-1); margin-bottom: var(--sp-3); }
+    .pol-batch textarea { font-family: var(--mono); font-size: 12px; padding: var(--sp-2); border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text); resize: vertical; }
+    .pol-batch select[multiple] { font-family: var(--mono); font-size: 12px; padding: var(--sp-1); border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text); }
+    .pol-batch-result { min-height: 200px; }
+    .pol-heat { border-collapse: collapse; font-size: 11px; }
+    .pol-heat th, .pol-heat td { border: 1px solid var(--border); padding: 4px 8px; text-align: center; vertical-align: middle; }
+    .pol-heat thead th { background: var(--surface-2); position: sticky; top: 0; }
+    .pol-heat .row-head { background: var(--surface-2); font-weight: 600; text-align: left; padding-right: var(--sp-3); white-space: nowrap; }
+    .pol-heat .resource-head { background: var(--surface-2); font-size: 10px; opacity: .8; font-weight: normal; }
+    .pol-heat .cell-allow { background: var(--success-soft); color: var(--success); font-weight: 600; cursor: help; }
+    .pol-heat .cell-deny { background: var(--danger-soft); color: var(--danger); font-weight: 600; cursor: help; }
+    .pol-heat .cell-na { background: transparent; color: var(--text-3); }
+    .pol-batch-dropped { margin-top: var(--sp-2); font-size: 11px; color: var(--warn); }
+    @media (max-width: 1200px) {
+      .pol-batch { grid-template-columns: 1fr; }
+    }
+
     /* Author-controls are hidden when the active engine is read-only.
        Anything with data-engine-required="file" needs the file engine. */
     body[data-policy-engine="opa"] [data-engine-required="file"],
@@ -2077,6 +2096,7 @@ curl -X PUT http://localhost:3000/api/enterprise/catalog \
         <button class="pol-subtab" role="tab" aria-controls="pol-pane-roles" data-pol-tab="roles" onclick="polSetTab('roles')">Roles</button>
         <button class="pol-subtab" role="tab" aria-controls="pol-pane-bindings" data-pol-tab="bindings" onclick="polSetTab('bindings')">Bindings</button>
         <button class="pol-subtab" role="tab" aria-controls="pol-pane-subjects" data-pol-tab="subjects" onclick="polSetTab('subjects')">Subjects</button>
+        <button class="pol-subtab" role="tab" aria-controls="pol-pane-batch" data-pol-tab="batch" onclick="polSetTab('batch')">Batch evaluate</button>
       </nav>
 
       <!-- Roles sub-tab — master/detail: role list on the left, the
@@ -2174,6 +2194,42 @@ curl -X PUT http://localhost:3000/api/enterprise/catalog \
             onclick="infoPop(this)">?</button>
         </h2></div>
         <div id="pol-subjects-body" class="content"><div class="empty">Loading…</div></div>
+      </div>
+
+      <!-- Batch evaluate sub-tab (P4) — wraps POST /api/policy/dry-run-batch
+           into a UI: subjects × resources × actions multi-select,
+           one click renders a green/red heat-map matrix the user
+           can hover for the per-cell deny reason; "Export CSV"
+           re-hits the same endpoint with Accept: text/csv. -->
+      <div class="card pol-pane" id="pol-pane-batch" role="tabpanel" hidden>
+        <div class="card-header"><h2>Batch evaluate
+          <button class="info" aria-label="About batch evaluate"
+            data-title="Batch evaluate"
+            data-info="Probe the active policy engine for every (subject × resource × action) cell at once. Useful before changing a role to see who would lose/gain access. Capped at 100 × 100 × 10 cells."
+            onclick="infoPop(this)">?</button>
+        </h2></div>
+        <div class="content pol-batch">
+          <div class="pol-batch-form">
+            <div class="form-row">
+              <label for="pol-batch-subjects">Subjects (one role per line; format: <code>label=role1,role2</code>; e.g. <code>alice=viewer</code>):</label>
+              <textarea id="pol-batch-subjects" rows="4" placeholder="alice=viewer&#10;bob=operator,viewer&#10;admin@prod=admin"></textarea>
+            </div>
+            <div class="form-row">
+              <label for="pol-batch-resources">Resources (multi-select):</label>
+              <select id="pol-batch-resources" multiple size="6"></select>
+            </div>
+            <div class="form-row">
+              <label for="pol-batch-actions">Actions (multi-select):</label>
+              <select id="pol-batch-actions" multiple size="4"></select>
+            </div>
+            <div class="form-row" style="display:flex;gap:8px;align-items:center">
+              <button class="btn btn-primary" id="pol-batch-eval-btn" onclick="polBatchEvaluate()">Evaluate</button>
+              <button class="btn btn-sm" id="pol-batch-csv-btn" onclick="polBatchExportCsv()" disabled>Export CSV</button>
+              <span id="pol-batch-totals" class="muted" style="margin-left:auto"></span>
+            </div>
+          </div>
+          <div id="pol-batch-result" class="pol-batch-result"><div class="muted">Pick subjects + resources + actions, then click <b>Evaluate</b>.</div></div>
+        </div>
       </div>
 
       <!-- Kept for back-compat — the legacy snapshot lives here but
@@ -2568,6 +2624,150 @@ function polSetTab(name) {
   // so deferring the fetch keeps the page-enter cost low.
   if (name === 'subjects') polLoadSubjects();
   if (name === 'bindings') polLoadBindings();
+  if (name === 'batch') polBatchInit();
+}
+
+// --- Batch evaluate sub-tab (P4) ---
+//
+// One round-trip to POST /api/policy/dry-run-batch with the
+// parsed subjects + selected resources + selected actions.
+// Renders the (subject × resource × action) matrix as a coloured
+// heat-map. CSV export re-hits the same endpoint with
+// `Accept: text/csv` so we never have to format CSV in the UI.
+
+let POL_BATCH_INITED = false;
+let POL_BATCH_LAST = null;
+
+function polBatchInit() {
+  if (POL_BATCH_INITED) return;
+  POL_BATCH_INITED = true;
+  // Reuse POL_RESOURCES + POL_ACTIONS — the same constants the Roles
+  // matrix renders from, kept in sync with VALID_RESOURCES /
+  // VALID_ACTIONS server-side via a CI check.
+  const resSel = document.getElementById('pol-batch-resources');
+  const actSel = document.getElementById('pol-batch-actions');
+  if (resSel) {
+    resSel.innerHTML = POL_RESOURCES.map((r) => '<option value="' + escHtml(r) + '" selected>' + escHtml(r) + '</option>').join('');
+  }
+  if (actSel) {
+    actSel.innerHTML = POL_ACTIONS.map((a) => '<option value="' + escHtml(a) + '" selected>' + escHtml(a) + '</option>').join('');
+  }
+}
+
+function polBatchParseSubjects(text) {
+  const out = [];
+  for (const line of String(text || '').split('\n')) {
+    const t = line.trim();
+    if (!t) continue;
+    const eq = t.indexOf('=');
+    if (eq < 0) continue;
+    const key = t.slice(0, eq).trim();
+    const roles = t.slice(eq + 1).split(',').map((r) => r.trim()).filter(Boolean);
+    if (!key || roles.length === 0) continue;
+    out.push({ key, roles });
+  }
+  return out;
+}
+
+function polBatchBuildRequest() {
+  const subjects = polBatchParseSubjects(document.getElementById('pol-batch-subjects')?.value);
+  const resources = Array.from(document.getElementById('pol-batch-resources')?.selectedOptions || []).map((o) => o.value);
+  const actions = Array.from(document.getElementById('pol-batch-actions')?.selectedOptions || []).map((o) => o.value);
+  return { subjects, resources, actions };
+}
+
+async function polBatchEvaluate() {
+  const body = polBatchBuildRequest();
+  const out = document.getElementById('pol-batch-result');
+  const totals = document.getElementById('pol-batch-totals');
+  const csvBtn = document.getElementById('pol-batch-csv-btn');
+  if (body.subjects.length === 0 || body.resources.length === 0 || body.actions.length === 0) {
+    out.innerHTML = '<div class="empty">Need at least one subject, one resource, and one action.</div>';
+    if (csvBtn) csvBtn.disabled = true;
+    if (totals) totals.textContent = '';
+    return;
+  }
+  out.innerHTML = '<div class="muted">Evaluating…</div>';
+  try {
+    const r = await fetch('/api/policy/dry-run-batch', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      out.innerHTML = '<div class="empty">' + escHtml('Evaluate failed: HTTP ' + r.status) + '</div>';
+      if (csvBtn) csvBtn.disabled = true;
+      return;
+    }
+    const j = await r.json();
+    POL_BATCH_LAST = body;
+    polBatchRender(j, body);
+    if (csvBtn) csvBtn.disabled = false;
+    if (totals) totals.textContent = `${j.totals.cells} cells · ${j.totals.allow} allow · ${j.totals.deny} deny`;
+  } catch (e) {
+    out.innerHTML = '<div class="empty">' + escHtml('Evaluate failed: ' + (e?.message || e)) + '</div>';
+    if (csvBtn) csvBtn.disabled = true;
+  }
+}
+
+function polBatchRender(result, req) {
+  const out = document.getElementById('pol-batch-result');
+  if (!out) return;
+  // Matrix layout: rows = subjects, columns = (resource, action) pairs.
+  // Grouping resources visually keeps the table compact.
+  const rows = req.subjects.map((s) => s.key);
+  const colGroups = req.resources.map((res) => ({ res, actions: req.actions.slice() }));
+  let html = '<div style="overflow:auto;max-height:520px"><table class="pol-heat">';
+  // Resource header row
+  html += '<thead><tr><th rowspan="2" class="row-head">Subject</th>';
+  for (const g of colGroups) html += '<th class="resource-head" colspan="' + g.actions.length + '">' + escHtml(g.res) + '</th>';
+  html += '</tr><tr>';
+  for (const g of colGroups) for (const a of g.actions) html += '<th>' + escHtml(a) + '</th>';
+  html += '</tr></thead><tbody>';
+  for (const sk of rows) {
+    html += '<tr><td class="row-head">' + escHtml(sk) + '</td>';
+    for (const g of colGroups) {
+      for (const a of g.actions) {
+        const cell = result.matrix?.[sk]?.[g.res]?.[a];
+        if (!cell) {
+          html += '<td class="cell-na" title="not evaluated">·</td>';
+        } else if (cell.allowed) {
+          html += '<td class="cell-allow" title="' + escHtml(cell.reason || 'allow') + '">✓</td>';
+        } else {
+          html += '<td class="cell-deny" title="' + escHtml(cell.reason || 'deny') + '">✗</td>';
+        }
+      }
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table></div>';
+  if (Array.isArray(result.dropped) && result.dropped.length) {
+    html += '<div class="pol-batch-dropped">Dropped: ' +
+      result.dropped.map((d) => escHtml(d.kind + ' ' + d.value + ' (' + d.reason + ')')).join('; ') + '</div>';
+  }
+  out.innerHTML = html;
+}
+
+async function polBatchExportCsv() {
+  if (!POL_BATCH_LAST) return;
+  try {
+    const r = await fetch('/api/policy/dry-run-batch', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'accept': 'text/csv' },
+      body: JSON.stringify(POL_BATCH_LAST),
+    });
+    if (!r.ok) { alert('CSV export failed: HTTP ' + r.status); return; }
+    const csv = await r.text();
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'policy-dry-run-' + new Date().toISOString().replace(/[:.]/g, '-') + '.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    alert('CSV export failed: ' + (e?.message || e));
+  }
 }
 
 // Bindings = the (subject → roles) view derived from /api/subjects.
