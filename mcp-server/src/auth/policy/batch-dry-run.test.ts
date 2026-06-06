@@ -17,8 +17,8 @@ class FakeEngine implements PolicyEngine {
     if (resource === "sources" && action === "read") return { allowed: true, reason: "public read" };
     return { allowed: false, reason: `denied: roles=${(roles ?? []).join(",")} can't ${action} on ${resource}` };
   }
-  roles(): Record<string, unknown> {
-    return { admin: {}, viewer: {} };
+  roles(): string[] {
+    return ["admin", "viewer"];
   }
   kind(): string {
     return "fake";
@@ -156,7 +156,7 @@ test("evaluateBatch: per-subject tenant is threaded into engine.evaluate", async
       lastTenant = ctx?.tenant;
       return { allowed: true };
     }
-    roles() { return {}; }
+    roles(): string[] { return []; }
     kind() { return "tracker"; }
   }
   await evaluateBatch(
