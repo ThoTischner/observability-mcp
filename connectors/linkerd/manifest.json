@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "name": "linkerd",
+  "displayName": "Linkerd",
+  "version": "1.0.0",
+  "description": "Linkerd service-mesh topology connector — derives a CALLS graph from response_total in the operator's existing Prometheus. Service names + namespaces from the linkerd-proxy outbound deployment / dst_deployment labels. Edge confidence reflects relative response volume so chatty edges rank above rare ones.",
+  "signalTypes": ["topology"],
+  "homepage": "https://github.com/ThoTischner/observability-mcp",
+  "license": "Apache-2.0",
+  "capabilities": {
+    "listServices": true,
+    "listResources": true,
+    "listEdges": true,
+    "getTopologySnapshot": true,
+    "watchTopology": true
+  },
+  "compat": {
+    "serverVersion": ">=3.0.0"
+  },
+  "integrity": "sha256-pUNPXuokuF3T02cJ8r3wf1qt3wYtKFd/iEUX1ydWpOU="
+}

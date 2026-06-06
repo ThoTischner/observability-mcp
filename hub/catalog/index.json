@@ -127,6 +127,26 @@
       ]
     },
     {
+      "name": "linkerd",
+      "displayName": "Linkerd",
+      "description": "Linkerd service-mesh topology connector — derives a CALLS graph from response_total in the operator's existing Prometheus.",
+      "tier": "official",
+      "builtin": false,
+      "signalTypes": [
+        "topology"
+      ],
+      "latest": "1.0.0",
+      "versions": [
+        {
+          "version": "1.0.0",
+          "releasedAt": "2026-06-06",
+          "serverCompat": ">=3.0.0",
+          "integrity": "sha256-pUNPXuokuF3T02cJ8r3wf1qt3wYtKFd/iEUX1ydWpOU=",
+          "changelog": "Initial release: Linkerd service-mesh CALLS graph via response_total. 30s snapshot TTL. Optional Bearer auth."
+        }
+      ]
+    },
+    {
       "name": "loki",
       "displayName": "Grafana Loki",
       "description": "LogQL-based logs backend. Service discovery from log streams and label-scoped log queries.",

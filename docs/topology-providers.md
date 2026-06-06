@@ -23,7 +23,7 @@ This page describes:
 | GCP | `gcp` | 🔧 follow-up | GKE workloads, Cloud Run, Cloud SQL, Pub/Sub. Edges via Service Directory + VPC peerings. |
 | Consul | `consul` | 🔧 follow-up | Service registry + intentions over the Consul HTTP API. |
 | Istio | `istio` | ✅ shipped (Q2 / v3.1) | CALLS graph derived from `istio_requests_total` in the operator's existing Prometheus. Workload names + namespaces from `source_workload`/`destination_workload` telemetry-v2 labels. Edge `confidence` ∈ [0.5, 1.0] reflects relative request volume so chatty edges rank above rare ones. Snapshots memoized 30 s. Auth via optional Bearer token. |
-| Linkerd | `linkerd` | 🔧 follow-up | mTLS-protected call edges, identity-aware. |
+| Linkerd | `linkerd` | ✅ shipped (Q3 / v3.1) | CALLS graph derived from `response_total{direction="outbound"}` in the operator's existing Prometheus. Workload names + namespaces from the linkerd-proxy `deployment`/`dst_deployment` labels. Same confidence-by-volume model as Istio. Snapshots memoized 30 s. Optional Bearer auth. |
 | Tempo | `tempo` | ✅ shipped (plugin) | CALLS edges derived from a sampled batch of recent traces. |
 
 Reserved kind/relation vocabulary for the multi-cloud providers is
