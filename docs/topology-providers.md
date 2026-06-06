@@ -28,7 +28,7 @@ This page describes:
 
 Reserved kind/relation vocabulary for the multi-cloud providers is
 documented in [`topology-vocabulary.md`](topology-vocabulary.md). The
-merger logic lives in [`mcp-server/src/topology/merge.ts`](../mcp-server/src/topology/merge.ts) — covered by 11 unit tests in F14.
+merger logic lives in [`mcp-server/src/topology/merge.ts`](https://github.com/ThoTischner/observability-mcp/blob/main/mcp-server/src/topology/merge.ts) — covered by 11 unit tests in F14.
 
 ## How the merger collapses cross-provider duplicates
 

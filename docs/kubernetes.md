@@ -117,7 +117,7 @@ applies a workload that puts the three chaos-able example services
 Deployments — that is what lets an agent correlate a metric or log
 anomaly with its underlying host. See
 [`docs/configuration.md`](configuration.md) and
-[`CLAUDE.md`](../CLAUDE.md) for the demo plumbing.
+[`CLAUDE.md`](https://github.com/ThoTischner/observability-mcp/blob/main/CLAUDE.md) for the demo plumbing.
 
 ## Caveats
 

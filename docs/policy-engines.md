@@ -130,7 +130,7 @@ make demo-opa
 #                                so you can run both side by side)
 ```
 
-The example Rego at [`examples/opa/policy.rego`](../examples/opa/policy.rego)
+The example Rego at [`examples/opa/policy.rego`](https://github.com/ThoTischner/observability-mcp/blob/main/examples/opa/policy.rego)
 reproduces the built-in DEFAULT_POLICY exactly so you can swap engines
 without losing access.
 

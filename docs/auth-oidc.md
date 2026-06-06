@@ -29,7 +29,7 @@ make demo-oidc
 ```
 
 The realm export lives at
-[`examples/keycloak/omcp-demo-realm.json`](../examples/keycloak/omcp-demo-realm.json);
+[`examples/keycloak/omcp-demo-realm.json`](https://github.com/ThoTischner/observability-mcp/blob/main/examples/keycloak/omcp-demo-realm.json);
 its README documents the client / mappers / groups.
 
 ## When to use OIDC mode

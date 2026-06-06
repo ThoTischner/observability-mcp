@@ -83,7 +83,7 @@ same doc shows scenarios where topology tools cost more without helping.
 ## Sources
 
 [^omcp-license]: `LICENSE` in this repo.
-[^omcp-readme]: [`README.md`](../README.md) in this repo.
+[^omcp-readme]: [`README.md`](https://github.com/ThoTischner/observability-mcp/blob/main/README.md) in this repo.
 [^omcp-topo]: [`docs/topology-vocabulary.md`](topology-vocabulary.md) — the canonical `kind`/`relation` contract.
 [^omcp-bench]: [`docs/benchmark-astronomy-shop.md`](benchmark-astronomy-shop.md) — methodology + raw JSON in `docs/benchmark-results/`.
 [^dd-pricing]: <https://www.datadoghq.com/pricing/>

@@ -7,7 +7,7 @@ explicitly opts in.
 
 The seam itself (`mcp-server/src/enterprise-gate.ts`) is Apache-2.0 and
 ships in the published package. The modules it enforces live under
-[`enterprise/`](../enterprise/README.md) and are licensed
+[`enterprise/`](https://github.com/ThoTischner/observability-mcp/blob/main/enterprise/README.md) and are licensed
 `FSL-1.1-Apache-2.0`. Because they sit outside `mcp-server/`, they are
 **not** in the npm package or the Docker image — activating the gate
 requires running from a full source checkout that still contains
@@ -82,15 +82,15 @@ curl -s localhost:3000/api/info | jq .enterpriseGate
 ## Policy and catalog
 
 Working examples live in
-[`enterprise/examples/`](../enterprise/examples) and are exercised by
+[`enterprise/examples/`](https://github.com/ThoTischner/observability-mcp/tree/main/enterprise/examples) and are exercised by
 the test suite, so they stay correct:
 
-- [`rbac-policy.json`](../enterprise/examples/rbac-policy.json) — roles
+- [`rbac-policy.json`](https://github.com/ThoTischner/observability-mcp/blob/main/enterprise/examples/rbac-policy.json) — roles
   map principals (the API-key identity, e.g. `key:platform-bot`) to
   allow-lists over `tools` / `sources` / `services`; `"*"` is a
   wildcard, `readOnly` blocks mutating tools, `defaultRoles` applies to
   unbound principals (empty ⇒ default-deny).
-- [`catalog.json`](../enterprise/examples/catalog.json) — named
+- [`catalog.json`](https://github.com/ThoTischner/observability-mcp/blob/main/enterprise/examples/catalog.json) — named
   **products** bundle `sources`/`services`; **grants** map principals to
   products. RBAC answers *which verbs*; the catalog answers *which
   resource bundle*. A request must pass **both**.

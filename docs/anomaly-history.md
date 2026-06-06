@@ -1,7 +1,8 @@
 # Anomaly history (since v2.x / Phase F15)
 
 The gateway's deterministic anomaly detector (MAD + seasonality +
-correlator, see [`docs/analysis-engine.md`](analysis-engine.md))
+correlator — implemented in
+[`mcp-server/src/analysis/`](https://github.com/ThoTischner/observability-mcp/tree/main/mcp-server/src/analysis))
 produces scores live. By default those scores live in process memory
 only — restart the gateway and the trail is gone. F15 adds an
 opt-in **TSDB sink** that mirrors every score to a Prometheus
