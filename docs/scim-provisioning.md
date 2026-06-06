@@ -141,6 +141,33 @@ sub-attributes are read-only, so a crafted path can't reach
 `__proto__` / `constructor` (a path that names a non-allow-listed
 attribute is skipped fail-closed).
 
+## Compliance suite
+
+`mcp-server/src/scim/compliance.test.ts` is an end-to-end harness
+that exercises the live `/scim/v2` surface against RFC 7643/7644:
+discovery (ServiceProviderConfig / ResourceTypes / Schemas), the
+401 auth gate, the User + Group lifecycle (create → read → list →
+patch → delete), `409 uniqueness`, `404` with the SCIM error
+schema, and the Q14 membership add/remove-by-filter ops. It is
+self-cleaning (every resource it creates is deleted at the end).
+
+It is env-gated like the MCP conformance suite — unset means every
+test skips, so it's inert in a plain unit run:
+
+```bash
+# against a SCIM-enabled gateway
+make scim-compliance
+# or directly:
+OMCP_SCIM_COMPLIANCE_URL=http://localhost:3000/scim/v2 \
+OMCP_SCIM_COMPLIANCE_TOKEN=$OMCP_SCIM_TOKEN \
+  npx tsx --test src/scim/compliance.test.ts
+```
+
+> Note: SCIM clients send `Content-Type: application/scim+json`
+> (RFC 7644 §3.1). The gateway's JSON body parser accepts both
+> `application/json` and any `application/*+json` media type, so
+> Entra / Okta requests parse correctly.
+
 ## Scope split — deferred to v3.x
 
 - Filter / search support on the collection endpoints (Entra and
@@ -151,7 +178,6 @@ attribute is skipped fail-closed).
   instead.
 - UI "Provisioning" sub-tab under Access Control showing recent
   SCIM operations + the active group→role map.
-- Full SCIM 2.0 compliance test suite (Q15 ships this).
 
 The shipped surface is enough for the standard Entra + Okta
 provisioning checklists to pass.
