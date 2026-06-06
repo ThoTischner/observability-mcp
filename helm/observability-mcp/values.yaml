@@ -286,6 +286,28 @@ audit:
     # can replay them once the receiver recovers. Empty disables DLQ
     # (entries are then dropped after the final retry, logged).
     deadLetterFile: ""
+  # S3-compatible audit sink. Writes one JSONL object per flush
+  # window (default 60s) under
+  # s3://<bucket>/<prefix>/YYYY/MM/DD/HH/<minute>-<seqStart>-<seqEnd>.jsonl.
+  # Works against AWS S3, MinIO, Cloudflare R2, Backblaze B2,
+  # Wasabi — any S3-compatible backend.
+  # Auth uses the AWS SDK default credential chain (env, IRSA,
+  # IMDS, profile). For MinIO etc. set endpoint + forcePathStyle.
+  # See docs/audit-sinks.md.
+  s3:
+    enabled: false
+    bucket: ""
+    region: "us-east-1"
+    # Object key prefix. Leave empty to write under bucket root.
+    prefix: "audits/"
+    # Set when targeting MinIO / R2 / B2 / Wasabi. Leave empty for AWS.
+    endpoint: ""
+    forcePathStyle: false
+    flushIntervalMs: 60000
+    maxBufferSize: 1000
+    # File path for batches that hit a hard S3 error — replay once
+    # the backend recovers. Empty drops on failure (logged).
+    deadLetterFile: ""
   # - name: MCP_LOG_LEVEL
   #   value: info
   # - name: OMCP_AUTH
