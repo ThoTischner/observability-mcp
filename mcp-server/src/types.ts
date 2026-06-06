@@ -164,6 +164,57 @@ export interface LogResult {
   summary: LogSummary;
 }
 
+// --- Traces (since v2.x) ---
+
+export interface TraceQuery {
+  /** Service name to filter by — required. */
+  service: string;
+  /** Rolling time window, same shape as MetricQuery.duration ("5m", "1h", "24h"). */
+  duration: string;
+  /** Free-form filter pattern interpreted by the backend (TraceQL,
+   *  Jaeger tag query, etc.). Optional. */
+  filter?: string;
+  /** Soft cap on the number of trace summaries returned. Default 50. */
+  limit?: number;
+  /** Only return spans tagged as errors (`status: error` / span status 2). */
+  errorsOnly?: boolean;
+}
+
+export interface TraceSpanSummary {
+  /** Stable trace id (hex). */
+  traceId: string;
+  /** Root or first span name. */
+  rootName: string;
+  /** Service that emitted the root span. */
+  rootService: string;
+  /** Total trace duration in milliseconds. */
+  durationMs: number;
+  /** Span count. */
+  spanCount: number;
+  /** Whether any span in this trace has an error status. */
+  hasError: boolean;
+  /** Span start timestamp (RFC-3339). */
+  startTs: string;
+  /** Optional backend-specific link to the trace view. */
+  url?: string;
+}
+
+export interface TraceSummary {
+  total: number;
+  errorCount: number;
+  /** Median trace duration (ms) across the returned set. */
+  p50DurationMs: number;
+  /** 95th-percentile trace duration (ms). */
+  p95DurationMs: number;
+}
+
+export interface TraceResult {
+  source: string;
+  service: string;
+  traces: TraceSpanSummary[];
+  summary: TraceSummary;
+}
+
 // --- Topology ---
 
 /**

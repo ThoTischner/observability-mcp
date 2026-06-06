@@ -7,6 +7,8 @@ import type {
   MetricResult,
   LogQuery,
   LogResult,
+  TraceQuery,
+  TraceResult,
   SourceConfig,
   MetricDefinition,
   Resource,
@@ -35,6 +37,10 @@ export interface ObservabilityConnector {
 
   queryMetrics?(params: MetricQuery): Promise<MetricResult>;
   queryLogs?(params: LogQuery): Promise<LogResult>;
+  /** Optional traces capability — Tempo / Jaeger / OTLP backends
+   *  implement this. The MCP `query_traces` tool fans out to every
+   *  connector that has it. */
+  queryTraces?(params: TraceQuery): Promise<TraceResult>;
 
   // --- Topology (optional capability) ---
   // Connectors that expose an infrastructure graph implement these methods.
