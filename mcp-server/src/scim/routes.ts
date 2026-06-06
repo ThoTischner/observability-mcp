@@ -238,12 +238,6 @@ function withGroups(u: ScimUser, store: IScimStore): ScimUser {
   return { ...u, groups: store.groupsContaining(u.id) };
 }
 
-/** Translate a SCIM PatchOp into a partial resource patch. Minimal:
- *  we accept `op: "replace"` with no path (whole-resource merge) or
- *  with a single-segment path naming a top-level attribute. `add` and
- *  `remove` for members/emails arrays are a follow-up — the
- *  Entra/Okta provisioning checklists exercise replace-only on the
- *  attributes we expose. */
 // Allow-list of attribute names patchable via SCIM PatchOp.
 // `applyPatchOps` writes into a plain object using a user-supplied
 // path/key — every key is gated through this set so a malicious
@@ -257,32 +251,142 @@ function safePatchKey(k: unknown): k is string {
   return typeof k === "string" && PATCH_ALLOWED_ATTRS.has(k);
 }
 
-/** Translate a SCIM PatchOp into a partial resource patch. Minimal:
- *  we accept `op: "replace"` with no path (whole-resource merge) or
- *  with a single-segment path naming a top-level attribute. `add` and
- *  `remove` for members/emails arrays are a follow-up — the
- *  Entra/Okta provisioning checklists exercise replace-only on the
- *  attributes we expose.
+// Multi-valued attributes that support add/remove element ops + filter
+// segments. Everything else is treated as a scalar (replace/set).
+const PATCH_ARRAY_ATTRS: ReadonlySet<string> = new Set(["members", "emails", "groups"]);
+
+/** Parse a PatchOp `path` into {attr, filter?}. Supports a bare
+ *  attribute (`members`) and a single `eq` filter segment
+ *  (`members[value eq "abc"]`). Returns null for anything that
+ *  doesn't name an allow-listed attribute or that we don't model —
+ *  the caller skips those ops (fail-closed). The sub-attribute in the
+ *  filter is only ever READ for comparison, never written, so it
+ *  can't drive prototype pollution. */
+function parsePatchPath(path: string): { attr: string; filter?: { sub: string; val: string } } | null {
+  const filterMatch = /^([A-Za-z][\w]*)\[\s*([A-Za-z][\w]*)\s+eq\s+"([^"]*)"\s*\]$/.exec(path);
+  if (filterMatch) {
+    const attr = filterMatch[1];
+    if (!safePatchKey(attr)) return null;
+    return { attr, filter: { sub: filterMatch[2], val: filterMatch[3] } };
+  }
+  if (safePatchKey(path)) return { attr: path };
+  return null;
+}
+
+// Always returns a FRESH array — never the caller's reference — so the
+// add/remove machinery can push/filter without mutating the current
+// resource in place (which would corrupt it across chained ops or
+// repeated calls).
+function asArray(v: unknown): unknown[] {
+  if (Array.isArray(v)) return v.slice();
+  if (v == null) return [];
+  return [v];
+}
+
+/** Element identity for dedup/removal on multi-valued attrs. SCIM
+ *  members/emails carry a `value` key; fall back to JSON equality. */
+function elemKey(e: unknown): string {
+  if (e && typeof e === "object" && "value" in (e as Record<string, unknown>)) {
+    return String((e as Record<string, unknown>).value);
+  }
+  return JSON.stringify(e);
+}
+
+/** Translate a SCIM PatchOp request into a partial resource patch.
+ *
+ *  Supported (RFC 7644 §3.5.2):
+ *   - replace, no path        → whole-resource merge of allow-listed keys
+ *   - replace, path=attr      → set that attribute
+ *   - add, no path            → merge; array attrs append (deduped), scalars set
+ *   - add, path=arrayAttr     → append value(s) to the array (deduped)
+ *   - add, path=scalarAttr    → set
+ *   - remove, path=arrayAttr  → clear the array
+ *   - remove, path=arrayAttr[sub eq "x"] → drop matching elements
+ *   - remove, path=scalarAttr → clear the attribute (set undefined)
+ *
+ *  Array ops are computed against the CURRENT resource value and the
+ *  full resulting array is returned in `out` (the store merges
+ *  shallowly, so out[attr] replaces current[attr] wholesale).
  *
  *  Every property name written into `out` is gated through
  *  `PATCH_ALLOWED_ATTRS` so a SCIM client can't inject __proto__ /
  *  constructor / arbitrary fields (CodeQL js/remote-property-injection +
- *  js/prototype-polluting-assignment). */
-function applyPatchOps<T extends { id: string }>(current: T | undefined, patch: ScimPatchRequest): Partial<T> {
+ *  js/prototype-polluting-assignment). Filter sub-attributes are
+ *  read-only. */
+export function applyPatchOps<T extends { id: string }>(current: T | undefined, patch: ScimPatchRequest): Partial<T> {
   if (!current) throw new ScimNotFoundError("target resource not found");
   if (!patch?.Operations || !Array.isArray(patch.Operations)) return {};
+  const cur = current as unknown as Record<string, unknown>;
   const out: Record<string, unknown> = {};
+  // Read the working value for an attr: prefer an in-progress value
+  // from a prior op in this same request, else the current resource.
+  const readAttr = (attr: string): unknown => (attr in out ? out[attr] : cur[attr]);
+
   for (const op of patch.Operations) {
-    if (op.op !== "replace") continue; // skip add/remove for F21a
-    if (!op.path) {
-      if (op.value && typeof op.value === "object") {
-        for (const [k, v] of Object.entries(op.value as Record<string, unknown>)) {
-          if (safePatchKey(k)) out[k] = v;
+    const verb = (op.op || "").toLowerCase();
+
+    if (verb === "replace") {
+      if (!op.path) {
+        if (op.value && typeof op.value === "object") {
+          for (const [k, v] of Object.entries(op.value as Record<string, unknown>)) {
+            if (safePatchKey(k)) out[k] = v;
+          }
         }
+        continue;
+      }
+      const parsed = parsePatchPath(op.path);
+      if (parsed && !parsed.filter) out[parsed.attr] = op.value;
+      continue;
+    }
+
+    if (verb === "add") {
+      if (!op.path) {
+        if (op.value && typeof op.value === "object") {
+          for (const [k, v] of Object.entries(op.value as Record<string, unknown>)) {
+            if (!safePatchKey(k)) continue;
+            if (PATCH_ARRAY_ATTRS.has(k)) {
+              const existing = asArray(readAttr(k));
+              const seen = new Set(existing.map(elemKey));
+              for (const item of asArray(v)) { if (!seen.has(elemKey(item))) { existing.push(item); seen.add(elemKey(item)); } }
+              out[k] = existing;
+            } else {
+              out[k] = v;
+            }
+          }
+        }
+        continue;
+      }
+      const parsed = parsePatchPath(op.path);
+      if (!parsed || parsed.filter) continue;
+      if (PATCH_ARRAY_ATTRS.has(parsed.attr)) {
+        const existing = asArray(readAttr(parsed.attr));
+        const seen = new Set(existing.map(elemKey));
+        for (const item of asArray(op.value)) { if (!seen.has(elemKey(item))) { existing.push(item); seen.add(elemKey(item)); } }
+        out[parsed.attr] = existing;
+      } else {
+        out[parsed.attr] = op.value;
       }
       continue;
     }
-    if (safePatchKey(op.path)) out[op.path] = op.value;
+
+    if (verb === "remove") {
+      if (!op.path) continue; // remove with no path is a no-op (nothing to target)
+      const parsed = parsePatchPath(op.path);
+      if (!parsed) continue;
+      if (parsed.filter && PATCH_ARRAY_ATTRS.has(parsed.attr)) {
+        const existing = asArray(readAttr(parsed.attr));
+        const { sub, val } = parsed.filter;
+        out[parsed.attr] = existing.filter((e) => {
+          const ev = e && typeof e === "object" ? (e as Record<string, unknown>)[sub] : undefined;
+          return String(ev) !== val;
+        });
+      } else if (PATCH_ARRAY_ATTRS.has(parsed.attr)) {
+        out[parsed.attr] = [];
+      } else {
+        out[parsed.attr] = undefined;
+      }
+      continue;
+    }
   }
   return out as Partial<T>;
 }
