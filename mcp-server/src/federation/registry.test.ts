@@ -117,8 +117,8 @@ test("parseFederationEnv: parses name=url comma-separated entries", () => {
     OMCP_FEDERATION_UPSTREAMS: "a=https://gw.a/mcp,b=https://gw.b/mcp",
   });
   assert.deepEqual(parsed, [
-    { name: "a", url: "https://gw.a/mcp", bearerToken: undefined },
-    { name: "b", url: "https://gw.b/mcp", bearerToken: undefined },
+    { kind: "http", name: "a", url: "https://gw.a/mcp", bearerToken: undefined },
+    { kind: "http", name: "b", url: "https://gw.b/mcp", bearerToken: undefined },
   ]);
 });
 
@@ -127,7 +127,61 @@ test("parseFederationEnv: picks up bearer token per OMCP_FEDERATION_TOKEN_<NAME>
     OMCP_FEDERATION_UPSTREAMS: "prod=https://gw.prod/mcp",
     OMCP_FEDERATION_TOKEN_PROD: "secret-token-xyz",
   });
-  assert.equal(parsed[0]?.bearerToken, "secret-token-xyz");
+  assert.equal(parsed[0]?.kind, "http");
+  if (parsed[0]?.kind === "http") {
+    assert.equal(parsed[0].bearerToken, "secret-token-xyz");
+  }
+});
+
+test("parseFederationEnv: stdio:<command> entries parse with kind=stdio", () => {
+  const parsed = parseFederationEnv({
+    OMCP_FEDERATION_UPSTREAMS: "local=stdio:/usr/local/bin/mcp",
+  });
+  assert.equal(parsed.length, 1);
+  assert.deepEqual(parsed[0], {
+    kind: "stdio",
+    name: "local",
+    command: "/usr/local/bin/mcp",
+    args: [],
+  });
+});
+
+test("parseFederationEnv: stdio command args split on whitespace", () => {
+  const parsed = parseFederationEnv({
+    OMCP_FEDERATION_UPSTREAMS: "weather=stdio:node weather-mcp.js --port 0",
+  });
+  assert.equal(parsed[0]?.kind, "stdio");
+  if (parsed[0]?.kind === "stdio") {
+    assert.equal(parsed[0].command, "node");
+    assert.deepEqual(parsed[0].args, ["weather-mcp.js", "--port", "0"]);
+  }
+});
+
+test("parseFederationEnv: backslash-escapes preserve spaces in stdio commands", () => {
+  const parsed = parseFederationEnv({
+    OMCP_FEDERATION_UPSTREAMS: "x=stdio:/opt/path\\ with\\ spaces/mcp arg1",
+  });
+  assert.equal(parsed[0]?.kind, "stdio");
+  if (parsed[0]?.kind === "stdio") {
+    assert.equal(parsed[0].command, "/opt/path with spaces/mcp");
+    assert.deepEqual(parsed[0].args, ["arg1"]);
+  }
+});
+
+test("parseFederationEnv: stdio with no command after stdio: is skipped", () => {
+  const parsed = parseFederationEnv({
+    OMCP_FEDERATION_UPSTREAMS: "broken=stdio:",
+  });
+  assert.equal(parsed.length, 0);
+});
+
+test("parseFederationEnv: http + stdio entries co-exist", () => {
+  const parsed = parseFederationEnv({
+    OMCP_FEDERATION_UPSTREAMS: "remote=https://gw/mcp,local=stdio:mcp",
+  });
+  assert.equal(parsed.length, 2);
+  assert.equal(parsed[0]?.kind, "http");
+  assert.equal(parsed[1]?.kind, "stdio");
 });
 
 test("parseFederationEnv: skips malformed entries with a warning, keeps the rest", () => {

@@ -22,20 +22,32 @@ talk to.
     ingress / multi-replica deployment.
 
 Set `OMCP_FEDERATION_UPSTREAMS` to a comma-separated list of
-`name=url` pairs. Each name must start with a letter and use only
-`[a-z0-9_-]`. The URL must end at the upstream's Streamable HTTP
-`/mcp` endpoint.
+`name=spec` pairs. Each name must start with a letter and use only
+`[a-z0-9_-]`. The spec selects the transport:
+
+- **HTTP** (default): `name=https://upstream.host/mcp` — must end at
+  the upstream's Streamable HTTP `/mcp` endpoint.
+- **Stdio**: `name=stdio:<command> [args...]` — spawn a child process
+  that speaks MCP over its stdio channels. Useful when the upstream
+  is a CLI-style MCP (e.g. an `omcp inspector-config` instance, a
+  local-only MCP server, a sidecar). Embed literal spaces in
+  arguments by backslash-escaping them.
 
 ```bash
+# HTTP upstream
 export OMCP_FEDERATION_UPSTREAMS="payments=https://payments-mcp.internal/mcp,risk=https://risk-mcp.internal/mcp"
 export OMCP_FEDERATION_TOKEN_PAYMENTS="bearer-for-payments-gw"
 export OMCP_FEDERATION_TOKEN_RISK="bearer-for-risk-gw"
+
+# Mix of HTTP + stdio upstreams
+export OMCP_FEDERATION_UPSTREAMS="prod=https://gw/mcp,weather=stdio:node /opt/weather-mcp/server.js --quiet"
 ```
 
-Each upstream's static bearer token (forwarded as
-`Authorization: Bearer …` on every outbound call) is read from
+HTTP upstreams' static bearer tokens (forwarded as
+`Authorization: Bearer …` on every outbound call) are read from
 `OMCP_FEDERATION_TOKEN_<UPPERCASE-NAME>` — separate from the URL list
-so tokens never appear in logs or audit entries.
+so tokens never appear in logs or audit entries. Stdio upstreams
+don't carry tokens — they're local-only.
 
 ## Tool naming
 

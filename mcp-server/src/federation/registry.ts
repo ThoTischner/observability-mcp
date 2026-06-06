@@ -59,16 +59,52 @@ export class FederationRegistry {
  * Parse the OMCP_FEDERATION_UPSTREAMS env into a list of upstream
  * configs. Shape:
  *
- *   "name1=https://gw.a/mcp,name2=https://gw.b/mcp"
+ *   "name1=https://gw.a/mcp,name2=https://gw.b/mcp,name3=stdio:/usr/bin/mcp arg1 arg2"
  *
- * Each upstream's bearer token is read from
+ * Each upstream's bearer token (HTTP transport only) is read from
  * OMCP_FEDERATION_TOKEN_<UPPERCASE-NAME> (dots → underscores), so
  * tokens stay out of the URL list itself.
+ *
+ * Stdio entries are written as `name=stdio:<command> [arg ...]`. The
+ * command may be quoted with `\` escapes to embed spaces. Stdio
+ * upstreams don't carry bearer tokens — they're local-only.
  */
-export interface ParsedUpstream {
+export interface ParsedUpstreamHttp {
+  kind: "http";
   name: string;
   url: string;
   bearerToken?: string;
+}
+
+export interface ParsedUpstreamStdio {
+  kind: "stdio";
+  name: string;
+  command: string;
+  args: string[];
+}
+
+export type ParsedUpstream = ParsedUpstreamHttp | ParsedUpstreamStdio;
+
+/** Split a "command arg1 arg2" string honouring backslash escapes
+ *  so an operator can embed a literal space with `\ `. Nothing
+ *  fancier — we explicitly don't run a shell, so quoting wouldn't
+ *  apply uniformly. */
+function splitCommand(spec: string): { command: string; args: string[] } {
+  const tokens: string[] = [];
+  let cur = "";
+  let esc = false;
+  for (const ch of spec) {
+    if (esc) { cur += ch; esc = false; continue; }
+    if (ch === "\\") { esc = true; continue; }
+    if (ch === " " || ch === "\t") {
+      if (cur) { tokens.push(cur); cur = ""; }
+      continue;
+    }
+    cur += ch;
+  }
+  if (cur) tokens.push(cur);
+  const [command = "", ...args] = tokens;
+  return { command, args };
 }
 
 export function parseFederationEnv(env: NodeJS.ProcessEnv = process.env): ParsedUpstream[] {
@@ -84,18 +120,27 @@ export function parseFederationEnv(env: NodeJS.ProcessEnv = process.env): Parsed
       continue;
     }
     const name = trimmed.slice(0, eq).trim();
-    const url = trimmed.slice(eq + 1).trim();
+    const spec = trimmed.slice(eq + 1).trim();
     if (!/^[a-z][a-z0-9_-]*$/i.test(name)) {
       console.warn(`OMCP_FEDERATION_UPSTREAMS entry name "${name}" is invalid — skipping`);
       continue;
     }
-    if (!/^https?:\/\//.test(url)) {
-      console.warn(`OMCP_FEDERATION_UPSTREAMS entry "${name}" url "${url}" must start with http:// or https:// — skipping`);
+    if (spec.startsWith("stdio:")) {
+      const { command, args } = splitCommand(spec.slice("stdio:".length).trim());
+      if (!command) {
+        console.warn(`OMCP_FEDERATION_UPSTREAMS entry "${name}" stdio: missing command — skipping`);
+        continue;
+      }
+      entries.push({ kind: "stdio", name, command, args });
+      continue;
+    }
+    if (!/^https?:\/\//.test(spec)) {
+      console.warn(`OMCP_FEDERATION_UPSTREAMS entry "${name}" url "${spec}" must start with http:// or https:// (or stdio:) — skipping`);
       continue;
     }
     const tokenEnv = `OMCP_FEDERATION_TOKEN_${name.toUpperCase().replace(/[-.]/g, "_")}`;
     const bearerToken = env[tokenEnv]?.trim() || undefined;
-    entries.push({ name, url, bearerToken });
+    entries.push({ kind: "http", name, url: spec, bearerToken });
   }
   return entries;
 }
