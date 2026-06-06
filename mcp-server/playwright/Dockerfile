@@ -1,10 +1,15 @@
 # Pinned Playwright image already contains Chromium + system deps.
 # Stays bit-for-bit reproducible across local + CI runs.
-FROM mcr.microsoft.com/playwright:v1.49.1-jammy
+# Digest-pinned for OpenSSF Scorecard PinnedDependenciesID.
+FROM mcr.microsoft.com/playwright:v1.49.1-jammy@sha256:019b822658965bf5f6d509472802797554360f2940e677b2afb0f17748d0d0e3
 
 WORKDIR /work
 
 # Install just the test runner — Chromium is already in the base image.
+# Scorecard PinnedDependenciesID flags `npm install`; the directory
+# doesn't ship a lockfile (the smoke tests deliberately use latest
+# patch releases of @playwright/test). The Playwright base image is
+# digest-pinned above; the test surface is read-only.
 COPY package.json package.json
 RUN npm install --no-audit --no-fund --silent
 
