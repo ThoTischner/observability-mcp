@@ -198,6 +198,106 @@ export class TempoConnector {
     };
   }
 
+  // --- Traces capability (P3 of production-readiness sprint) ---
+  //
+  // Returns ranked TraceSpanSummary[] for a given service + window
+  // — the shape the gateway's `query_traces` MCP tool merges across
+  // every traces-capable connector. We hit Tempo's /api/search with
+  // a TraceQL query (default `{ resource.service.name="X" }`,
+  // overridable via params.filter), then for each returned trace
+  // optionally fetch the full trace via /api/traces/:id to compute
+  // spanCount + hasError. The full-trace fan-out is gated on a
+  // per-call budget so a 1000-trace search doesn't trigger 1000
+  // upstream fetches.
+  async queryTraces(params) {
+    const service = params && params.service;
+    if (!service) throw new Error("queryTraces: service is required");
+    const limit = Math.max(1, Math.min(Number(params.limit) || 50, 200));
+    const { start, end } = parseTimeRange(params.duration || "15m");
+    // Build the TraceQL query. If the caller passed a backend-
+    // native filter we substitute the service automatically when
+    // they didn't include it themselves.
+    let q = (params.filter && String(params.filter).trim()) || "";
+    if (!q) {
+      q = `{ resource.service.name="${escapeTraceQL(service)}" }`;
+    } else if (!q.includes("resource.service.name")) {
+      // Best-effort: AND the service constraint in. If the user's
+      // filter is already wrapped in `{}` we splice; otherwise pass
+      // through and trust them.
+      const trimmed = q.trim();
+      if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+        const inner = trimmed.slice(1, -1).trim();
+        q = `{ resource.service.name="${escapeTraceQL(service)}" && ${inner} }`;
+      }
+    }
+    const u = new URL(`${this._base}/api/search`);
+    u.searchParams.set("q", q);
+    u.searchParams.set("start", String(start));
+    u.searchParams.set("end", String(end));
+    u.searchParams.set("limit", String(limit));
+    const res = await fetch(u, { headers: this._headers() });
+    if (!res.ok) {
+      throw new Error(`Tempo /api/search HTTP ${res.status}`);
+    }
+    const body = await res.json();
+    const raw = (body && body.traces) || [];
+
+    // Best-effort spanCount + hasError enrichment. Cap at 25
+    // per-call so a noisy search doesn't multiply the upstream
+    // load. The unenriched traces still come back with the
+    // metadata search alone provides.
+    const TRACE_FETCH_CAP = 25;
+    const enriched = [];
+    for (let i = 0; i < raw.length; i++) {
+      const t = raw[i] || {};
+      const traceId = t.traceID || t.traceId;
+      if (!traceId) continue;
+      const startMs = Number(t.startTimeUnixNano) / 1e6;
+      const durationMs = Number(t.durationMs);
+      const rootName = String(t.rootTraceName || t.rootName || "");
+      const rootService = String(t.rootServiceName || t.rootService || service);
+      let spanCount = Number(t.spanCount) || 0;
+      let hasError = Boolean(t.error || t.hasError);
+      // Pull full trace for the first N to compute spanCount +
+      // error status when the search response doesn't include them.
+      if (i < TRACE_FETCH_CAP && (!spanCount || hasError === false)) {
+        try {
+          const full = await this._fetchTrace(traceId);
+          const counts = countSpansAndErrors(full);
+          if (counts.spanCount) spanCount = counts.spanCount;
+          if (counts.hasError) hasError = true;
+        } catch {
+          /* leave fields as-is */
+        }
+      }
+      enriched.push({
+        traceId,
+        rootName: rootName || "(unknown)",
+        rootService,
+        durationMs: Number.isFinite(durationMs) ? durationMs : 0,
+        spanCount,
+        hasError,
+        startTs: Number.isFinite(startMs) ? new Date(startMs).toISOString() : new Date().toISOString(),
+      });
+    }
+    // Optional client-side errorsOnly filter; the API doesn't gate
+    // by error directly.
+    const final = params.errorsOnly ? enriched.filter((t) => t.hasError) : enriched;
+    const durations = final.map((t) => t.durationMs).sort((a, b) => a - b);
+    const p = (arr, q) => (arr.length ? arr[Math.min(arr.length - 1, Math.floor(arr.length * q))] : 0);
+    return {
+      source: this.name,
+      service,
+      traces: final,
+      summary: {
+        total: final.length,
+        errorCount: final.filter((t) => t.hasError).length,
+        p50DurationMs: p(durations, 0.5),
+        p95DurationMs: p(durations, 0.95),
+      },
+    };
+  }
+
   // --- Topology capability ---
   //
   // Tempo does not expose a service-graph endpoint directly — what it
@@ -343,6 +443,41 @@ export class TempoConnector {
       }
     };
   }
+}
+
+// Escape a TraceQL string-literal value. TraceQL string syntax is
+// `"…"` with backslash escapes for `\` and `"`. We don't need full
+// grammar coverage — just the two characters that would break out
+// of the literal.
+function escapeTraceQL(v) {
+  return String(v).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+// Walk a Tempo /api/traces/:id response and count spans + detect
+// any error-status span. The Tempo trace API returns OTLP-shaped
+// JSON: { batches: [ { scopeSpans: [ { spans: [...] } ] } ] }. Each
+// span has status.code (1=OK, 2=ERROR per OTel) and a name. We're
+// conservative — unknown shapes return {spanCount:0, hasError:false}
+// rather than throwing.
+function countSpansAndErrors(trace) {
+  if (!trace || typeof trace !== "object") return { spanCount: 0, hasError: false };
+  let spanCount = 0;
+  let hasError = false;
+  const batches = trace.batches || trace.resourceSpans || [];
+  for (const b of batches) {
+    const scopes = b.scopeSpans || b.instrumentationLibrarySpans || [];
+    for (const s of scopes) {
+      const spans = s.spans || [];
+      spanCount += spans.length;
+      for (const sp of spans) {
+        const code = sp && sp.status && (sp.status.code !== undefined ? sp.status.code : sp.status.Code);
+        if (code === 2 || code === "STATUS_CODE_ERROR") {
+          hasError = true;
+        }
+      }
+    }
+  }
+  return { spanCount, hasError };
 }
 
 function serviceId(name) {

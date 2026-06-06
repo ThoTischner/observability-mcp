@@ -196,3 +196,93 @@ test("queryMetrics rejects unknown metrics, drops NaN samples", async () => {
   assert.equal(r.values.length, 1);
   assert.equal(r.values[0].value, 0.2);
 });
+
+// --- queryTraces (P3) ---
+
+test("queryTraces returns ranked TraceSpanSummary shape", async () => {
+  const c = create();
+  await c.connect({ url: "http://tempo" });
+  globalThis.fetch = mockFetch([
+    ["/api/search", () => ok({
+      traces: [
+        {
+          traceID: "abc", rootTraceName: "GET /checkout",
+          rootServiceName: "checkout", durationMs: 1200,
+          startTimeUnixNano: "1700000000000000000",
+        },
+        {
+          traceID: "def", rootTraceName: "GET /pay",
+          rootServiceName: "checkout", durationMs: 800,
+          startTimeUnixNano: "1700000060000000000",
+        },
+      ],
+    })],
+    ["/api/traces/abc", () => ok({
+      batches: [{ scopeSpans: [{ spans: [
+        { status: { code: 2 } },
+        { status: { code: 1 } },
+        { status: { code: 1 } },
+      ] }] }],
+    })],
+    ["/api/traces/def", () => ok({
+      batches: [{ scopeSpans: [{ spans: [{ status: { code: 1 } }] }] }],
+    })],
+  ]);
+  const out = await c.queryTraces({ service: "checkout", duration: "15m" });
+  assert.equal(out.source, "tempo");
+  assert.equal(out.service, "checkout");
+  assert.equal(out.traces.length, 2);
+  assert.equal(out.traces[0].traceId, "abc");
+  assert.equal(out.traces[0].rootService, "checkout");
+  assert.equal(out.traces[0].durationMs, 1200);
+  assert.equal(out.traces[0].spanCount, 3);
+  assert.equal(out.traces[0].hasError, true);
+  assert.equal(out.traces[1].hasError, false);
+  assert.equal(out.summary.total, 2);
+  assert.equal(out.summary.errorCount, 1);
+  assert.ok(out.summary.p50DurationMs > 0);
+  assert.ok(out.summary.p95DurationMs > 0);
+});
+
+test("queryTraces honours errorsOnly + default TraceQL service constraint", async () => {
+  const c = create();
+  await c.connect({ url: "http://tempo" });
+  let searchUrl = "";
+  globalThis.fetch = mockFetch([
+    ["/api/search", (u) => { searchUrl = u; return ok({
+      traces: [
+        { traceID: "a", durationMs: 100, startTimeUnixNano: "1700000000000000000" },
+        { traceID: "b", durationMs: 200, startTimeUnixNano: "1700000000000000000" },
+      ],
+    }); }],
+    ["/api/traces/a", () => ok({
+      batches: [{ scopeSpans: [{ spans: [{ status: { code: 2 } }] }] }],
+    })],
+    ["/api/traces/b", () => ok({
+      batches: [{ scopeSpans: [{ spans: [{ status: { code: 1 } }] }] }],
+    })],
+  ]);
+  const out = await c.queryTraces({ service: "payment", duration: "5m", errorsOnly: true });
+  assert.ok(searchUrl.includes('resource.service.name%3D%22payment%22'));
+  assert.equal(out.traces.length, 1);
+  assert.equal(out.traces[0].traceId, "a");
+});
+
+test("queryTraces preserves caller-supplied TraceQL but injects service", async () => {
+  const c = create();
+  await c.connect({ url: "http://tempo" });
+  let searchUrl = "";
+  globalThis.fetch = mockFetch([
+    ["/api/search", (u) => { searchUrl = u; return ok({ traces: [] }); }],
+  ]);
+  await c.queryTraces({ service: "billing", duration: "1h", filter: '{ status=error && http.method="POST" }' });
+  // The user's filter and the synthetic service constraint must both appear.
+  assert.ok(/status%3Derror/.test(searchUrl), `service-AND injection missing in ${searchUrl}`);
+  assert.ok(/resource\.service\.name%3D%22billing%22/.test(searchUrl));
+});
+
+test("queryTraces throws on missing service", async () => {
+  const c = create();
+  await c.connect({ url: "http://tempo" });
+  await assert.rejects(() => c.queryTraces({}), /service is required/);
+});
