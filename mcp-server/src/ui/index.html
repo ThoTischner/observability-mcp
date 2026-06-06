@@ -1403,6 +1403,7 @@
           <button class="nav-btn" data-page="health" title="Health" onclick="showPage('health')"><span class="nav-ico">✚</span><span class="nav-label">Health</span></button>
           <button class="nav-btn" data-page="topology" title="Topology" onclick="showPage('topology')"><span class="nav-ico">◇</span><span class="nav-label">Topology</span></button>
           <button class="nav-btn" data-page="postmortems" title="Postmortems" onclick="showPage('postmortems')"><span class="nav-ico">◷</span><span class="nav-label">Postmortems</span></button>
+          <button class="nav-btn" data-page="playground" title="Playground" onclick="showPage('playground')"><span class="nav-ico">⏵</span><span class="nav-label">Playground</span></button>
         </div>
       </div>
       <div class="rail-grp" data-grp="catalog">
@@ -1938,6 +1939,49 @@ curl -X PUT http://localhost:3000/api/enterprise/policy \
         <div class="content">
           <div id="pm-detail-meta" class="muted" style="margin-bottom:8px;font-size:12px"></div>
           <pre id="pm-detail-md" style="white-space:pre-wrap;font-family:var(--mono);font-size:12px;background:var(--bg);padding:12px;border:1px solid var(--border);border-radius:4px;max-height:540px;overflow:auto"></pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== Playground (Q13 / v3.1) ===== -->
+    <div class="page" id="page-playground">
+      <div class="page-head">
+        <div class="ph-left">
+          <div class="breadcrumb">Console / Observability / <b>Playground</b></div>
+          <h1>Tool Playground</h1>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h2>Invoke a tool
+          <button class="info" aria-label="About playground"
+            data-title="Playground"
+            data-info="Run any registered MCP tool against the live gateway. Uses your current credential's RBAC + rate-limit + entitlement + audit — identical to the dispatch path an MCP client would hit. Result is the raw CallToolResult."
+            onclick="infoPop(this)">?</button>
+        </h2></div>
+        <div class="content">
+          <div class="form-row">
+            <label for="pg-tool">Tool</label>
+            <select id="pg-tool" class="input" onchange="pgOnToolChange()">
+              <option value="">Loading…</option>
+            </select>
+          </div>
+          <div id="pg-tool-summary" class="muted" style="margin:6px 0 12px;font-size:13px"></div>
+          <div class="form-row">
+            <label for="pg-args">Arguments (JSON)</label>
+            <textarea id="pg-args" class="input" rows="8" style="font-family:var(--mono);font-size:12px" spellcheck="false">{}</textarea>
+          </div>
+          <div class="row" style="gap:8px;margin-top:8px">
+            <button class="btn btn-primary" onclick="pgRun()" id="pg-run-btn">Invoke</button>
+            <button class="btn btn-ghost" onclick="pgClear()">Clear result</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" id="pg-result-card" hidden>
+        <div class="card-header"><h2>Result <span id="pg-result-meta" class="muted" style="font-weight:normal;font-size:12px"></span></h2></div>
+        <div class="content">
+          <pre id="pg-result-body" style="white-space:pre-wrap;font-family:var(--mono);font-size:12px;background:var(--bg);padding:12px;border:1px solid var(--border);border-radius:4px;max-height:540px;overflow:auto"></pre>
         </div>
       </div>
     </div>
@@ -2597,6 +2641,85 @@ function showPage(name) {
   if(name==='products') loadMcpProducts();
   if(name==='policies') loadPolicies();
   if(name==='postmortems') pmLoadList();
+  if(name==='playground') pgInit();
+}
+
+// --- Playground tab (Q13 / v3.1) ---------------------------------------
+// In-product tool invocation. Picks a tool from /api/tools/registry,
+// POSTs {tool, args} to /api/playground/invoke, renders the raw
+// CallToolResult. RBAC + entitlement + audit live on the server side —
+// the UI just shows whatever comes back.
+
+let PG_TOOLS = [];
+
+async function pgInit() {
+  const sel = document.getElementById('pg-tool');
+  if (PG_TOOLS.length) return; // already loaded
+  try {
+    const res = await fetch('/api/tools/registry');
+    const body = await res.json();
+    PG_TOOLS = body.tools || [];
+    sel.innerHTML = '<option value="">— select a tool —</option>' +
+      PG_TOOLS.map(t =>
+        '<option value="' + encodeURIComponent(t.name) + '">' + t.name + ' · ' + (t.category || '') + '</option>'
+      ).join('');
+  } catch (e) {
+    sel.innerHTML = '<option value="">failed to load tool catalogue: ' + (e && e.message ? e.message : e) + '</option>';
+  }
+}
+
+function pgOnToolChange() {
+  const sel = document.getElementById('pg-tool');
+  const summary = document.getElementById('pg-tool-summary');
+  const name = decodeURIComponent(sel.value || '');
+  const t = PG_TOOLS.find(x => x.name === name);
+  summary.textContent = t ? t.summary : '';
+}
+
+async function pgRun() {
+  const sel = document.getElementById('pg-tool');
+  const argsEl = document.getElementById('pg-args');
+  const btn = document.getElementById('pg-run-btn');
+  const card = document.getElementById('pg-result-card');
+  const body = document.getElementById('pg-result-body');
+  const meta = document.getElementById('pg-result-meta');
+  const tool = decodeURIComponent(sel.value || '');
+  if (!tool) { return; }
+  let args;
+  try {
+    args = argsEl.value.trim() ? JSON.parse(argsEl.value) : {};
+  } catch (e) {
+    card.hidden = false;
+    meta.textContent = ' · client-side error';
+    body.textContent = 'Arguments are not valid JSON: ' + (e && e.message ? e.message : e);
+    return;
+  }
+  btn.disabled = true;
+  meta.textContent = ' · running…';
+  card.hidden = false;
+  body.textContent = '';
+  const t0 = Date.now();
+  try {
+    const res = await fetch('/api/playground/invoke', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ tool, args }),
+    });
+    const json = await res.json();
+    meta.textContent = ' · HTTP ' + res.status + ' · ' + (Date.now() - t0) + ' ms';
+    body.textContent = JSON.stringify(json, null, 2);
+  } catch (e) {
+    meta.textContent = ' · network error';
+    body.textContent = (e && e.message) ? e.message : String(e);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function pgClear() {
+  document.getElementById('pg-result-card').hidden = true;
+  document.getElementById('pg-result-body').textContent = '';
+  document.getElementById('pg-result-meta').textContent = '';
 }
 
 // --- Postmortems tab (P6) -----------------------------------------------

@@ -359,11 +359,20 @@ async function main() {
     }
   }
 
-  function createMcpServer(ctx: RequestContext): McpServer {
+  /**
+   * Returns the McpServer for the given context. The companion
+   * `toolHandlers` map carries every tool registered for this ctx
+   * (post-hook-wrapping) so the in-product Playground UI (Q13) can
+   * invoke a tool without going through the full Streamable HTTP
+   * transport stack. The map is keyed by tool name; values run the
+   * same wrapped handler the McpServer would dispatch over MCP.
+   */
+  function createMcpServer(ctx: RequestContext): { mcpServer: McpServer; toolHandlers: Map<string, (args: unknown, extra: unknown) => Promise<unknown>> } {
     const mcpServer = new McpServer({
       name: "observability-mcp",
       version: SERVER_VERSION,
     });
+    const toolHandlers = new Map<string, (args: unknown, extra: unknown) => Promise<unknown>>();
 
   // --- Register tools with Zod schemas ---
   // Product-aware registration: when the active credential is bound
@@ -383,11 +392,17 @@ async function main() {
     if (!allowsTool(ctx.allowedTools, name)) return undefined as never;
     if (rest.length > 0 && typeof rest[rest.length - 1] === "function") {
       const originalHandler = rest[rest.length - 1] as (args: unknown, extra: unknown) => unknown;
-      rest[rest.length - 1] = wrapToolHandler(
+      const wrappedHandler = wrapToolHandler(
         hookRegistry,
         { principal: ctx.principalId, tenant: ctx.tenant || "default", target: name },
         originalHandler,
       );
+      rest[rest.length - 1] = wrappedHandler;
+      // Stash for the Playground endpoint — keyed by tool name. The
+      // wrapped handler honours pre/post hooks + the same RBAC the
+      // McpServer dispatch path runs. Per-ctx Map so a different
+      // user's allowedTools never leak.
+      toolHandlers.set(name, wrappedHandler as (args: unknown, extra: unknown) => Promise<unknown>);
     }
     return (mcpServer.tool as unknown as (...a: unknown[]) => unknown)(name, ...rest) as never;
   }) as typeof mcpServer.tool;
@@ -822,7 +837,7 @@ async function main() {
     );
   }
 
-    return mcpServer;
+    return { mcpServer, toolHandlers };
   }
 
   // --- Management-plane auth (basic mode) -----------------------------------
@@ -1369,6 +1384,36 @@ async function main() {
   // sensitive in the catalogue, it's just static metadata.
   app.get("/api/tools/registry", (_req, res) => {
     res.json({ tools: REGISTERED_TOOLS });
+  });
+
+  // Q13: in-product Playground endpoint. Lets the operator invoke a
+  // registered tool against the live gateway without spinning up a
+  // separate MCP client. Re-uses the per-session ctx and the same
+  // wrapped handler the McpServer dispatch path would run (so RBAC,
+  // entitlements, rate-limit, audit, hook fan-out all apply
+  // identically).
+  app.post("/api/playground/invoke", async (req, res) => {
+    const ctx = await gateCtx(req, res);
+    if (!ctx) return;
+    const body = (req.body ?? {}) as { tool?: unknown; args?: unknown };
+    const tool = typeof body.tool === "string" ? body.tool : "";
+    if (!tool) {
+      res.status(400).json({ error: "tool (string) is required" });
+      return;
+    }
+    const { toolHandlers } = createMcpServer(ctx);
+    const handler = toolHandlers.get(tool);
+    if (!handler) {
+      res.status(404).json({ error: `tool '${tool}' is not registered (or not allowed for this credential)` });
+      return;
+    }
+    try {
+      const result = await handler(body.args ?? {}, undefined);
+      res.json({ tool, result });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message, tool });
+    }
   });
 
   // Server info — version, loaded plugins, MCP protocol version, build metadata.
@@ -2954,7 +2999,7 @@ async function main() {
 
   // Stdio transport: one server over stdin/stdout, no HTTP listener.
   if (STDIO) {
-    const server = createMcpServer(defaultContext());
+    const { mcpServer: server } = createMcpServer(defaultContext());
     await server.connect(new StdioServerTransport());
     console.error(
       `observability-mcp running on stdio transport · connectors: ${registry
@@ -3137,7 +3182,7 @@ async function main() {
         mcpActiveSessions.set(transports.size);
       };
 
-      const sessionMcpServer = createMcpServer(ctx);
+      const { mcpServer: sessionMcpServer } = createMcpServer(ctx);
       await sessionMcpServer.connect(transport);
     }
 
@@ -3250,7 +3295,7 @@ async function main() {
         }
         mcpActiveSessions.set(transports.size);
       };
-      const sessionMcpServer = createMcpServer(ctx);
+      const { mcpServer: sessionMcpServer } = createMcpServer(ctx);
       await sessionMcpServer.connect(transport);
     }
     await transport.handleRequest(req, res, req.body);
@@ -3402,7 +3447,7 @@ async function main() {
     wss.handleUpgrade(req, socket, head, async (ws) => {
       try {
         const transport = new WebSocketServerTransport(ws);
-        const sessionMcpServer = createMcpServer(auth.ctx);
+        const { mcpServer: sessionMcpServer } = createMcpServer(auth.ctx);
         await sessionMcpServer.connect(transport);
       } catch (err) {
         console.warn("WS /mcp/ws session setup failed:", err);
