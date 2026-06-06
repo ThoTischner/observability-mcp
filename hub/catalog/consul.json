@@ -1,0 +1,19 @@
+{
+  "catalogVersion": 1,
+  "name": "consul",
+  "displayName": "Consul",
+  "description": "HashiCorp Consul Connect service-mesh topology connector — reads Consul's catalog + intentions API. CALLS edges from inbound intentions; edge confidence reflects Action=allow vs deny.",
+  "vendor": "observability-mcp",
+  "homepage": "https://github.com/ThoTischner/observability-mcp",
+  "tier": "official",
+  "signalTypes": ["topology"],
+  "versions": [
+    {
+      "version": "1.0.0",
+      "releasedAt": "2026-06-06",
+      "serverCompat": ">=3.0.0",
+      "integrity": "sha256-geQNh5aLx62zb+wyORpjYin1aZmB/9yxcvVq7sXYE8k=",
+      "changelog": "Initial release: Consul Connect topology via /v1/catalog/services + /v1/connect/intentions/match. Instance counts via /v1/health/service/<name> (capped at 50 services). 30s snapshot TTL. Optional X-Consul-Token auth."
+    }
+  ]
+}
