@@ -1,0 +1,43 @@
+# Minimal two-gateway federation scenario for CI:
+#   gateway-a: vanilla mcp-server. No sources configured → built-in
+#              tools (list_sources, get_topology, generate_postmortem,
+#              etc.) are still registered.
+#   gateway-b: mcp-server with gateway-a wired in via
+#              OMCP_FEDERATION_UPSTREAMS. The federation registry
+#              proxies a's tools and namespaces them with the
+#              "a." prefix.
+#
+# CI then hits gateway-b's /mcp endpoint, asserts the namespaced
+# tools appear in tools/list, and calls one to assert dispatch
+# works end-to-end.
+
+services:
+  gateway-a:
+    build:
+      context: ../../mcp-server
+    environment:
+      - OMCP_AUTH=anonymous
+    ports:
+      - "13001:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/healthz"]
+      interval: 3s
+      timeout: 2s
+      retries: 30
+
+  gateway-b:
+    build:
+      context: ../../mcp-server
+    environment:
+      - OMCP_AUTH=anonymous
+      - OMCP_FEDERATION_UPSTREAMS=a=http://gateway-a:3000/mcp
+    ports:
+      - "13002:3000"
+    depends_on:
+      gateway-a:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/healthz"]
+      interval: 3s
+      timeout: 2s
+      retries: 30

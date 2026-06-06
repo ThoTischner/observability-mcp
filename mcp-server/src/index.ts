@@ -782,14 +782,31 @@ async function main() {
   // Product-allow-list gate, so federated tools obey the same policy
   // surface as native ones.
   for (const info of federationRegistry.getNamespacedTools()) {
-    // Upstream's inputSchema is forwarded verbatim. The SDK's
-    // tool() overload signatures don't carry an obvious type for a
-    // dynamic-shape schema, so we cast to `any` at the boundary and
-    // let the upstream contract speak for the validation.
+    // The MCP SDK's tool() signature wants a ZodRawShape (a map of
+    // field-name → Zod type), not a raw JSON Schema. Federated
+    // upstreams expose JSON Schema (the wire-format MCP uses on
+    // tools/list); we transcode to a permissive Zod shape so the
+    // SDK accepts the registration. Per-field types are `z.unknown()`
+    // because the upstream will validate the call args anyway; the
+    // local Zod check is only a "this is the field name set" gate.
+    // P7: this transcoding fixes the registration crash that broke
+    // every federation deploy before the E2E test caught it.
+    const upstreamProps = (info.inputSchema as { properties?: Record<string, unknown> } | undefined)?.properties ?? {};
+    // Every field is z.unknown().optional() — the SDK only uses this
+    // shape to know the field-name set; the upstream re-validates
+    // against its full JSON Schema (incl. its own `required` list)
+    // when the call arrives. Marking all fields optional here keeps
+    // calls with the upstream-defaults flowing through; without it
+    // the SDK rejects any call that omits a field upstream considers
+    // required even if the upstream would accept the omission.
+    const localShape: Record<string, z.ZodOptional<z.ZodUnknown>> = {};
+    for (const k of Object.keys(upstreamProps)) {
+      localShape[k] = z.unknown().optional();
+    }
     (registerTool as unknown as (...args: unknown[]) => unknown)(
       info.namespacedName,
       info.description || `Federated from upstream ${info.sourceName}.`,
-      info.inputSchema ?? {},
+      localShape,
       async (args: unknown) => {
         await enforceEntitledAccess(ctx, { tool: info.namespacedName });
         return withToolMetrics(info.namespacedName, () =>

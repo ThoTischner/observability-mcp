@@ -1,0 +1,49 @@
+name: federation-e2e
+
+# Verifies cross-gateway namespaced tool dispatch end-to-end.
+# Boots two mcp-server instances via docker-compose, wires gateway-b
+# to federate gateway-a as `OMCP_FEDERATION_UPSTREAMS=a=http://gateway-a:3000/mcp`,
+# then asserts gateway-b's MCP tools/list includes the a.-namespaced
+# upstream tools and a sample call dispatches without an error
+# envelope.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  federation-e2e:
+    name: Two-gateway federation smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Build images + boot two gateways
+        working-directory: tests/federation-e2e
+        run: |
+          docker compose build --pull
+          docker compose up -d --wait --wait-timeout 180
+
+      - name: Federation probe (tools/list + sample tools/call)
+        env:
+          B_BASE: http://localhost:13002
+        run: bash tests/federation-e2e/probe.sh
+
+      - name: Dump logs on failure
+        if: failure()
+        working-directory: tests/federation-e2e
+        run: |
+          docker compose logs --no-color --tail=200 gateway-a || true
+          docker compose logs --no-color --tail=200 gateway-b || true
+
+      - name: Tear down
+        if: always()
+        working-directory: tests/federation-e2e
+        run: docker compose down -v
