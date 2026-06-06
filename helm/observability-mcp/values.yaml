@@ -12,6 +12,19 @@ imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
+# Phase F22: air-gapped lockdown. When enabled, the chart sets
+# OMCP_AIRGAPPED=true on the container (the server uses it to skip
+# any optional outbound calls like phone-home / update-check, of
+# which the OSS server has none today — the flag is here as a
+# future-proof switch) AND renders an egress-deny NetworkPolicy
+# alongside the existing ingress NetworkPolicy.
+airgapped: false
+
+# When airgapped=true, extend the egress NetworkPolicy with the
+# operator's allow-listed targets — same shape as the standard
+# networking.k8s.io/v1 NetworkPolicyEgressRule[].
+airgappedExtraEgress: []
+
 replicaCount: 1
 
 # The MCP server holds session state per Streamable HTTP session. For

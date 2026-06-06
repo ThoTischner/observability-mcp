@@ -123,6 +123,10 @@ spec:
             - name: OMCP_OTEL_SERVICE_VERSION
               value: {{ include "observability-mcp.imageTag" . | quote }}
             {{- end }}
+            {{- if .Values.airgapped }}
+            - name: OMCP_AIRGAPPED
+              value: "true"
+            {{- end }}
             {{- if .Values.anomalyHistory.enabled }}
             - name: OMCP_ANOMALY_HISTORY_REMOTE_WRITE
               value: {{ .Values.anomalyHistory.remoteWriteUrl | quote }}

@@ -1,0 +1,41 @@
+{{- if .Values.airgapped }}
+# Phase F22: egress lockdown for air-gapped deployments. Blocks all
+# egress except DNS (so service discovery works) and the namespace
+# itself (so the gateway can talk to in-cluster Prometheus / Loki /
+# Tempo / a SCIM-pushing Entra agent / etc). Cluster operators
+# extending this should add their own ipBlock entries under the
+# `to:` list — e.g. an external Splunk HEC for audit webhook
+# delivery.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "observability-mcp.fullname" . }}-egress
+  labels:
+    {{- include "observability-mcp.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "observability-mcp.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Egress
+  egress:
+    # DNS — required for any in-cluster service-name resolution.
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Anything in the same namespace (Prometheus, Loki, k3s API, etc).
+    - to:
+        - podSelector: {}
+    # Anything the operator explicitly allow-listed under
+    # `airgappedExtraEgress` (see values.yaml).
+    {{- with .Values.airgappedExtraEgress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}
