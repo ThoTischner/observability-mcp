@@ -67,6 +67,7 @@ nav:
       - Topology vocabulary: topology-vocabulary.md
       - Tenancy: tenancy.md
       - Plugin architecture: plugin-architecture.md
+      - Plugin SDK: sdk.md
       - Transports: transports.md
   - Deployment:
       - Air-gapped: airgapped-deployment.md
