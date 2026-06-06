@@ -34,8 +34,39 @@ The vocabulary is intentionally tiny: only values that are emitted by a shipped 
 | `host` | Physical or virtual host outside k8s | reserved | Symmetric to `node` for non-k8s connectors. |
 | `hypervisor` | Host that runs VMs | reserved | vCenter ESXi hosts, Proxmox nodes. |
 | `cluster` | Logical container of nodes/hosts | reserved | For multi-cluster federation. |
+| `cloud_service` | Managed cloud service (ECS service, Cloud Run, App Service) | reserved | Multi-cloud topology providers (F14) emit these. |
+| `db_instance` | Managed database (RDS, Cloud SQL, Cosmos, …) | reserved | Multi-cloud. |
+| `lb` | Load balancer (ELB/ALB/NLB, GCP LB, Azure LB) | reserved | Multi-cloud. |
+| `queue` | Managed message queue (SQS, Pub/Sub, Service Bus) | reserved | Multi-cloud. |
+| `function` | Serverless function (Lambda, Cloud Functions, Functions App) | reserved | Multi-cloud. |
+| `serviceaccount` | Cloud or k8s identity a `cloud_service` runs as | reserved | Useful for blast-radius walks across IAM scope. |
+| `mesh_proxy` | Service-mesh sidecar / gateway (Envoy, Linkerd-proxy) | reserved | Istio / Linkerd topology providers. |
+| `trace_service` | Synthesised service node derived from trace spans | reserved | Phase F13 trace-edge integration; see `query_traces`. |
 
 Reserved values do not have to be emitted today, but a future connector adding them does not need a fresh round of bikeshedding.
+
+## Canonical-name reconciliation across providers
+
+When two providers emit nodes for the same logical workload (k8s
+`payment` Deployment AND ECS `payment-service` AND Tempo
+`trace_service` `payment`), the topology merger uses these rules to
+dedupe — see `mcp-server/src/topology/merge.ts`:
+
+1. **Explicit override.** If a `Resource` carries
+   `attributes.canonicalName`, that wins. Operators set this in
+   `catalog.yaml` for the gold-standard mapping.
+2. **Label match.** A label whose key is in `CANONICAL_LABEL_KEYS`
+   (`app.kubernetes.io/name`, `app.kubernetes.io/instance`, `app`,
+   `service`, `service.name`, `k8s-app`) provides the canonical
+   name; the merger collapses any pair of nodes whose canonical
+   labels match. First-key-wins in the listed order.
+3. **Name + kind compatibility.** Last resort, with a per-kind
+   compatibility table — `deployment` is mergeable with `cloud_service`
+   and `trace_service`, but `pod` is NOT mergeable with `function`.
+
+The merged node keeps the union of labels, the union of attributes
+(later providers win on collision), and a `mergedFrom: string[]`
+attribute listing every source that contributed.
 
 ## Canonical `relation` values
 
