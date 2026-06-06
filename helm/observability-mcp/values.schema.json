@@ -99,6 +99,17 @@
         "enabled": { "type": "boolean" }
       }
     },
+    "anomalyHistory": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "remoteWriteUrl": { "type": "string" },
+        "headers": { "type": "string" },
+        "token": { "type": "string" },
+        "existingSecret": { "type": "string" }
+      }
+    },
     "audit": {
       "type": "object",
       "additionalProperties": false,

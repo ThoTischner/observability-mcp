@@ -21,6 +21,7 @@ export const REGISTERED_TOOL_NAMES = [
   "query_traces",
   "get_service_health",
   "detect_anomalies",
+  "get_anomaly_history",
   "get_topology",
   "get_blast_radius",
 ] as const;
@@ -49,6 +50,7 @@ export const REGISTERED_TOOLS: readonly ToolRegistryEntry[] = [
   { name: "query_traces",       category: "query",     summary: "Fetch ranked trace summaries for one service over a window." },
   { name: "get_service_health", category: "diagnose",  summary: "Aggregated health verdict for one service (metrics + logs)." },
   { name: "detect_anomalies",   category: "diagnose",  summary: "Scan for anomalous services using z-score / heuristics." },
+  { name: "get_anomaly_history",category: "diagnose",  summary: "Replay historical anomaly scores for a service (post-mortem context)." },
   { name: "get_topology",       category: "topology",  summary: "Return the infrastructure topology graph (resources + edges)." },
   { name: "get_blast_radius",   category: "topology",  summary: "Given a resource, return the impact set if its host(s) fail." },
 ] as const;

@@ -123,6 +123,21 @@ spec:
             - name: OMCP_OTEL_SERVICE_VERSION
               value: {{ include "observability-mcp.imageTag" . | quote }}
             {{- end }}
+            {{- if .Values.anomalyHistory.enabled }}
+            - name: OMCP_ANOMALY_HISTORY_REMOTE_WRITE
+              value: {{ .Values.anomalyHistory.remoteWriteUrl | quote }}
+            {{- if .Values.anomalyHistory.headers }}
+            - name: OMCP_ANOMALY_HISTORY_HEADERS
+              value: {{ .Values.anomalyHistory.headers | quote }}
+            {{- end }}
+            {{- if or .Values.anomalyHistory.token .Values.anomalyHistory.existingSecret }}
+            - name: OMCP_ANOMALY_HISTORY_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.anomalyHistory.existingSecret | default (printf "%s-anomaly-history" (include "observability-mcp.fullname" .)) }}
+                  key: token
+            {{- end }}
+            {{- end }}
             {{- if .Values.audit.file }}
             - name: OMCP_MGMT_AUDIT_FILE
               value: {{ .Values.audit.file | quote }}
