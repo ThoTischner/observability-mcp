@@ -216,6 +216,27 @@ otel:
 # anomaly score the detector produces is written to a Prometheus
 # remote-write endpoint as omcp_anomaly_score{service=...}. See
 # docs/anomaly-history.md.
+# SCIM 2.0 provisioning — enables /scim/v2/* endpoints so an IdP
+# (Microsoft Entra ID, Okta) can push Users + Groups directly into
+# the gateway. Off by default; setting `enabled: true` requires
+# either `token: "<value>"` or `existingSecret: "<secret-name>"`
+# (a Secret with key `token`). The store path defaults to
+# /var/lib/observability-mcp/scim.json — mount a persistent volume
+# at that path if you want the provisioned state to survive pod
+# restarts (otherwise it lives only as long as the pod). Optionally
+# map SCIM groups to gateway RBAC roles via groupRoleMap
+# ("admins:admin,sre:operator,readers:viewer").
+# See docs/scim-provisioning.md.
+scim:
+  enabled: false
+  storePath: /var/lib/observability-mcp/scim.json
+  # Bearer token the IdP sends in the Authorization header. For
+  # real deployments reference a Secret via existingSecret.
+  token: ""
+  existingSecret: ""
+  # Comma-separated SCIM-group-name:gateway-role-name pairs.
+  groupRoleMap: ""
+
 anomalyHistory:
   enabled: false
   # Prometheus remote-write URL (any TSDB that accepts the format —

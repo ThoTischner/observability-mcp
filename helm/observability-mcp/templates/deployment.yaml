@@ -127,6 +127,21 @@ spec:
             - name: OMCP_AIRGAPPED
               value: "true"
             {{- end }}
+            {{- if .Values.scim.enabled }}
+            - name: OMCP_SCIM_STORE
+              value: {{ .Values.scim.storePath | quote }}
+            {{- if .Values.scim.groupRoleMap }}
+            - name: OMCP_SCIM_GROUP_ROLE_MAP
+              value: {{ .Values.scim.groupRoleMap | quote }}
+            {{- end }}
+            {{- if or .Values.scim.token .Values.scim.existingSecret }}
+            - name: OMCP_SCIM_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.scim.existingSecret | default (printf "%s-scim" (include "observability-mcp.fullname" .)) }}
+                  key: token
+            {{- end }}
+            {{- end }}
             {{- if .Values.anomalyHistory.enabled }}
             - name: OMCP_ANOMALY_HISTORY_REMOTE_WRITE
               value: {{ .Values.anomalyHistory.remoteWriteUrl | quote }}
