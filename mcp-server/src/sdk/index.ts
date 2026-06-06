@@ -85,6 +85,19 @@ export interface ConnectorManifest {
    * server runs with VERIFY_PLUGINS=true. See docs/plugin-architecture.md.
    */
   integrity?: string;
+  /**
+   * Lifecycle hooks the plugin wants auto-registered on load. Each
+   * entry points to a module path INSIDE the plugin's bundled files;
+   * the loader imports its default export and registers it on the
+   * gateway's HookRegistry. Mirrors the Zod manifestSchema in
+   * mcp-server/src/sdk/manifest-schema.ts. See Q10 / phase-q-sprint.md.
+   */
+  hooks?: Array<{
+    kind: "tool_pre_invoke" | "tool_post_invoke" | "resource_pre_fetch" | "resource_post_fetch" | "prompt_pre_fetch" | "prompt_post_fetch";
+    module: string;
+    priority?: number;
+    mode?: "enforce" | "permissive" | "disabled";
+  }>;
 }
 
 /**

@@ -272,6 +272,29 @@ registered in-place on the shared `HookRegistry` — no pod restart
 needed. Re-registering with the same `(pluginName, kind)` replaces
 the prior entry, so upgrades are atomic.
 
+### Auto-registration (Q10 / v3.1)
+
+The `PluginLoader` accepts an optional `hookRegistry` constructor
+arg. When set, every entry in `manifest.hooks[]` is automatically
+resolved + registered after the connector loads — no programmatic
+`HookRegistry.register()` call required from the plugin author.
+
+The loader:
+
+- Resolves each `module` path relative to the plugin root and
+  refuses anything that escapes it (defence-in-depth against a
+  malicious or buggy manifest).
+- Skips entries whose module file is missing or whose default
+  export isn't a function, logging the skip but never failing the
+  connector load (a broken hook never tears down the connector).
+- Drops all prior registrations for the same plugin before
+  registering the new ones, so a hot-reload converges on the
+  manifest's current state without duplicates.
+
+The programmatic `HookRegistry.register()` API stays available for
+plugin authors who want to compute hook entries at load time (e.g.
+spawn one hook per discovered subresource).
+
 ### Example: redact-pii
 
 Ships in `plugins/redact-pii/` and demonstrates a minimal

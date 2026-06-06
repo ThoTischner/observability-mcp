@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import type { ObservabilityConnector } from "./interface.js";
 import type { ConnectorFactory, ConnectorManifest } from "../sdk/index.js";
 import { manifestSchema } from "../sdk/manifest-schema.js";
+import type { HookContext, HookPayload, HookRegistry, HookResult } from "../sdk/hooks.js";
 import { PrometheusConnector } from "./prometheus.js";
 import { LokiConnector } from "./loki.js";
 import { KubernetesConnector } from "./kubernetes.js";
@@ -54,12 +55,20 @@ export class PluginLoader {
   private trustRootPath?: string;
   private trustRoot?: KeyObject;
 
+  /** Optional HookRegistry — when set, the loader auto-registers
+   *  every entry in `manifest.hooks[]` after the plugin loads, and
+   *  unregisters them when a same-name plugin replaces it. Hooks
+   *  re-registered by name+kind on hot-reload (HookRegistry.register
+   *  already deduplicates). */
+  private hookRegistry?: HookRegistry;
+
   constructor(
-    opts: { pluginsDir?: string; disabled?: string[]; verify?: boolean; trustRoot?: string } = {}
+    opts: { pluginsDir?: string; disabled?: string[]; verify?: boolean; trustRoot?: string; hookRegistry?: HookRegistry } = {}
   ) {
     this.pluginsDir = opts.pluginsDir
       ?? process.env.PLUGINS_DIR
       ?? "/app/plugins";
+    this.hookRegistry = opts.hookRegistry;
     // Per-plugin disable via env: PLUGINS_DISABLED="prometheus,loki"
     const envDisabled = (process.env.PLUGINS_DISABLED ?? "")
       .split(",")
@@ -265,6 +274,70 @@ export class PluginLoader {
       manifest,
       factory,
     });
+    // Manifest-driven hook auto-registration (Q10). After the
+    // entry module loads (and is integrity/sig-verified above), walk
+    // manifest.hooks[] and resolve each entry's `module` against the
+    // plugin root. Default export is the handler. Errors during
+    // individual hook load are logged + skipped — they don't tear
+    // down the connector itself.
+    if (this.hookRegistry && manifest?.hooks?.length) {
+      // Drop any prior registrations for this plugin so a hot-reload
+      // doesn't leave stale entries side-by-side with new ones.
+      this.hookRegistry.unregisterPlugin(marker.name);
+      for (const hookEntry of manifest.hooks) {
+        const hookPath = resolve(pluginRoot, hookEntry.module);
+        const inside = hookPath.startsWith(resolve(pluginRoot) + "/") || hookPath === resolve(pluginRoot);
+        if (!inside) {
+          console.warn(
+            "Plugin %s hook module %s escapes the plugin root — skipping",
+            sanitizeForLog(marker.name),
+            sanitizeForLog(hookEntry.module),
+          );
+          continue;
+        }
+        if (!existsSync(hookPath)) {
+          console.warn(
+            "Plugin %s hook module %s not found — skipping",
+            sanitizeForLog(marker.name),
+            sanitizeForLog(hookEntry.module),
+          );
+          continue;
+        }
+        try {
+          const hookMod = await import(pathToFileURL(hookPath).href);
+          const handler = hookMod.default ?? hookMod.handler;
+          if (typeof handler !== "function") {
+            console.warn(
+              "Plugin %s hook module %s has no default export — skipping",
+              sanitizeForLog(marker.name),
+              sanitizeForLog(hookEntry.module),
+            );
+            continue;
+          }
+          this.hookRegistry.register({
+            pluginName: marker.name,
+            kind: hookEntry.kind,
+            priority: hookEntry.priority,
+            mode: hookEntry.mode,
+            handler: handler as (ctx: HookContext, payload: HookPayload) => Promise<HookResult> | HookResult,
+          });
+          console.log(
+            'Plugin "%s": registered %s hook from %s',
+            sanitizeForLog(marker.name),
+            sanitizeForLog(hookEntry.kind),
+            sanitizeForLog(hookEntry.module),
+          );
+        } catch (err) {
+          console.warn(
+            "Plugin %s hook %s/%s failed to load: %s",
+            sanitizeForLog(marker.name),
+            sanitizeForLog(hookEntry.kind),
+            sanitizeForLog(hookEntry.module),
+            sanitizeForLog(err instanceof Error ? err.message : String(err)),
+          );
+        }
+      }
+    }
     console.log(
       'Connector plugin "%s" loaded from %s',
       sanitizeForLog(marker.name),
