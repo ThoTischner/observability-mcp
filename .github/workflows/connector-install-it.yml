@@ -45,4 +45,12 @@ jobs:
             sh connectors/install-it.sh "$name"
           done
       - name: Loader functional smoke (connectors load & are callable)
+        # The install-it scenario exercises the source path where
+        # connectors live in the workspace without a signed
+        # manifest — VERIFY_PLUGINS defaults to true (Phase F1) so
+        # they would otherwise be skipped. Opt out for THIS job
+        # only; production deployments keep the default-on
+        # signature gate.
+        env:
+          VERIFY_PLUGINS: "false"
         run: node connectors/loader-smoke.mjs
