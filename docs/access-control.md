@@ -9,7 +9,7 @@ the README quickstart promises.
 
 - [The four layers, in dependency order](#the-four-layers-in-dependency-order)
 - [Minimal production-ready setup](#minimal-production-ready-setup)
-- [Roles & permissions](#roles--permissions)
+- [Roles & permissions](#roles-permissions)
 - [Audit log](#audit-log) — `/api/audit`, hash chain, offline verifier
 - [Rate limits](#rate-limits) — `/api/usage`, `X-RateLimit-*` headers
 - [Service catalog enrichment](#service-catalog-enrichment)
@@ -86,7 +86,7 @@ the file read-only.
 ## Roles & permissions
 
 The built-in policy ships three roles. The full table is in
-[`mcp-server/src/auth/rbac.ts`](../mcp-server/src/auth/rbac.ts); the
+[`mcp-server/src/auth/rbac.ts`](https://github.com/ThoTischner/observability-mcp/blob/main/mcp-server/src/auth/rbac.ts); the
 short version:
 
 | | viewer | operator | admin |
@@ -121,7 +121,7 @@ Every mutating `/api/*` request produces one append-only entry with
 actor + resource + action + status + IP + the optional `:name` path
 parameter as `target`. Entries are hash-chained: each entry's `hash`
 covers the previous entry's `hash`, so
-[`scripts/verify-audit.mjs`](../scripts/verify-audit.mjs) can prove
+[`scripts/verify-audit.mjs`](https://github.com/ThoTischner/observability-mcp/blob/main/scripts/verify-audit.mjs) can prove
 the log hasn't been silently truncated or reordered:
 
 ```bash
@@ -287,7 +287,7 @@ traffic yet, or the viewer lacks the `audit:read` permission.
 ## Service catalog enrichment
 
 When `OMCP_SERVICE_CATALOG_FILE` points at a JSON catalog (schema in
-[`mcp-server/src/catalog/loader.ts`](../mcp-server/src/catalog/loader.ts)),
+[`mcp-server/src/catalog/loader.ts`](https://github.com/ThoTischner/observability-mcp/blob/main/mcp-server/src/catalog/loader.ts)),
 every `list_services` / `get_service_health` / `query_metrics` derived
 response is decorated with `.catalog = { owner, tier, onCall, slo, … }`.
 The agent sees ownership context inline — no separate CMDB hop.

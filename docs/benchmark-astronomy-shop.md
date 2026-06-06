@@ -180,7 +180,7 @@ impossible.**
 
 Same harness, same model, same demo workload. Only the question and
 the tool set change. Raw JSON evidence under
-[`benchmark-results/`](benchmark-results/).
+[`benchmark-results/`](https://github.com/ThoTischner/observability-mcp/tree/main/docs/benchmark-results).
 
 | scenario                                  | model        | n  | baseline acc | topology acc | tokens (B → T) | meaningful winner |
 |-------------------------------------------|--------------|----|--------------|--------------|---------------|-------------------|
@@ -328,7 +328,7 @@ orchestrates both stacks: ours brings up Tempo + an OTel collector
 bridge under `--profile benchmark`; upstream runs in its own compose
 project (`-p otel-demo`) with `OTEL_COLLECTOR_HOST` repointed at our
 bridge so traces land in our Tempo. See
-[examples/benchmark/README.md](../examples/benchmark/README.md) for the
+[examples/benchmark/README.md](https://github.com/ThoTischner/observability-mcp/blob/main/examples/benchmark/README.md) for the
 exact commands and caveats.
 
 ### Why this split

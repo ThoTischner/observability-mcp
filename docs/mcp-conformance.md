@@ -10,7 +10,7 @@ upholds the MCP 2025-11-25 wire contract. The same suite runs:
 ## What's covered
 
 The harness file
-[`mcp-server/src/conformance/mcp-2025-11-25.test.ts`](../mcp-server/src/conformance/mcp-2025-11-25.test.ts)
+[`mcp-server/src/conformance/mcp-2025-11-25.test.ts`](https://github.com/ThoTischner/observability-mcp/blob/main/mcp-server/src/conformance/mcp-2025-11-25.test.ts)
 exercises:
 
 | Method / requirement | Assertion |

@@ -154,7 +154,7 @@ The operator distributes only the **public** key as `PLUGIN_TRUST_ROOT`. The Hel
 
 ## The connector hub
 
-The catalog contract lives in-repo at [`hub/`](../hub/README.md): a
+The catalog contract lives in-repo at [`hub/`](https://github.com/ThoTischner/observability-mcp/blob/main/hub/README.md): a
 schema-validated `catalog/<name>.json` per connector aggregated into a
 static `catalog/index.json` (CI keeps it in sync). It is **live** today:
 
