@@ -6,6 +6,108 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.0.0] — 2026-06-06
+
+Major release. v3.0 is the **moat-extension sprint** on top of the
+v2.0 foundation: more MCP tools, more provider depth, more
+operator visibility, and a CI proof of the air-gapped story.
+
+Migrating from 2.x is **purely additive** — every new capability
+is opt-in via env / Helm value. See
+[`docs/migrations/2.x-to-3.0.md`](docs/migrations/2.x-to-3.0.md).
+
+### Added — new MCP tools
+
+- **`query_traces(service, duration, filter?, limit?, errorsOnly?)`** —
+  ninth MCP tool. Fans out across every connector implementing the
+  new `queryTraces` capability (Tempo / Jaeger). Returns ranked
+  trace summaries with a globally-recomputed p50/p95 over the
+  merged set. Closes the metrics/logs/**traces** triangle.
+- **`get_anomaly_history(service, duration, method?)`** — tenth
+  tool. Replays historical anomaly scores written to the TSDB by
+  the new `AnomalyHistory` sink. Default off; opt-in via
+  `OMCP_ANOMALY_HISTORY_REMOTE_WRITE`. Powers the auto-postmortem
+  feature below.
+- **`generate_postmortem(service, duration, format?)`** — eleventh
+  tool. Stitches the gateway's existing primitives — anomaly
+  history, trace summaries, topology blast-radius, log highlights —
+  into a single markdown report a human or LLM reads in one shot.
+
+### Added — capabilities
+
+- **Multi-cloud topology foundation** — new merger module
+  collapses Resources that come from multiple providers (k8s
+  Deployment + ECS service + Tempo trace_service for the same
+  logical workload) into one canonical node via explicit
+  `canonicalName` override / `CANONICAL_LABEL_KEYS` match /
+  kind-compatibility table. 8 new reserved kinds in the topology
+  vocabulary. Concrete cloud-provider connectors land as
+  filesystem plugins in v3.x increments.
+- **Anomaly history TSDB sink** — every chained anomaly score
+  mirrored to a Prometheus remote-write endpoint via the new
+  `AnomalyHistory` writer. JSON-shaped WriteRequest payload (any
+  TSDB-receiving collector ingests it).
+- **Batch policy dry-run** — `POST /api/policy/dry-run-batch`
+  evaluates every (subject × resource × action) cell against the
+  active engine and returns a matrix the UI heat-map will render.
+  CSV export via `Accept: text/csv`.
+- **MkDocs Material documentation site** at
+  <https://thotischner.github.io/observability-mcp/>. Every push to
+  main republishes.
+- **MCP Inspector quickstart** — new `omcp inspector-config`
+  subcommand emits a config the official Inspector consumes in
+  one line. Opens the gateway in an interactive explorer with
+  zero handwritten config.
+- **SCIM 2.0 Users + Groups provisioning** — Microsoft Entra ID
+  and Okta push directory state into `/scim/v2/*` directly. Bearer
+  auth via `OMCP_SCIM_TOKEN`. Group→role mapping via
+  `OMCP_SCIM_GROUP_ROLE_MAP`.
+- **Plugin SDK published as `@thotischner/observability-mcp-sdk`** —
+  standalone npm package plugin authors depend on without cloning
+  the gateway. Scaffolder CLI:
+  `npx @thotischner/observability-mcp-sdk create-connector my-conn`.
+
+### Added — operator surface
+
+- **Verifiable-offline CI** — new `.github/workflows/airgapped.yml`
+  boots the demo stack with iptables egress blocked on the
+  mcp-server container, then asserts /healthz, no-CDN-in-UI, MCP
+  handshake, and a tool call all work. Future regression that
+  adds a phone-home / CDN font / telemetry beacon fails at PR
+  time.
+- **Helm `airgapped: true`** value renders an egress-deny
+  NetworkPolicy (allow DNS + same-namespace + operator allowlist)
+  and sets `OMCP_AIRGAPPED=true` in the container env.
+
+### Deferred to v3.x (incremental)
+
+- Concrete AWS / GCP / Consul / Istio / Linkerd topology-provider
+  connectors (F14a foundation ships; F14b–f are the providers).
+- Detector-side hook that fills the anomaly-history buffer from
+  the live `detect_anomalies` path (F15b — writer + tool already
+  live).
+- UI "Batch evaluate" panel in the Policies tab (F16b — API is
+  fully usable today).
+- F17b strict-mode mkdocs build (clean up the 14 cross-repo links
+  flagged as warnings).
+- Playground UI tab that mirrors Inspector inline (F18b — the
+  real Inspector via `omcp inspector-config` is the supported
+  path today).
+- `/api/postmortems` persistence, UI Postmortems tab, custom
+  template engine (F19b/c — tool is fully usable today).
+- npm-workspace setup so the SDK package becomes the canonical
+  source and mcp-server depends on it instead of vendoring
+  (F20b — current setup uses a CI parity check).
+- SCIM filter/search, member[] add/remove patch ops,
+  Redis-backed store, UI Provisioning sub-tab, full SCIM 2.0
+  compliance suite (F21b/c — push-only Entra+Okta work today).
+
+### Backwards compatibility
+
+Every v3.0 capability is opt-in via env or Helm value. The
+default single-replica anonymous-auth Docker-compose demo runs
+identically on 2.x and 3.0. No behaviour flips required.
+
 ## [2.0.0] — 2026-06-06
 
 Major release. v2.0 closes the remaining adoption-blocking gaps so a

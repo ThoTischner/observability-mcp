@@ -4,11 +4,11 @@ description: Unified observability gateway for AI agents — one MCP server for 
 type: application
 
 # Chart version (this chart). Bumped on chart changes.
-version: 1.0.0
+version: 2.0.0
 
 # App version (the mcp-server image tag the chart defaults to).
 # Update with each release of the mcp-server image.
-appVersion: "2.0.0"
+appVersion: "3.0.0"
 
 home: https://github.com/ThoTischner/observability-mcp
 sources:
