@@ -250,8 +250,12 @@ export default async function (
 ): Promise<{ allow: boolean; payload?: Record<string, unknown>; reason?: string }>;
 ```
 
-- `allow: false` short-circuits the chain. The caller sees an `isError`
-  `CallToolResult` carrying the `reason` text.
+- `allow: false` short-circuits the chain. The caller sees:
+  - **tool**: an `isError` `CallToolResult` carrying the `reason` text.
+  - **resource**: a `ReadResourceResult` with `isError: true` and one
+    `text/plain` contents entry holding the `reason`.
+  - **prompt**: a `GetPromptResult` with `isError: true`, the `reason`
+    as its description, and `messages: []`.
 - A returned `payload` REPLACES the current payload. Use this to redact
   / transform / enrich.
 - Throwing in `enforce` mode (the default) blocks the call with the
