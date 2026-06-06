@@ -199,6 +199,22 @@ otel:
   # "observability-mcp").
   serviceName: ""
 
+# Anomaly history TSDB sink. Off by default. When enabled, every
+# anomaly score the detector produces is written to a Prometheus
+# remote-write endpoint as omcp_anomaly_score{service=...}. See
+# docs/anomaly-history.md.
+anomalyHistory:
+  enabled: false
+  # Prometheus remote-write URL (any TSDB that accepts the format —
+  # Prometheus itself, Mimir, Thanos, VictoriaMetrics, Cortex).
+  remoteWriteUrl: ""
+  # Comma-separated key=value pairs added as request headers.
+  headers: ""
+  # Bearer token forwarded as Authorization header. Reference a
+  # Secret via existingSecret in production.
+  token: ""
+  existingSecret: ""
+
 # Audit-log external sinks. The on-disk JSONL chain (configured via
 # auditFile / OMCP_MGMT_AUDIT_FILE) stays the authoritative master.
 # These sinks mirror every chained entry to an external system so

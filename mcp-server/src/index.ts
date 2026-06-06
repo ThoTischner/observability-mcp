@@ -98,6 +98,8 @@ import { listServicesHandler } from "./tools/list-services.js";
 import { queryMetricsHandler } from "./tools/query-metrics.js";
 import { queryLogsHandler } from "./tools/query-logs.js";
 import { queryTracesHandler } from "./tools/query-traces.js";
+import { getAnomalyHistoryHandler } from "./tools/get-anomaly-history.js";
+import { AnomalyHistory, fromEnv as anomalyHistoryFromEnv } from "./analysis/history.js";
 import { getServiceHealthHandler, setHealthThresholds } from "./tools/get-service-health.js";
 import { detectAnomaliesHandler } from "./tools/detect-anomalies.js";
 import { getTopologyHandler, getBlastRadiusHandler } from "./tools/topology.js";
@@ -577,6 +579,27 @@ async function main() {
       const redacted = redactToolText(result, { bypass });
       return chargeTokenBudget(redacted, ctx, "query_logs");
     }
+  );
+
+  registerTool(
+    "get_anomaly_history",
+    [
+      "Replay historical anomaly scores for a service from the TSDB the gateway writes to (omcp_anomaly_score series).",
+      "When to use: post-mortem reconstruction, trend analysis on detector noise, or pulling context for the LLM when an incident is reviewed after the fact.",
+      "Prerequisites: the operator must have OMCP_ANOMALY_HISTORY_REMOTE_WRITE configured AND a Prometheus source pointed at the same TSDB so the round-trip closes.",
+      "Behavior: read-only. Returns the time-series of scores. Empty result means either no anomalies in the window or history is disabled.",
+      "Related: `detect_anomalies` for the live scores; `query_metrics` if you want to write the PromQL by hand.",
+    ].join(" "),
+    {
+      service: z.string().describe("Service name to filter on."),
+      duration: z.string().optional().describe("Rolling window, e.g. '1h', '24h'. Default '1h'."),
+      method: z.string().optional().describe("Filter by detector method ('mad' / 'seasonality' / 'correlator'). Optional."),
+    },
+    async (args) => {
+      await enforceEntitledAccess(ctx, { tool: "get_anomaly_history", service: (args as { service?: string })?.service });
+      const result = await withToolMetrics("get_anomaly_history", () => getAnomalyHistoryHandler(registry, args, ctx));
+      return chargeTokenBudget(result, ctx, "get_anomaly_history");
+    },
   );
 
   registerTool(
@@ -1065,6 +1088,29 @@ async function main() {
   // tool_pre_invoke / tool_post_invoke chains; resource and prompt
   // hooks plug into their respective seams as they ship.
   const hookRegistry = new HookRegistry();
+
+  // Phase F15: anomaly-history sink — opt-in via
+  // OMCP_ANOMALY_HISTORY_REMOTE_WRITE. When configured, anomaly
+  // scores written via anomalyHistory.record() flush to the
+  // configured TSDB on a 10-second timer. The MCP tool
+  // get_anomaly_history queries them back via any Prometheus source
+  // pointed at the same TSDB.
+  //
+  // The detector-side hook that actually records per-anomaly scores
+  // is plumbed in F15b (it requires passing this instance into the
+  // detectAnomaliesHandler — minor surgery deferred). The
+  // infrastructure ships now so externally-written omcp_anomaly_score
+  // metrics are already queryable end-to-end.
+  const anomalyHistory = new AnomalyHistory(anomalyHistoryFromEnv());
+  anomalyHistory.start();
+  if (anomalyHistory.isEnabled()) {
+    console.log(
+      "AnomalyHistory: TSDB sink enabled (OMCP_ANOMALY_HISTORY_REMOTE_WRITE set)",
+    );
+  }
+  process.on("SIGTERM", () => {
+    void anomalyHistory.stop().catch(() => undefined);
+  });
 
   // Federation registry — populated from OMCP_FEDERATION_UPSTREAMS at
   // boot. Each upstream connects, fetches tools/list, and exposes its
