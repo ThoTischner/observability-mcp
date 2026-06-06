@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "name": "gcp",
+  "displayName": "GCP",
+  "version": "1.0.0",
+  "description": "GCP topology connector — discovers Compute Engine instances, Cloud Run services, and GKE clusters + nodepools via the Google Cloud SDK, emitted as a Resource graph the gateway merges with Kubernetes / service-mesh views. OWNED_BY links GKE nodepools to clusters. Auth via Application Default Credentials.",
+  "signalTypes": ["topology"],
+  "homepage": "https://github.com/ThoTischner/observability-mcp",
+  "license": "Apache-2.0",
+  "capabilities": {
+    "listServices": true,
+    "listResources": true,
+    "listEdges": true,
+    "getTopologySnapshot": true,
+    "watchTopology": true
+  },
+  "compat": {
+    "serverVersion": ">=3.0.0"
+  },
+  "integrity": "sha256-UpA8fttAX2D8u2jscy2eymJWQDTKOCwgfTSzIGwiXhs="
+}
