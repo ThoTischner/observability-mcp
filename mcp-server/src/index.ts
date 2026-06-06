@@ -100,6 +100,7 @@ import { queryMetricsHandler } from "./tools/query-metrics.js";
 import { queryLogsHandler } from "./tools/query-logs.js";
 import { queryTracesHandler } from "./tools/query-traces.js";
 import { getAnomalyHistoryHandler } from "./tools/get-anomaly-history.js";
+import { generatePostmortemHandler } from "./tools/generate-postmortem.js";
 import { AnomalyHistory, fromEnv as anomalyHistoryFromEnv } from "./analysis/history.js";
 import { getServiceHealthHandler, setHealthThresholds } from "./tools/get-service-health.js";
 import { detectAnomaliesHandler } from "./tools/detect-anomalies.js";
@@ -600,6 +601,27 @@ async function main() {
       await enforceEntitledAccess(ctx, { tool: "get_anomaly_history", service: (args as { service?: string })?.service });
       const result = await withToolMetrics("get_anomaly_history", () => getAnomalyHistoryHandler(registry, args, ctx));
       return chargeTokenBudget(result, ctx, "get_anomaly_history");
+    },
+  );
+
+  registerTool(
+    "generate_postmortem",
+    [
+      "Stitch the gateway's primitives (anomaly history, blast-radius, traces, log highlights) into a single markdown post-mortem report for one service over a given window.",
+      "When to use: after an incident, when the operator or LLM wants 'one document the on-call can read in 60 seconds' instead of poking the individual tools.",
+      "Prerequisites: anomaly history requires OMCP_ANOMALY_HISTORY_REMOTE_WRITE + a Prometheus source. Traces require Tempo / Jaeger. Blast-radius requires a topology provider.",
+      "Behavior: read-only. Returns markdown by default; pass `format='json'` for the structured shape. Output capped (timeline 20 rows, blast-radius 30 nodes, 10 traces) — JSON shape carries the full data.",
+      "Related: `get_anomaly_history`, `query_traces`, `get_blast_radius` for the underlying primitives.",
+    ].join(" "),
+    {
+      service: z.string().describe("Suspected root-cause service."),
+      duration: z.string().optional().describe("Window length, e.g. '1h', '6h'. Default '1h'."),
+      format: z.enum(["markdown", "json"]).optional().describe("'markdown' (default) or 'json'."),
+    },
+    async (args) => {
+      await enforceEntitledAccess(ctx, { tool: "generate_postmortem", service: (args as { service?: string })?.service });
+      const result = await withToolMetrics("generate_postmortem", () => generatePostmortemHandler(registry, args, ctx));
+      return chargeTokenBudget(result, ctx, "generate_postmortem");
     },
   );
 
