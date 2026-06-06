@@ -103,6 +103,7 @@ import { queryLogsHandler } from "./tools/query-logs.js";
 import { queryTracesHandler } from "./tools/query-traces.js";
 import { getAnomalyHistoryHandler } from "./tools/get-anomaly-history.js";
 import { generatePostmortemHandler } from "./tools/generate-postmortem.js";
+import { PostmortemStore } from "./postmortem/store.js";
 import { AnomalyHistory, fromEnv as anomalyHistoryFromEnv } from "./analysis/history.js";
 import { getServiceHealthHandler, setHealthThresholds } from "./tools/get-service-health.js";
 import { detectAnomaliesHandler } from "./tools/detect-anomalies.js";
@@ -2000,6 +2001,96 @@ async function main() {
       scimStorePath,
     );
   }
+
+  // Phase P6: Postmortems persistence. /api/postmortems lets the
+  // UI list / open / regenerate / delete previously-generated
+  // reports. Opt-in via OMCP_POSTMORTEMS_FILE (default
+  // /tmp/postmortems.jsonl). When the env is left at its default
+  // the demo still works — operators who want survival across
+  // restarts mount a PVC at the same path and set the env to it.
+  const postmortemStore = new PostmortemStore(
+    process.env.OMCP_POSTMORTEMS_FILE?.trim() || "/tmp/postmortems.jsonl",
+  );
+  await postmortemStore.load();
+
+  // GET /api/postmortems — list (newest-first), tenant-scoped.
+  app.get("/api/postmortems", need("services", "read"), async (req, res) => {
+    const sess = (req as AuthedRequest).session;
+    const tenant = sess?.tenant || "default";
+    const entries = postmortemStore.list(tenant);
+    res.json({
+      total: entries.length,
+      entries: entries.map((e) => ({
+        id: e.id,
+        ts: e.ts,
+        createdBy: e.createdBy,
+        service: e.report.service,
+        window: e.report.window,
+        synopsis: e.report.synopsis,
+      })),
+    });
+  });
+
+  // GET /api/postmortems/:id — full report (markdown + sections).
+  app.get("/api/postmortems/:id", need("services", "read"), async (req, res) => {
+    const sess = (req as AuthedRequest).session;
+    const tenant = sess?.tenant || "default";
+    const id = String(req.params.id ?? "");
+    const entry = postmortemStore.get(id, tenant);
+    if (!entry) {
+      res.status(404).json({ error: `Postmortem ${id} not found` });
+      return;
+    }
+    res.json(entry);
+  });
+
+  // POST /api/postmortems — regenerate via the tool handler +
+  // persist. Body: { service, duration?, format? }. Returns the
+  // stored entry with its id.
+  app.post("/api/postmortems", need("services", "write"), async (req, res) => {
+    const body = (req.body ?? {}) as { service?: string; duration?: string };
+    if (!body.service || typeof body.service !== "string") {
+      res.status(400).json({ error: "service is required" });
+      return;
+    }
+    const sess = (req as AuthedRequest).session;
+    const tenant = sess?.tenant || "default";
+    const createdBy = sess?.sub || sess?.name || "unknown";
+    try {
+      // Force JSON so we get the structured report shape back from
+      // the tool, not just the markdown body. We persist the full
+      // structured report; the markdown lives inside `report.markdown`.
+      const ctx: RequestContext = { ...defaultContext(), tenant, principalId: createdBy };
+      const result = await generatePostmortemHandler(
+        registry,
+        { service: body.service, duration: body.duration, format: "json" },
+        ctx,
+      );
+      const text = result?.content?.[0]?.text;
+      if (!text) {
+        res.status(500).json({ error: "generate_postmortem returned no content" });
+        return;
+      }
+      const report = JSON.parse(text);
+      const stored = await postmortemStore.append({ report, createdBy, tenant });
+      res.status(201).json(stored);
+    } catch (e) {
+      console.warn(`[postmortems] regen failed:`, e);
+      res.status(500).json({ error: (e as Error)?.message || "internal error" });
+    }
+  });
+
+  // DELETE /api/postmortems/:id — admin-gated.
+  app.delete("/api/postmortems/:id", need("services", "delete"), async (req, res) => {
+    const sess = (req as AuthedRequest).session;
+    const tenant = sess?.tenant || "default";
+    const ok = await postmortemStore.delete(String(req.params.id ?? ""), tenant);
+    if (!ok) {
+      res.status(404).json({ error: `Postmortem ${req.params.id} not found` });
+      return;
+    }
+    res.status(204).end();
+  });
 
   // Connectors currently loaded into this server (builtin + filesystem
   // plugins), with manifest metadata — drives the UI "Connectors" page.
