@@ -937,16 +937,23 @@
     .view-toggle button.active { background: var(--accent-soft); color: var(--accent); }
     .view-toggle button:hover { color: var(--text); }
 
-    /* Products — leitfaden card */
-    .leitfaden-chev { display: inline-block; transition: transform .15s ease; font-size: .85em; opacity: .7; }
-    #mcp-products-leitfaden.collapsed .leitfaden-chev { transform: rotate(-90deg); }
-    #mcp-products-leitfaden.collapsed #mcp-leitfaden-body { display: none; }
-    .leitfaden-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-4); padding: 0 var(--sp-4) var(--sp-4); }
-    .leitfaden-grid h3 { font-size: 13px; font-weight: 600; margin: 0 0 var(--sp-2); }
-    .leitfaden-grid p { margin: 0 0 var(--sp-2); line-height: 1.5; }
-    .leitfaden-grid pre { background: var(--surface-2); padding: var(--sp-2); border-radius: var(--radius-sm); font-size: 11px; overflow-x: auto; }
-    .leitfaden-grid code { font-size: .92em; }
-    @media (max-width: 900px) { .leitfaden-grid { grid-template-columns: 1fr; } }
+    /* One helper line under a page H1. */
+    .ph-sub { margin: 4px 0 0; font-size: var(--fs-sm); color: var(--text-2, var(--text)); }
+
+    /* Disclosure (native <details>) — used for the in-card "bind a
+       credential" note and the demoted legacy catalog section. */
+    .pg-disclosure > summary { cursor: pointer; list-style: none; user-select: none; font-size: 13px; color: var(--text-2, var(--text)); padding: 8px 0; display: flex; align-items: center; gap: 8px; }
+    .pg-disclosure > summary::-webkit-details-marker { display: none; }
+    .pg-disclosure > summary::before { content: "▸"; font-size: 11px; color: var(--text-3, #8a93a5); transition: transform .12s ease; }
+    .pg-disclosure[open] > summary::before { transform: rotate(90deg); }
+    .pg-disclosure-body { padding: 4px 0 8px; }
+    /* The "bind a credential" note sits inside the primary card. */
+    .pg-bind { border-top: 1px solid var(--border); margin-top: 8px; }
+    .pg-bind pre { background: var(--surface-2); padding: 8px 10px; border-radius: 4px; font-size: 11px; overflow-x: auto; margin: 6px 0; }
+    /* The legacy catalog: a recessed, muted block, demoted by depth. */
+    .pg-legacy { border: 1px solid var(--border); border-radius: 6px; margin-top: 18px; padding: 0 14px; background: var(--surface-2); }
+    .pg-legacy > summary { color: var(--text-3, #8a93a5); }
+    .pg-legacy-note { color: var(--text-3, #8a93a5); margin: 0 0 12px; }
 
     /* Products — card grid */
     .pcard-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: var(--sp-3); padding: var(--sp-3); }
@@ -1950,55 +1957,14 @@ curl -X PUT http://localhost:3000/api/enterprise/policy \
           <h1>Context Products
             <button class="info" aria-label="What is a context product"
               data-title="Context products"
-              data-info="A context product is a named, governed bundle of observability context an agent may consume — a curated set of sources, services and tools. It is the unit you grant to a principal. The catalog is the collection of all products plus the grants that map principals to them; it composes with access control (a request must satisfy both RBAC and the catalog)."
+              data-info="A context product is a named, governed bundle of MCP tools you expose to an agent or credential. The bundle's tools allow-list filters tools/list at the /mcp transport, so an agent bound to a product sees only that product's tools. Products compose with access control — a request must satisfy both RBAC and the product binding."
               onclick="infoPop(this)">?</button>
           </h1>
-        </div>
-        <div class="ph-actions"><button class="btn btn-primary btn-sm" onclick="entEditNew('cat')">+ New product</button><button class="btn btn-sm" id="ent-cat-editbtn" onclick="entEditOpen('cat')">Edit catalog</button></div>
-      </div>
-      <div class="card" style="background:var(--accent-soft);border-color:transparent">
-        <div style="font-size:var(--fs-sm);color:var(--text);line-height:1.6">
-          <b>The catalog</b> publishes <b>context products</b> — reusable bundles of sources, services and tools —
-          and the <b>grants</b> that decide which principals may consume each product. Browse below as cards or a
-          table; an admin can create or change products via the editor or the API example.
-        </div>
-      </div>
-      <!-- MCP Products — governed via /api/products (the new, RBAC-gated
-           surface from the MCP Products + RBAC phase). Replaces the
-           legacy enterprise-catalog block below for new deployments;
-           the legacy block stays so existing /api/enterprise/catalog
-           operators see their data until they migrate. -->
-      <!-- Inline leitfaden — collapsed by default once the operator
-           dismisses it; re-opens by clicking the chevron. -->
-      <div class="card" id="mcp-products-leitfaden">
-        <div class="card-header" style="cursor:pointer" onclick="mcpLeitfadenToggle()">
-          <h2 style="display:flex;align-items:center;gap:.5rem">
-            <span class="leitfaden-chev" id="mcp-leitfaden-chev">▾</span>
-            About Products
-          </h2>
-          <span class="t-sm" style="opacity:.7">click to collapse</span>
-        </div>
-        <div id="mcp-leitfaden-body">
-          <div class="leitfaden-grid">
-            <div>
-              <h3>What is a product?</h3>
-              <p class="t-sm">A curated, named bundle of MCP tools you expose to one agent. The bundle's <code>tools</code> allow-list filters <code>tools/list</code> at the <code>/mcp</code> transport, so an agent bound to <em>Ops Bundle</em> sees only the operations tools and not the developer tools.</p>
-            </div>
-            <div>
-              <h3>When do I need one?</h3>
-              <p class="t-sm">Whenever more than one agent connects. Each team / use-case gets its own product — SRE on-call vs coding assistant vs compliance auditor. Without a product the credential sees every registered tool, which is fine for a single-operator demo but not for a production multi-agent deployment.</p>
-            </div>
-            <div>
-              <h3>How do agents pick one up?</h3>
-              <p class="t-sm">Bind a credential to a product via <code>OMCP_KEY_PRODUCTS</code>:</p>
-              <pre style="margin:.25rem 0"><code>OMCP_API_KEYS="agent:tok_ops,ci:tok_dev"
-OMCP_KEY_PRODUCTS="agent=ops-bundle;ci=dev-bundle"</code></pre>
-              <p class="t-sm">The next <code>/mcp</code> session of <code>agent</code> sees only the tools in <code>ops-bundle</code>. <a href="https://github.com/ThoTischner/observability-mcp/blob/main/docs/products.md" target="_blank" rel="noreferrer">Full docs →</a></p>
-            </div>
-          </div>
+          <p class="ph-sub">Curated, governed tool bundles you expose to an agent or credential.</p>
         </div>
       </div>
 
+      <!-- Primary surface: MCP Products via /api/products (RBAC-gated). -->
       <div class="card" id="mcp-products-card">
         <div class="card-header">
           <h2>MCP Products
@@ -2017,38 +1983,54 @@ OMCP_KEY_PRODUCTS="agent=ops-bundle;ci=dev-bundle"</code></pre>
           </div>
         </div>
         <div id="mcp-products-box"><div class="empty">Loading…</div></div>
+        <details class="pg-disclosure pg-bind">
+          <summary>Bind a credential to a product</summary>
+          <div class="pg-disclosure-body">
+            <p class="t-sm">Bind a credential to a product via <code>OMCP_KEY_PRODUCTS</code>; the agent's next <code>/mcp</code> session then sees only that product's tools:</p>
+            <pre><code>OMCP_API_KEYS="agent:tok_ops,ci:tok_dev"
+OMCP_KEY_PRODUCTS="agent=ops-bundle;ci=dev-bundle"</code></pre>
+            <p class="t-sm"><a href="https://github.com/ThoTischner/observability-mcp/blob/main/docs/products.md" target="_blank" rel="noreferrer">Full docs →</a></p>
+          </div>
+        </details>
       </div>
 
-      <!-- Legacy enterprise-products card (kept for operators that
-           still wire OMCP_ENTERPRISE_CATALOG_FILE) -->
-      <div class="card">
-        <div class="card-header"><h2>Products <span class="t-sm" style="opacity:.7">(legacy / enterprise catalog)</span></h2></div>
-        <div id="ent-catalog"><div class="empty">Loading…</div></div>
-        <div id="ent-cat-editor" class="hidden" style="margin-top:12px">
-          <div class="ed-bar">
-            <span class="view-toggle" id="cat-views">
-              <button data-v="form" class="active" onclick="catView('form')">Form</button>
-              <button data-v="json" onclick="catView('json')">JSON</button>
-              <button data-v="yaml" onclick="catView('yaml')">YAML</button>
-            </span>
-            <input type="password" id="ent-cat-token" class="ed-token" placeholder="Admin API key (Bearer)">
+      <!-- Legacy enterprise catalog — deprecated, demoted into a
+           collapsed disclosure so it stays reachable for operators
+           still wiring OMCP_ENTERPRISE_CATALOG_FILE without competing
+           with the primary surface above. Open state persists. -->
+      <details class="pg-disclosure pg-legacy" id="ent-legacy" ontoggle="pgLegacyPersist(this)">
+        <summary>Legacy catalog (enterprise)</summary>
+        <div class="pg-disclosure-body">
+          <p class="t-sm pg-legacy-note">Deprecated. Backed by <code>OMCP_ENTERPRISE_CATALOG_FILE</code>. Use <b>MCP Products</b> above for new deployments.</p>
+          <div class="row-inline" style="margin-bottom:12px">
+            <button class="btn btn-sm" onclick="entEditNew('cat')">+ New product</button>
+            <button class="btn btn-sm" id="ent-cat-editbtn" onclick="entEditOpen('cat')">Edit catalog</button>
           </div>
-          <div class="form-hint" style="margin-bottom:8px">Define products &amp; grants below — no JSON required. JSON / YAML are optional alternative views. Saving needs an admin API key.</div>
-          <div id="cat-form"></div>
-          <textarea id="ent-cat-json" class="ed-code hidden" rows="16" spellcheck="false"></textarea>
-          <div id="ent-cat-msg" style="margin:8px 0;font-size:12px"></div>
-          <div style="display:flex;gap:8px;justify-content:flex-end">
-            <button class="btn btn-ghost btn-sm" onclick="closeDrawer()">Cancel</button>
-            <button class="btn btn-primary btn-sm" onclick="entSaveCat()">Save catalog</button>
+          <div id="ent-catalog"><div class="empty">Loading…</div></div>
+          <div id="ent-cat-editor" class="hidden" style="margin-top:12px">
+            <div class="ed-bar">
+              <span class="view-toggle" id="cat-views">
+                <button data-v="form" class="active" onclick="catView('form')">Form</button>
+                <button data-v="json" onclick="catView('json')">JSON</button>
+                <button data-v="yaml" onclick="catView('yaml')">YAML</button>
+              </span>
+              <input type="password" id="ent-cat-token" class="ed-token" placeholder="Admin API key (Bearer)">
+            </div>
+            <div class="form-hint" style="margin-bottom:8px">Define products &amp; grants below — no JSON required. JSON / YAML are optional alternative views. Saving needs an admin API key.</div>
+            <div id="cat-form"></div>
+            <textarea id="ent-cat-json" class="ed-code hidden" rows="16" spellcheck="false"></textarea>
+            <div id="ent-cat-msg" style="margin:8px 0;font-size:12px"></div>
+            <div style="display:flex;gap:8px;justify-content:flex-end">
+              <button class="btn btn-ghost btn-sm" onclick="closeDrawer()">Cancel</button>
+              <button class="btn btn-primary btn-sm" onclick="entSaveCat()">Save catalog</button>
+            </div>
           </div>
-        </div>
-        <div class="form-hint" style="margin-top:14px">Use <b>Edit catalog</b> above — no command line needed. The block below is the optional API equivalent for automation/CI.</div>
-        <div class="codeblock collapsed">
-          <div class="codeblock-hd" onclick="toggleCode(this)">
-            <span class="cb-chev">▾</span><span class="cb-title">API · create a context product via curl</span>
-            <button class="codeblock-cp" onclick="event.stopPropagation();copyCode(this)">Copy</button>
-          </div>
-          <pre><span class="tok-cmt"># publish a "payments-eu" product and grant it to a principal.</span>
+          <div class="codeblock collapsed" style="margin-top:14px">
+            <div class="codeblock-hd" onclick="toggleCode(this)">
+              <span class="cb-chev">▾</span><span class="cb-title">API · create a context product via curl</span>
+              <button class="codeblock-cp" onclick="event.stopPropagation();copyCode(this)">Copy</button>
+            </div>
+            <pre><span class="tok-cmt"># publish a "payments-eu" product and grant it to a principal.</span>
 <span class="tok-cmt"># needs an admin API key (a principal the current policy grants admin).</span>
 curl -X PUT http://localhost:3000/api/enterprise/catalog \
   -H "Authorization: Bearer &lt;ADMIN_API_KEY&gt;" \
@@ -2063,8 +2045,9 @@ curl -X PUT http://localhost:3000/api/enterprise/catalog \
     },
     "grants": { "alice": ["payments-eu"] }
   }'</pre>
+          </div>
         </div>
-      </div>
+      </details>
     </div>
 
     <!-- ===== Governance: Policies (PolicyEngine snapshot + dry-run) ===== -->
@@ -4521,22 +4504,16 @@ function mcpProductsSetView(v) {
   loadMcpProducts();
 }
 
-// Leitfaden collapse state. Default expanded on first visit; once
-// the user collapses it the choice sticks. Idempotent — safe to
-// call before the DOM is ready (no-ops if the card isn't present).
-function mcpLeitfadenSync() {
-  const card = document.getElementById('mcp-products-leitfaden');
-  if (!card) return;
-  let collapsed = false;
-  try { collapsed = localStorage.getItem('omcp-mcp-leitfaden-collapsed') === '1'; } catch (e) { /* noop */ }
-  card.classList.toggle('collapsed', collapsed);
+// Legacy-catalog disclosure: persist open/closed so an operator who
+// actually uses the deprecated catalog isn't re-expanding it every
+// visit. Default closed (the <details> has no `open` attribute).
+function pgLegacyPersist(el) {
+  try { localStorage.setItem('omcp-legacy-catalog-open', el.open ? '1' : '0'); } catch (e) { /* noop */ }
 }
-function mcpLeitfadenToggle() {
-  const card = document.getElementById('mcp-products-leitfaden');
-  if (!card) return;
-  const nextCollapsed = !card.classList.contains('collapsed');
-  card.classList.toggle('collapsed', nextCollapsed);
-  try { localStorage.setItem('omcp-mcp-leitfaden-collapsed', nextCollapsed ? '1' : '0'); } catch (e) { /* noop */ }
+function pgLegacyRestore() {
+  const el = document.getElementById('ent-legacy');
+  if (!el) return;
+  try { el.open = localStorage.getItem('omcp-legacy-catalog-open') === '1'; } catch (e) { /* noop */ }
 }
 
 // Cache the tool registry — fetched once on first modal open and
@@ -4758,7 +4735,7 @@ function mcpProductEmptyHtml(configured) {
 }
 
 async function loadMcpProducts() {
-  mcpLeitfadenSync();
+  pgLegacyRestore();
   const box = document.getElementById('mcp-products-box');
   const scope = document.getElementById('mcp-products-scope');
   if (!box) return;
