@@ -128,8 +128,21 @@ spec:
               value: "true"
             {{- end }}
             {{- if .Values.scim.enabled }}
+            - name: OMCP_SCIM_BACKEND
+              value: {{ .Values.scim.backend | default "file" | quote }}
             - name: OMCP_SCIM_STORE
               value: {{ .Values.scim.storePath | quote }}
+            {{- if eq (.Values.scim.backend | default "file") "redis" }}
+            - name: OMCP_SCIM_REDIS_KEY
+              value: {{ .Values.scim.redisKey | default "omcp:scim:snapshot" | quote }}
+            {{- if or .Values.scim.redisUrl .Values.scim.redisExistingSecret }}
+            - name: OMCP_SCIM_REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.scim.redisExistingSecret | default (printf "%s-scim-redis" (include "observability-mcp.fullname" .)) }}
+                  key: url
+            {{- end }}
+            {{- end }}
             {{- if .Values.scim.groupRoleMap }}
             - name: OMCP_SCIM_GROUP_ROLE_MAP
               value: {{ .Values.scim.groupRoleMap | quote }}

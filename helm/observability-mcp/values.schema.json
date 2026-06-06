@@ -120,7 +120,11 @@
       "additionalProperties": false,
       "properties": {
         "enabled": { "type": "boolean" },
+        "backend": { "type": "string", "enum": ["file", "redis"] },
         "storePath": { "type": "string" },
+        "redisUrl": { "type": "string" },
+        "redisExistingSecret": { "type": "string" },
+        "redisKey": { "type": "string" },
         "token": { "type": "string" },
         "existingSecret": { "type": "string" },
         "groupRoleMap": { "type": "string" }

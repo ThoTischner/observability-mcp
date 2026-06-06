@@ -88,19 +88,48 @@ Every mutating call writes an audit entry tagged
    value `Bearer $OMCP_SCIM_TOKEN`.
 6. **Test connector configuration** → all checks should pass.
 
-## Scope split — deferred to F21b/c
+## Multi-replica
+
+Default backend is the on-disk JSON file. For a multi-replica
+deployment the file is per-pod and a SCIM push delivered to
+replica A is invisible to replica B. Switch the backend to
+Redis so all replicas read/write the same snapshot:
+
+```yaml
+scim:
+  enabled: true
+  backend: redis              # default: file
+  redisUrl: redis://omcp-redis:6379/0
+  # or, recommended for prod:
+  # redisExistingSecret: omcp-scim-redis     # secret with key `url`
+  redisKey: "omcp:scim:snapshot"
+```
+
+`redisExistingSecret` lets you keep the connection string out of
+the values file — supply a Secret with a single key `url`. The
+chart wires it through to the pod as `OMCP_SCIM_REDIS_URL`.
+
+Concurrency note. SCIM clients (Entra, Okta, JumpCloud, generic
+SCIM) deliver provisioning requests SERIALLY per resource — the
+upstream IDP holds the connection open until the gateway responds.
+A single load-balanced gateway in front of N replicas observes
+one in-flight request per resource at a time, so the
+single-key snapshot model matches SCIM's source-of-truth
+semantics. Within a replica, persists are serialised so two
+concurrent route handlers can't race each other to the write.
+
+## Scope split — deferred to v3.x
 
 - Filter / search support (Entra and Okta both support push-only
   without filter; needed if you want Pull provisioning from a
   third-party admin).
-- Add / Remove patch ops on members[] / emails[] arrays (F21a
-  handles replace-only at the top level — sufficient for typical
-  provisioning runs).
-- Redis-backed store via the F8 SessionStore for multi-replica
-  coherence.
+- Add / Remove patch ops on members[] / emails[] arrays (Q14
+  ships this; the file/redis backends already store the data
+  correctly — Q14 only adds the parser for the SCIM 2.0 op
+  forms).
 - UI "Provisioning" sub-tab under Access Control showing recent
   SCIM operations + the active group→role map.
-- Full SCIM 2.0 compliance test suite.
+- Full SCIM 2.0 compliance test suite (Q15 ships this).
 
 The shipped surface is enough for the standard Entra + Okta
 provisioning checklists to pass.
