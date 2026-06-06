@@ -3725,10 +3725,21 @@ async function omcpCheckGovernance() {
     const info = await r.json();
     const g = info && info.governance;
     if (!g) return;
+    const warns = [];
     if (g.authMode === 'basic' && g.authSecretEphemeral) {
+      warns.push('OMCP_SESSION_SECRET is not set — every sign-in will be lost on server restart. Set a stable value in production.');
+    }
+    // P9: plugin signature verification is off — filesystem plugins
+    // load without integrity checks. Production deployments should
+    // turn this back on (VERIFY_PLUGINS=true is the default since
+    // F1, so seeing this banner means an operator opted OUT).
+    if (g.pluginsVerified === false) {
+      warns.push('Plugin signature verification is OFF (VERIFY_PLUGINS=false). Any filesystem plugin can load unchecked. Re-enable for production.');
+    }
+    if (warns.length > 0) {
       const bar = document.getElementById('omcp-warning-bar');
       if (bar) {
-        bar.textContent = '⚠ OMCP_SESSION_SECRET is not set — every sign-in will be lost on server restart. Set a stable value in production.';
+        bar.textContent = '⚠ ' + warns.join(' · ');
         bar.style.display = '';
       }
     }

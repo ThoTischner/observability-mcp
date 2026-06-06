@@ -87,7 +87,7 @@ import {
 } from "./connectors/hub.js";
 import { isValidConnectorName, installTarball } from "./connectors/install.js";
 import { PluginVerificationError } from "./connectors/verify.js";
-import { selfRegistry, withToolMetrics, apiRequests, mcpActiveSessions } from "./metrics/self.js";
+import { selfRegistry, withToolMetrics, apiRequests, mcpActiveSessions, auditDlqDepth } from "./metrics/self.js";
 import { initOtel } from "./observability/otel.js";
 import { WebSocketServerTransport } from "./transport/websocket.js";
 import { HookRegistry } from "./sdk/hooks.js";
@@ -1282,6 +1282,20 @@ async function main() {
   // this endpoint when enabled.
   if (process.env.METRICS_ENABLED !== "false") {
     app.get("/metrics", async (_req, res) => {
+      // P9: refresh the audit-webhook DLQ depth before the scrape so
+      // Prometheus sees the current file state rather than whatever
+      // /api/audit/dlq last set. Best-effort; ENOENT or missing-env
+      // resets to 0 (the dlqPath being unset is the normal state).
+      try {
+        const dlqPath = process.env.OMCP_AUDIT_WEBHOOK_DLQ;
+        if (dlqPath) {
+          const fs = await import("node:fs/promises");
+          const raw = await fs.readFile(dlqPath, "utf8").catch(() => "");
+          auditDlqDepth.set(raw.split("\n").filter((l) => l.trim()).length);
+        } else {
+          auditDlqDepth.set(0);
+        }
+      } catch { auditDlqDepth.set(0); }
       res.set("Content-Type", selfRegistry.contentType);
       res.end(await selfRegistry.metrics());
     });
@@ -1835,6 +1849,41 @@ async function main() {
       // so a cross-tenant admin sees an explicit "(all tenants)" hint.
       scopedTo: tenantFilter || (isAdmin ? null : callerTenant),
     });
+  });
+
+  // --- /api/audit/dlq — webhook-sink dead-letter queue surface (P9) ---
+  // When the audit webhook is configured AND the receiver exhausted
+  // its retry budget, entries land in the DLQ file. This endpoint
+  // surfaces the count + the last N entries so operators can decide
+  // whether to replay manually. Also refreshes the
+  // `obsmcp_audit_webhook_dlq_depth` gauge so the /metrics scrape
+  // alongside it stays accurate.
+  app.get("/api/audit/dlq", need("audit", "read"), async (_req, res) => {
+    const dlqPath = process.env.OMCP_AUDIT_WEBHOOK_DLQ;
+    if (!dlqPath) {
+      auditDlqDepth.set(0);
+      res.json({ enabled: false, path: null, depth: 0, entries: [] });
+      return;
+    }
+    try {
+      const fs = await import("node:fs/promises");
+      const raw = await fs.readFile(dlqPath, "utf8");
+      const lines = raw.split("\n").filter((l) => l.trim());
+      auditDlqDepth.set(lines.length);
+      const tail = lines.slice(-50).map((l) => {
+        try { return JSON.parse(l); } catch { return { _raw: l, _parseError: true }; }
+      });
+      res.json({ enabled: true, path: dlqPath, depth: lines.length, entries: tail });
+    } catch (err: unknown) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === "ENOENT") {
+        auditDlqDepth.set(0);
+        res.json({ enabled: true, path: dlqPath, depth: 0, entries: [] });
+        return;
+      }
+      console.warn("[/api/audit/dlq] read failed:", err);
+      res.status(500).json({ error: (err as Error)?.message || "DLQ read failed" });
+    }
   });
 
   // --- /api/usage — per-identity MCP rate-limit snapshot -----------------
