@@ -21,6 +21,26 @@ export OMCP_SCIM_GROUP_ROLE_MAP="admins:admin,sre:operator,readers:viewer"
 The store file is created on first write with `mode 0600`. Atomic
 tmp+rename keeps it consistent.
 
+## Helm install (since Phase P5)
+
+The chart ships a first-class `scim:` value block — no `extraEnv`
+contortions needed:
+
+```yaml
+scim:
+  enabled: true
+  storePath: /var/lib/observability-mcp/scim.json
+  token: <bearer the IdP sends>          # OR reference existingSecret instead
+  existingSecret: ""                     # name of a Secret with key `token`
+  groupRoleMap: "admins:admin,sre:operator,readers:viewer"
+```
+
+A matching Secret template renders when `enabled=true` AND `token`
+is set AND `existingSecret` is empty — pick `existingSecret` over
+inline `token` for production so the value never enters the rendered
+manifest. Mount a PVC at `storePath` if you want provisioned state
+to survive pod restarts.
+
 ## Endpoints
 
 Mounted at `/scim/v2/`. All endpoints require
