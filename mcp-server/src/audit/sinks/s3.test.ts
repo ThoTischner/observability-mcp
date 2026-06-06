@@ -7,18 +7,21 @@ import { join } from "node:path";
 import { S3Sink, type S3ClientLike } from "./s3.js";
 import type { AuditEntry } from "../log.js";
 
-function entry(seq: number, ts: string, action = "source.create"): AuditEntry {
+function entry(seq: number, ts: string, action = "write"): AuditEntry {
   return {
     seq,
     ts,
-    actor: "alice@example.com",
+    actor: { sub: "alice@example.com", name: "alice" },
+    tenant: "default",
+    resource: "sources",
     action,
-    target: `source:s${seq}`,
-    result: "ok",
+    method: "POST",
+    path: `/api/sources/s${seq}`,
     status: 201,
+    ip: "10.0.0.7",
     prevHash: "0".repeat(64),
     hash: String(seq).padStart(64, "0"),
-  } as AuditEntry;
+  };
 }
 
 function fakeClient() {

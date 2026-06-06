@@ -24,7 +24,12 @@ import type { AuditSink } from "./types.js";
 let _sdk: { S3Client: unknown; PutObjectCommand: unknown } | null = null;
 async function loadSdk(): Promise<{ S3Client: unknown; PutObjectCommand: unknown }> {
   if (_sdk) return _sdk;
-  const s3 = await import("@aws-sdk/client-s3");
+  // @aws-sdk/client-s3 is an optional runtime dependency — operators
+  // only pull it in when they enable this sink. The specifier is
+  // resolved at runtime so TypeScript doesn't require the types at
+  // build time (matches the AWS-connector lazy-load pattern from Q1).
+  const specifier = "@aws-sdk/client-s3";
+  const s3 = (await import(specifier)) as { S3Client: unknown; PutObjectCommand: unknown };
   _sdk = { S3Client: s3.S3Client, PutObjectCommand: s3.PutObjectCommand };
   return _sdk;
 }
