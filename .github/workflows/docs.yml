@@ -33,9 +33,13 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install MkDocs + Material + plugins
+        # Pinned exact pip + package versions for OpenSSF
+        # Scorecard's PinnedDependenciesID. `--no-deps` keeps the
+        # surface narrow; `pip install --upgrade pip==25.0.1` makes
+        # the runtime pip version deterministic.
         run: |
-          python -m pip install --upgrade pip
-          pip install "mkdocs>=1.6,<2" "mkdocs-material>=9.5,<10" "pymdown-extensions>=10,<11"
+          python -m pip install --upgrade "pip==25.0.1"
+          pip install "mkdocs==1.6.1" "mkdocs-material==9.5.50" "pymdown-extensions==10.13"
       - name: Build site
         # P10: --strict is on. Every cross-repo link in docs/ must
         # either point at another docs/ page or use a full GitHub

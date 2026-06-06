@@ -31,10 +31,18 @@ jobs:
         with:
           node-version: '20'
       - name: Ensure lockfile exists (${{ matrix.path }})
+        # Resolve-only npm pass (--package-lock-only --ignore-scripts)
+        # so the audit step downstream has something to audit even in
+        # the projects that don't commit a lockfile (agent +
+        # connectors are intentionally lockfile-less so consumers
+        # don't inherit our resolution). OpenSSF Scorecard flags the
+        # bare `npm install` invocation; the value of pinning is moot
+        # here because nothing is actually installed (no scripts
+        # run, no files placed in node_modules).
         working-directory: ./${{ matrix.path }}
         run: |
           if [ ! -f package-lock.json ]; then
-            npm install --package-lock-only --ignore-scripts
+            npm install --package-lock-only --ignore-scripts --no-audit --no-fund
           fi
       - name: npm audit (${{ matrix.path }})
         working-directory: ./${{ matrix.path }}

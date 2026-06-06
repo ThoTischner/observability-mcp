@@ -30,8 +30,11 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
 
       - name: Install
+        # `npm ci` instead of `npm install` so deps come from the
+        # committed package-lock.json — deterministic install,
+        # satisfies OpenSSF Scorecard PinnedDependenciesID.
         working-directory: packages/sdk
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
       - name: Build
         working-directory: packages/sdk
