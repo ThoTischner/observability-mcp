@@ -118,15 +118,37 @@ single-key snapshot model matches SCIM's source-of-truth
 semantics. Within a replica, persists are serialised so two
 concurrent route handlers can't race each other to the write.
 
+## PATCH operations
+
+The `PATCH /scim/v2/{Users,Groups}/:id` endpoint supports the
+RFC 7644 §3.5.2 PatchOp forms the major IdPs emit:
+
+| op | path | effect |
+|---|---|---|
+| `replace` | _(none)_ | merge the allow-listed attributes in `value` |
+| `replace` | `displayName` | set that attribute |
+| `add` | _(none)_ | merge `value`; array attrs append (deduped), scalars set |
+| `add` | `members` | append member(s) to the group (deduped by `value`) |
+| `remove` | `members[value eq "<id>"]` | drop the matching member |
+| `remove` | `members` | clear the whole array |
+
+`members` and `emails` are the multi-valued attributes that honour
+element add/remove + the `[sub eq "x"]` filter segment. Chained ops
+in one request compose against the running value (Entra sends an
+`add` + a filtered `remove` in a single PatchOp body). Every
+attribute name written is gated through an allow-list, and filter
+sub-attributes are read-only, so a crafted path can't reach
+`__proto__` / `constructor` (a path that names a non-allow-listed
+attribute is skipped fail-closed).
+
 ## Scope split — deferred to v3.x
 
-- Filter / search support (Entra and Okta both support push-only
-  without filter; needed if you want Pull provisioning from a
-  third-party admin).
-- Add / Remove patch ops on members[] / emails[] arrays (Q14
-  ships this; the file/redis backends already store the data
-  correctly — Q14 only adds the parser for the SCIM 2.0 op
-  forms).
+- Filter / search support on the collection endpoints (Entra and
+  Okta both support push-only without filter; needed if you want
+  Pull provisioning from a third-party admin).
+- `replace` of a single member's sub-attribute via a filtered path
+  (`members[value eq "x"].display`) — rare; the IdPs remove + re-add
+  instead.
 - UI "Provisioning" sub-tab under Access Control showing recent
   SCIM operations + the active group→role map.
 - Full SCIM 2.0 compliance test suite (Q15 ships this).
