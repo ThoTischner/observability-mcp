@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "name": "istio",
+  "displayName": "Istio",
+  "version": "1.0.0",
+  "description": "Istio service-mesh topology connector — derives a CALLS graph from istio_requests_total in the operator's existing Prometheus. Service names + namespaces from Istio telemetry-v2 labels (source_workload, destination_workload). Edge confidence reflects relative request volume so chatty edges rank above rare ones.",
+  "signalTypes": ["topology"],
+  "homepage": "https://github.com/ThoTischner/observability-mcp",
+  "license": "Apache-2.0",
+  "capabilities": {
+    "listServices": true,
+    "listResources": true,
+    "listEdges": true,
+    "getTopologySnapshot": true,
+    "watchTopology": true
+  },
+  "compat": {
+    "serverVersion": ">=3.0.0"
+  },
+  "integrity": "sha256-37TMXYn9X3PzhKkV8PrAZ5WHXymDVIZsK9wWnyIljzg="
+}

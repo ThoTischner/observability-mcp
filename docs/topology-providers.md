@@ -22,7 +22,7 @@ This page describes:
 | AWS | `aws` | ✅ shipped (Q1 / v3.1) | EC2 + ECS clusters/services/tasks + EKS clusters/nodegroups. Edges: ECS task → service (OWNED_BY); ECS service → cluster (OWNED_BY); EKS nodegroup → cluster (OWNED_BY). Snapshots memoized for 30 s. Auth via standard AWS SDK credential chain. |
 | GCP | `gcp` | 🔧 follow-up | GKE workloads, Cloud Run, Cloud SQL, Pub/Sub. Edges via Service Directory + VPC peerings. |
 | Consul | `consul` | 🔧 follow-up | Service registry + intentions over the Consul HTTP API. |
-| Istio | `istio` | 🔧 follow-up | mTLS-protected call edges + service-mesh resource graph. |
+| Istio | `istio` | ✅ shipped (Q2 / v3.1) | CALLS graph derived from `istio_requests_total` in the operator's existing Prometheus. Workload names + namespaces from `source_workload`/`destination_workload` telemetry-v2 labels. Edge `confidence` ∈ [0.5, 1.0] reflects relative request volume so chatty edges rank above rare ones. Snapshots memoized 30 s. Auth via optional Bearer token. |
 | Linkerd | `linkerd` | 🔧 follow-up | mTLS-protected call edges, identity-aware. |
 | Tempo | `tempo` | ✅ shipped (plugin) | CALLS edges derived from a sampled batch of recent traces. |
 

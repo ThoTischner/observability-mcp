@@ -88,6 +88,26 @@
       ]
     },
     {
+      "name": "istio",
+      "displayName": "Istio",
+      "description": "Istio service-mesh topology connector — derives a CALLS graph from istio_requests_total in the operator's existing Prometheus. Service names + namespaces from Istio telemetry-v2 labels (source_workload, destination_workload). Edge confidence reflects relative request volume so chatty edges rank above rare ones.",
+      "tier": "official",
+      "builtin": false,
+      "signalTypes": [
+        "topology"
+      ],
+      "latest": "1.0.0",
+      "versions": [
+        {
+          "version": "1.0.0",
+          "releasedAt": "2026-06-06",
+          "serverCompat": ">=3.0.0",
+          "integrity": "sha256-37TMXYn9X3PzhKkV8PrAZ5WHXymDVIZsK9wWnyIljzg=",
+          "changelog": "Initial release: Istio service-mesh CALLS graph via istio_requests_total Prometheus metric. Snapshots memoized 30s. Auth via optional Bearer token."
+        }
+      ]
+    },
+    {
       "name": "kubernetes",
       "displayName": "Kubernetes",
       "description": "Watches a Kubernetes cluster (in-cluster or via kubeconfig) and exposes pods, nodes, deployments, replicasets and namespaces as an infrastructure topology graph. Edges: RUNS_ON (pod→node), OWNED_BY (pod→rs→deployment), IN_NAMESPACE. Built on @kubernetes/client-node Informers — no polling.",

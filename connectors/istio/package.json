@@ -1,0 +1,18 @@
+{
+  "name": "@observability-mcp/connector-istio",
+  "version": "1.0.0",
+  "description": "Istio service-mesh topology connector for observability-mcp — derives a CALLS graph from istio_requests_total in the operator's existing Prometheus.",
+  "type": "module",
+  "main": "./index.js",
+  "license": "Apache-2.0",
+  "files": ["index.js", "manifest.json"],
+  "observabilityMcp": {
+    "kind": "connector",
+    "name": "istio",
+    "manifest": "./manifest.json"
+  },
+  "scripts": {
+    "test": "node --test index.test.mjs"
+  },
+  "dependencies": {}
+}
