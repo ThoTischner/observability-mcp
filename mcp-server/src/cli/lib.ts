@@ -227,6 +227,7 @@ Usage:
   omcp plugin verify <dir>     Verify an installed plugin dir against a trust root
   omcp helm install [release]  helm repo add+update, then install the signed chart
   omcp helm upgrade [release]  Same, as 'helm upgrade --install'
+  omcp inspector-config        Print an MCP Inspector config JSON pointing at the local gateway
   omcp help                    Show this help
 
 Pass extra helm flags after a literal --, e.g.:
