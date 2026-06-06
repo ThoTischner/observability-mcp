@@ -34,6 +34,8 @@ question instead of juggling N vendor servers and their query languages.*
 
 ---
 
+📖 **Full documentation site:** <https://thotischner.github.io/observability-mcp/>
+
 ## Why it matters — measured, not asserted
 
 On a real Kubernetes-platform-team question ("which other pods share a node with
