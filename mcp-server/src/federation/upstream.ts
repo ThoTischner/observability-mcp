@@ -5,34 +5,58 @@
 // locally. callTool() forwards a request to the upstream and returns
 // its CallToolResult verbatim.
 //
-// Transport: Streamable HTTP only in this slice. Stdio + WebSocket
-// upstreams are deferred (the SDK already provides client transports
-// for both; wiring them is mechanical once the routing logic settles).
+// Transports:
+//   - "http"  — Streamable HTTP to an upstream gateway URL (default).
+//   - "stdio" — spawn a child process that speaks MCP over its stdio
+//               channels. The classic MCP transport, useful when the
+//               upstream is a CLI-style server (omcp inspector-config,
+//               a local-only MCP, an in-cluster sidecar).
 //
 // Auth forwarding modes:
 //   - "none" — no auth header on outbound calls
 //   - "bearer" — static OMCP_FEDERATION_TOKEN_<NAME> sent as Bearer
+//                (HTTP transport only — stdio doesn't have HTTP headers)
 //
 // OIDC + UAID passthrough are deferred — they require a per-request
 // identity hand-off the federation manager doesn't carry today.
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
-export interface UpstreamConfig {
+interface UpstreamCommonConfig {
   /** Stable source name (used in the namespace prefix + audit entries). */
   name: string;
-  /** Upstream Streamable HTTP URL (must end at /mcp). */
-  url: string;
-  /** Static bearer token sent on every outbound call. */
-  bearerToken?: string;
   /** Tool-name prefix; default = source name. Resulting registered
    *  tool name is `<prefix>.<upstream-tool-name>`. */
   namespacePrefix?: string;
   /** ms between automatic catalog refreshes. Default 5 minutes;
    *  0 disables auto-refresh (manual refresh() only). */
   refreshIntervalMs?: number;
+  /** Test-only: inject a pre-built MCP Transport instance.
+   *  Skips the spawn / fetch path entirely. */
+  _transport?: unknown;
 }
+
+export interface UpstreamHttpConfig extends UpstreamCommonConfig {
+  transport?: "http";
+  /** Upstream Streamable HTTP URL (must end at /mcp). */
+  url: string;
+  /** Static bearer token sent on every outbound call. */
+  bearerToken?: string;
+}
+
+export interface UpstreamStdioConfig extends UpstreamCommonConfig {
+  transport: "stdio";
+  /** Executable to spawn (e.g. "npx", "node", "/usr/local/bin/mcp"). */
+  command: string;
+  /** Argv for the executable. */
+  args?: string[];
+  /** Extra env merged into the child process's environment. */
+  env?: Record<string, string>;
+}
+
+export type UpstreamConfig = UpstreamHttpConfig | UpstreamStdioConfig;
 
 export interface UpstreamToolInfo {
   /** Local namespaced name: `<prefix>.<upstreamName>`. */
@@ -51,11 +75,17 @@ export type UpstreamStatus = "connecting" | "ready" | "degraded" | "disconnected
 
 export class UpstreamClient {
   readonly name: string;
+  /** Empty-string for stdio (no remote URL); kept on the public surface
+   *  so the UI doesn't have to special-case the transport kind. */
   readonly url: string;
   readonly namespacePrefix: string;
-  private bearerToken?: string;
+  readonly transportKind: "http" | "stdio";
+  private cfg: UpstreamConfig;
   private client?: Client;
-  private transport?: StreamableHTTPClientTransport;
+  // `unknown` because the SDK exposes a different concrete type per
+  // transport. Federation only talks to the transport via the SDK
+  // Client object, so the concrete type isn't needed here.
+  private transport?: unknown;
   private toolsCache: UpstreamToolInfo[] = [];
   private status: UpstreamStatus = "disconnected";
   private lastError?: string;
@@ -63,10 +93,11 @@ export class UpstreamClient {
   private refreshIntervalMs: number;
 
   constructor(cfg: UpstreamConfig) {
+    this.cfg = cfg;
     this.name = cfg.name;
-    this.url = cfg.url;
+    this.transportKind = cfg.transport === "stdio" ? "stdio" : "http";
+    this.url = this.transportKind === "http" ? (cfg as UpstreamHttpConfig).url : `stdio:${(cfg as UpstreamStdioConfig).command}`;
     this.namespacePrefix = cfg.namespacePrefix ?? cfg.name;
-    this.bearerToken = cfg.bearerToken;
     this.refreshIntervalMs = cfg.refreshIntervalMs ?? 5 * 60 * 1000;
   }
 
@@ -85,17 +116,15 @@ export class UpstreamClient {
   async connect(): Promise<void> {
     this.status = "connecting";
     try {
-      const url = new URL(this.url);
-      const init: RequestInit = { headers: {} as Record<string, string> };
-      if (this.bearerToken) {
-        (init.headers as Record<string, string>)["Authorization"] = `Bearer ${this.bearerToken}`;
-      }
-      this.transport = new StreamableHTTPClientTransport(url, { requestInit: init });
+      this.transport = this.buildTransport();
       this.client = new Client(
         { name: "observability-mcp-federation", version: "1" },
         { capabilities: {} },
       );
-      await this.client.connect(this.transport);
+      // SDK Client.connect accepts any Transport implementation; the
+      // injected test transport just needs the start()/send()/close()
+      // contract — the type assertion sidesteps each concrete class.
+      await this.client.connect(this.transport as Parameters<Client["connect"]>[0]);
       await this.refresh();
       this.status = "ready";
       this.lastError = undefined;
@@ -156,5 +185,29 @@ export class UpstreamClient {
       /* socket may already be down */
     }
     this.status = "disconnected";
+  }
+
+  // --- internals ----------------------------------------------------
+
+  private buildTransport(): unknown {
+    // Test path: a pre-built transport short-circuits the spawn / fetch.
+    if (this.cfg._transport) return this.cfg._transport;
+
+    if (this.transportKind === "stdio") {
+      const cfg = this.cfg as UpstreamStdioConfig;
+      return new StdioClientTransport({
+        command: cfg.command,
+        args: cfg.args ?? [],
+        env: cfg.env,
+      });
+    }
+
+    const cfg = this.cfg as UpstreamHttpConfig;
+    const url = new URL(cfg.url);
+    const init: RequestInit = { headers: {} as Record<string, string> };
+    if (cfg.bearerToken) {
+      (init.headers as Record<string, string>)["Authorization"] = `Bearer ${cfg.bearerToken}`;
+    }
+    return new StreamableHTTPClientTransport(url, { requestInit: init });
   }
 }
