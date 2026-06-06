@@ -1402,6 +1402,7 @@
           <button class="nav-btn" data-page="services" title="Services" onclick="showPage('services')"><span class="nav-ico">⊞</span><span class="nav-label">Services</span></button>
           <button class="nav-btn" data-page="health" title="Health" onclick="showPage('health')"><span class="nav-ico">✚</span><span class="nav-label">Health</span></button>
           <button class="nav-btn" data-page="topology" title="Topology" onclick="showPage('topology')"><span class="nav-ico">◇</span><span class="nav-label">Topology</span></button>
+          <button class="nav-btn" data-page="postmortems" title="Postmortems" onclick="showPage('postmortems')"><span class="nav-ico">◷</span><span class="nav-label">Postmortems</span></button>
         </div>
       </div>
       <div class="rail-grp" data-grp="catalog">
@@ -1899,6 +1900,44 @@ curl -X PUT http://localhost:3000/api/enterprise/policy \
             <button class="btn btn-ghost btn-sm" onclick="closeDrawer()">Cancel</button>
             <button class="btn btn-primary btn-sm" onclick="entSaveRbac()">Save policy</button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== Observability: Postmortems (P6 — persisted reports) ===== -->
+    <div class="page" id="page-postmortems">
+      <div class="page-head">
+        <div class="ph-left">
+          <div class="breadcrumb">Console / Observability / <b>Postmortems</b></div>
+          <h1>Postmortems</h1>
+        </div>
+        <div class="ph-actions">
+          <button class="btn btn-primary btn-sm" onclick="pmOpenNew()">+ Generate</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h2>Generated reports
+          <button class="info" aria-label="About postmortems"
+            data-title="Postmortems"
+            data-info="Persisted output of the generate_postmortem MCP tool. Each entry stitches anomaly history + traces + blast-radius + log highlights into one markdown report for a service. RBAC: viewers list, operators regenerate, admins delete."
+            onclick="infoPop(this)">?</button>
+        </h2></div>
+        <div class="content">
+          <div id="pm-list-body"><div class="empty">Loading…</div></div>
+        </div>
+      </div>
+
+      <div class="card" id="pm-detail-card" hidden>
+        <div class="card-header"><h2 id="pm-detail-title">Report</h2>
+          <span style="flex:1"></span>
+          <button class="btn btn-ghost btn-sm" onclick="pmCloseDetail()">Close</button>
+          <button class="btn btn-sm" id="pm-detail-regen" onclick="pmRegenerate()" hidden>Regenerate</button>
+          <button class="btn btn-sm btn-danger" id="pm-detail-delete" onclick="pmDelete()" hidden>Delete</button>
+        </div>
+        <div class="content">
+          <div id="pm-detail-meta" class="muted" style="margin-bottom:8px;font-size:12px"></div>
+          <pre id="pm-detail-md" style="white-space:pre-wrap;font-family:var(--mono);font-size:12px;background:var(--bg);padding:12px;border:1px solid var(--border);border-radius:4px;max-height:540px;overflow:auto"></pre>
         </div>
       </div>
     </div>
@@ -2557,6 +2596,110 @@ function showPage(name) {
   if(name==='access'||name==='products'||name==='audit'||name==='entitlement') loadEnterprise();
   if(name==='products') loadMcpProducts();
   if(name==='policies') loadPolicies();
+  if(name==='postmortems') pmLoadList();
+}
+
+// --- Postmortems tab (P6) -----------------------------------------------
+// Mirrors the generate_postmortem MCP tool into the UI: list persisted
+// entries newest-first, open a detail view rendering the markdown,
+// regenerate (POST /api/postmortems re-runs the tool with the same
+// service+window), delete (admin-only — the API gates).
+
+let PM_LAST_DETAIL = null;
+
+async function pmLoadList() {
+  const body = document.getElementById('pm-list-body');
+  if (!body) return;
+  body.innerHTML = '<div class="empty">Loading…</div>';
+  try {
+    const r = await fetch('/api/postmortems');
+    if (!r.ok) { body.innerHTML = '<div class="empty">HTTP ' + r.status + '</div>'; return; }
+    const j = await r.json();
+    if (!j.entries || j.entries.length === 0) {
+      body.innerHTML = '<div class="empty">No postmortems yet. Click <b>+ Generate</b> to create one for a service.</div>';
+      return;
+    }
+    let html = '<table class="data-table"><thead><tr><th>When</th><th>Service</th><th>Window</th><th>Synopsis</th><th>By</th><th></th></tr></thead><tbody>';
+    for (const e of j.entries) {
+      html += '<tr>'
+        + '<td>' + escHtml(e.ts) + '</td>'
+        + '<td><code>' + escHtml(e.service) + '</code></td>'
+        + '<td>' + escHtml(e.window) + '</td>'
+        + '<td>' + escHtml((e.synopsis || '').slice(0, 120)) + '</td>'
+        + '<td>' + escHtml(e.createdBy) + '</td>'
+        + '<td><button class="btn btn-sm" onclick="pmOpen(\'' + escHtml(e.id) + '\')">Open</button></td>'
+        + '</tr>';
+    }
+    html += '</tbody></table>';
+    body.innerHTML = html;
+  } catch (e) {
+    body.innerHTML = '<div class="empty">' + escHtml('Load failed: ' + (e?.message || e)) + '</div>';
+  }
+}
+
+async function pmOpen(id) {
+  try {
+    const r = await fetch('/api/postmortems/' + encodeURIComponent(id));
+    if (!r.ok) { alert('HTTP ' + r.status); return; }
+    const j = await r.json();
+    PM_LAST_DETAIL = j;
+    const card = document.getElementById('pm-detail-card');
+    const title = document.getElementById('pm-detail-title');
+    const meta = document.getElementById('pm-detail-meta');
+    const md = document.getElementById('pm-detail-md');
+    title.textContent = j.report.service + ' — ' + j.report.window;
+    meta.textContent = j.ts + ' · by ' + j.createdBy + ' · id ' + j.id;
+    md.textContent = j.report.markdown || '';
+    card.hidden = false;
+    document.getElementById('pm-detail-regen').hidden = false;
+    document.getElementById('pm-detail-delete').hidden = false;
+    card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  } catch (e) { alert('Open failed: ' + (e?.message || e)); }
+}
+
+function pmCloseDetail() {
+  PM_LAST_DETAIL = null;
+  document.getElementById('pm-detail-card').hidden = true;
+}
+
+async function pmOpenNew() {
+  const service = prompt('Service name to generate a postmortem for:');
+  if (!service) return;
+  const duration = prompt('Window (e.g. 1h, 6h):', '1h') || '1h';
+  await pmGenerate(service.trim(), duration.trim());
+}
+
+async function pmGenerate(service, duration) {
+  try {
+    const r = await fetch('/api/postmortems', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ service, duration }),
+    });
+    if (!r.ok) {
+      const text = await r.text();
+      alert('Generate failed: HTTP ' + r.status + (text ? '\n' + text : ''));
+      return;
+    }
+    const stored = await r.json();
+    await pmLoadList();
+    await pmOpen(stored.id);
+  } catch (e) { alert('Generate failed: ' + (e?.message || e)); }
+}
+
+async function pmRegenerate() {
+  if (!PM_LAST_DETAIL) return;
+  await pmGenerate(PM_LAST_DETAIL.report.service, PM_LAST_DETAIL.report.window);
+}
+
+async function pmDelete() {
+  if (!PM_LAST_DETAIL) return;
+  if (!confirm('Delete this postmortem? This cannot be undone.')) return;
+  try {
+    const r = await fetch('/api/postmortems/' + encodeURIComponent(PM_LAST_DETAIL.id), { method: 'DELETE' });
+    if (r.status === 204) { pmCloseDetail(); await pmLoadList(); return; }
+    alert('Delete failed: HTTP ' + r.status);
+  } catch (e) { alert('Delete failed: ' + (e?.message || e)); }
 }
 
 // --- Policies tab (PolicyEngine snapshot + dry-run) ---
