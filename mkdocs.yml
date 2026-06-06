@@ -59,6 +59,8 @@ nav:
   - Home: index.md
   - Getting Started:
       - getting-started.md
+      - MCP Inspector quickstart: quickstart-inspector.md
+      - Dev loop: dev-loop.md
       - configuration.md
       - troubleshooting.md
   - Core Concepts:

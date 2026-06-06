@@ -37,6 +37,7 @@ import {
   verifyManifestSignature,
   PluginVerificationError,
 } from "../connectors/verify.js";
+import { inspectorConfigCommand } from "./inspector-config.js";
 
 function pkgVersion(): string {
   try {
@@ -392,6 +393,8 @@ async function main(): Promise<void> {
       return plugin(sub, positionals, flags);
     case "helm":
       return helm(sub, positionals[0] ?? "observability-mcp", passthrough);
+    case "inspector-config":
+      return inspectorConfigCommand();
     default:
       fail(`unknown command: ${command}\n\n${HELP}`);
   }
