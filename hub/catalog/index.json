@@ -142,7 +142,7 @@
           "releasedAt": "2026-06-06",
           "serverCompat": ">=3.0.0",
           "integrity": "sha256-QINzSd6usdgVwZUziQgssLHSmTreP0Vb+3dI6Wp5IX0=",
-          "changelog": "Adds queryTraces capability so the gateway's `query_traces` MCP tool returns real ranked trace summaries against the Tempo backend."
+          "changelog": "Adds queryTraces capability so the gateway's `query_traces` MCP tool returns real ranked trace summaries against the Tempo backend. Builds a TraceQL query (default `{ resource.service.name=\"X\" }`, splices service-AND into caller-supplied filters), hits /api/search, then for the first 25 traces fetches /api/traces/:id to compute spanCount + hasError from OTLP status.code. Output matches gateway TraceResult shape exactly."
         },
         {
           "version": "1.1.0",
