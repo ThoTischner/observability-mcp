@@ -1,0 +1,112 @@
+site_name: observability-mcp
+site_description: Topology-aware MCP control plane for AI agents (Prometheus / Loki / Tempo / Kubernetes / Federation)
+site_url: https://thotischner.github.io/observability-mcp/
+repo_url: https://github.com/ThoTischner/observability-mcp
+repo_name: ThoTischner/observability-mcp
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.indexes
+    - navigation.top
+    - content.code.copy
+    - content.action.edit
+    - search.suggest
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle: { icon: material/brightness-auto, name: System theme }
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle: { icon: material/brightness-7, name: Dark mode }
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle: { icon: material/brightness-4, name: Light mode }
+  icon:
+    repo: fontawesome/brands/github
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - footnotes
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+plugins:
+  - search
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - getting-started.md
+      - configuration.md
+      - troubleshooting.md
+  - Core Concepts:
+      - Topology vocabulary: topology-vocabulary.md
+      - Tenancy: tenancy.md
+      - Plugin architecture: plugin-architecture.md
+      - Transports: transports.md
+  - Deployment:
+      - Air-gapped: airgapped-deployment.md
+      - Offline operation: offline.md
+      - Horizontal scaling: horizontal-scaling.md
+      - Self-observability: self-observability.md
+      - Security: security.md
+      - Hardening: hardening.md
+  - Connectors:
+      - Overview: connectors.md
+      - Prometheus: prometheus.md
+      - Loki: loki.md
+      - Kubernetes: kubernetes.md
+      - Topology providers: topology-providers.md
+      - Federation: federation.md
+  - Access Control:
+      - Overview: access-control.md
+      - Basic auth: auth-basic.md
+      - OIDC: auth-oidc.md
+      - SSO providers:
+          - GitHub: auth-oidc-providers/github.md
+          - Google: auth-oidc-providers/google.md
+          - Microsoft Entra ID: auth-oidc-providers/microsoft-entra.md
+          - Okta: auth-oidc-providers/okta.md
+      - Auth + TLS: auth-and-tls.md
+      - Policy engines: policy-engines.md
+      - Products: products.md
+      - Redaction: redaction.md
+  - Audit & Compliance:
+      - Audit sinks: audit-sinks.md
+      - MCP conformance: mcp-conformance.md
+      - Comparison: comparison.md
+  - Observability Intelligence:
+      - Anomaly history: anomaly-history.md
+      - Astronomy-shop benchmark: benchmark-astronomy-shop.md
+  - Reference:
+      - Demo agent: agent.md
+      - Entitlement gate: enterprise-gate.md
+  - Migrations:
+      - 1.x → 2.0: migrations/1.x-to-2.0.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/ThoTischner/observability-mcp

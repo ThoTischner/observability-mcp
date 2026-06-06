@@ -20,3 +20,4 @@ connectors/*/manifest.json.sig
 experiments/
 docker-compose.override.yml
 .benchmark/
+site/
