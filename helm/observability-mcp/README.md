@@ -91,4 +91,5 @@ Major-version bumps of the chart will be documented in the CHANGELOG.
 
 ## License
 
-MIT — same as the upstream project.
+Apache-2.0 — same as the upstream project. See
+[LICENSE](https://github.com/ThoTischner/observability-mcp/blob/main/LICENSE).
