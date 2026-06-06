@@ -16,7 +16,7 @@
           "version": "1.0.0",
           "releasedAt": "2026-06-06",
           "serverCompat": ">=3.0.0",
-          "integrity": "sha256-13fD6CKI/rvgW05gy74iLcZLaIHYHNIgGE/oe99Ie9s=",
+          "integrity": "sha256-uK8e+cOg8ZwgFFZP/HYTg/RNH/v/NJumnrBLWqawf+U=",
           "changelog": "Initial release: EC2 + ECS + EKS topology discovery. Snapshots memoized for 30s. Watch-mode delivers initial resync + periodic poll. Standard AWS SDK credential chain (env, IAM role, profile)."
         }
       ]

@@ -149,34 +149,53 @@ export class AwsConnector {
       return;
     }
 
-    // Production mode: lazy-load the SDK on first connect. Keeps the
-    // CI unit-test job dependency-free since unit tests always go
-    // through the injected-client path above.
-    const sdk = await loadSdk();
-    const ctorArgs = { region: this._region };
-    this._ec2 = new sdk.EC2Client(ctorArgs);
-    this._ecs = new sdk.ECSClient(ctorArgs);
-    this._eks = new sdk.EKSClient(ctorArgs);
-    this._cmd = {
-      DescribeInstancesCommand: sdk.DescribeInstancesCommand,
-      EcsListClustersCommand: sdk.EcsListClustersCommand,
-      ListServicesCommand: sdk.ListServicesCommand,
-      ListTasksCommand: sdk.ListTasksCommand,
-      DescribeServicesCommand: sdk.DescribeServicesCommand,
-      DescribeTasksCommand: sdk.DescribeTasksCommand,
-      EksListClustersCommand: sdk.EksListClustersCommand,
-      EksDescribeClusterCommand: sdk.EksDescribeClusterCommand,
-      ListNodegroupsCommand: sdk.ListNodegroupsCommand,
-      DescribeNodegroupCommand: sdk.DescribeNodegroupCommand,
-    };
+    // Production mode: lazy-load the SDK on first connect. If the
+    // SDK isn't installed at runtime (e.g. the loader smoke that
+    // tests every connector outside of an `npm install` boundary),
+    // mark the connector as unusable but DON'T throw — healthCheck
+    // surfaces a structured "down" so the gateway boots cleanly.
+    try {
+      const sdk = await loadSdk();
+      const ctorArgs = { region: this._region };
+      this._ec2 = new sdk.EC2Client(ctorArgs);
+      this._ecs = new sdk.ECSClient(ctorArgs);
+      this._eks = new sdk.EKSClient(ctorArgs);
+      this._cmd = {
+        DescribeInstancesCommand: sdk.DescribeInstancesCommand,
+        EcsListClustersCommand: sdk.EcsListClustersCommand,
+        ListServicesCommand: sdk.ListServicesCommand,
+        ListTasksCommand: sdk.ListTasksCommand,
+        DescribeServicesCommand: sdk.DescribeServicesCommand,
+        DescribeTasksCommand: sdk.DescribeTasksCommand,
+        EksListClustersCommand: sdk.EksListClustersCommand,
+        EksDescribeClusterCommand: sdk.EksDescribeClusterCommand,
+        ListNodegroupsCommand: sdk.ListNodegroupsCommand,
+        DescribeNodegroupCommand: sdk.DescribeNodegroupCommand,
+      };
+    } catch (err) {
+      this._sdkLoadError = err instanceof Error ? err.message : String(err);
+    }
   }
 
   async healthCheck() {
-    // One cheap SDK call. Returns latency in ms; SDK timeouts surface
-    // as a structured error the registry's healthCheck wrapper logs.
+    // When the SDK couldn't be loaded at connect() time, report
+    // down with a structured message rather than throwing. Keeps
+    // the gateway boot path clean even when AWS deps aren't
+    // installed.
+    if (this._sdkLoadError) {
+      return { status: "down", latencyMs: 0, message: `aws sdk not installed: ${this._sdkLoadError}` };
+    }
     const t0 = Date.now();
-    await this._ec2.send(new this._cmd.DescribeInstancesCommand({ MaxResults: 5 }));
-    return { status: "up", latencyMs: Date.now() - t0 };
+    try {
+      await this._ec2.send(new this._cmd.DescribeInstancesCommand({ MaxResults: 5 }));
+      return { status: "up", latencyMs: Date.now() - t0 };
+    } catch (err) {
+      return {
+        status: "down",
+        latencyMs: Date.now() - t0,
+        message: err instanceof Error ? err.message : String(err),
+      };
+    }
   }
 
   async disconnect() {
