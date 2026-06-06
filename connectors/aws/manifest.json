@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "name": "aws",
+  "displayName": "AWS",
+  "version": "1.0.0",
+  "description": "AWS topology connector — discovers EC2 instances, ECS services + tasks, and EKS clusters + nodepools via the AWS SDK, then emits them as a Resource graph the gateway can merge with Kubernetes / service-mesh views. RUNS_ON edges link ECS tasks to EC2 hosts; OWNED_BY links ECS tasks to their services and EKS nodes to their clusters. Auth: standard AWS SDK credential chain (env, IAM instance role, profile).",
+  "signalTypes": ["topology"],
+  "homepage": "https://github.com/ThoTischner/observability-mcp",
+  "license": "Apache-2.0",
+  "capabilities": {
+    "listServices": true,
+    "listResources": true,
+    "listEdges": true,
+    "getTopologySnapshot": true,
+    "watchTopology": true
+  },
+  "compat": {
+    "serverVersion": ">=3.0.0"
+  },
+  "integrity": "sha256-uK8e+cOg8ZwgFFZP/HYTg/RNH/v/NJumnrBLWqawf+U="
+}
