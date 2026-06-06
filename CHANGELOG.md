@@ -6,9 +6,122 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-Patch-level refinements on top of 1.8.0. None of these break existing
-deployments — operators upgrading from 1.8.0 see only additive surface
-plus stricter redaction by default.
+## [2.0.0] — 2026-06-06
+
+Major release. v2.0 closes the remaining adoption-blocking gaps so a
+single deployment of observability-mcp is a complete MCP control
+plane: federate other MCP servers under one endpoint, multi-replica
+HA, WebSocket transport, OIDC vendor presets for every major IdP,
+plugin lifecycle hooks, hardened web-app baseline, and provable
+MCP-spec conformance.
+
+Migrating from 1.x is additive — every new behaviour is opt-in via
+env / Helm values. See [`docs/migrations/1.x-to-2.0.md`](docs/migrations/1.x-to-2.0.md).
+
+### Added — capabilities
+
+- **Upstream MCP federation** — `OMCP_FEDERATION_UPSTREAMS=name=url,…`
+  proxies every upstream's tools under a stable `<name>.<tool>`
+  namespace on the local `/mcp`. Federated tools dispatch through
+  the same `registerTool` wrapper as native ones, so per-credential
+  allow-lists, lifecycle hooks, audit, and rate-limit apply
+  uniformly. Static-bearer auth per source via
+  `OMCP_FEDERATION_TOKEN_<NAME>`. Docs: [`docs/federation.md`](docs/federation.md).
+- **Virtual MCP servers** — every published Product gets its own
+  Streamable HTTP endpoint at `/mcp/v/<product-id>` that exposes
+  ONLY the tools bound to that Product. Sessions are bound to the
+  product they were issued under; cross-product probes return 404.
+  Backwards compat: root `/mcp` still serves the full surface.
+- **WebSocket MCP transport** at `ws://host:3000/mcp/ws`. Bearer
+  token accepted from `Authorization`, `?token=`, or
+  `Sec-WebSocket-Protocol: bearer.X` (precedence in that order).
+  Heartbeat ping every 30s, close 1001 after 90s of no pong. Docs:
+  [`docs/transports.md`](docs/transports.md).
+- **MCP 2025-11-25 conformance harness** — 10-test suite over a
+  running gateway runs via `make conformance` and as a required CI
+  check; `GET /api/conformance` returns the supported revisions /
+  transports / methods for procurement probes. Docs:
+  [`docs/mcp-conformance.md`](docs/mcp-conformance.md).
+- **SSO vendor profiles** — `OMCP_OIDC_PROFILE=generic|keycloak|github|google|microsoft-entra|okta`
+  preconfigures the IdP-shaped fields (scopes / rolesClaim /
+  tenantClaim). Explicit `OMCP_OIDC_*` env vars always win. Per-vendor
+  setup guides under [`docs/auth-oidc-providers/`](docs/auth-oidc-providers/).
+- **RFC 7591 Dynamic Client Registration** at
+  `POST /api/auth/oidc/register` (opt-in via
+  `OMCP_OIDC_DCR_ENABLED=true`). Validates redirect_uris (https only
+  except localhost), mints UUID `client_id` + base64url secret
+  (omitted for `auth_method=none`), persists to JSON at
+  `OMCP_OIDC_DCR_STORE` (mode 0600, atomic tmp+rename). Rate-limited
+  per source IP at 10/hour.
+- **Plugin lifecycle hooks** — manifest `hooks[]` block + new
+  `HookRegistry` fires `tool_pre_invoke` / `tool_post_invoke` (plus
+  resource_*/prompt_* seams in follow-up) around every tool dispatch.
+  Hooks can deny the call, mutate the args, or mutate the result.
+  Example plugin `plugins/redact-pii/` masks emails and IPv4 in tool
+  results. SDK exports `HookRegistry`, `HookKind`, `HookContext`,
+  `HookPayload`, `HookResult`, `HookRegistration`.
+- **Pluggable audit sinks** — `OMCP_AUDIT_WEBHOOK_URL` fans every
+  chained audit entry out to an external HTTP receiver (Splunk HEC,
+  SIEM ingestor) with retries + exponential backoff + on-disk DLQ.
+  On-disk JSONL master remains the authoritative chain. Docs:
+  [`docs/audit-sinks.md`](docs/audit-sinks.md).
+- **OpenTelemetry self-tracing** — `OMCP_OTEL_ENABLED=true`
+  + `OMCP_OTEL_ENDPOINT` exports every `/api/*` and `/mcp` request as
+  a span via OTLP/HTTP. Resource attrs: `service.name` /
+  `service.version` / `service.instance.id`. Connector HTTP calls
+  surface as child spans so one trace covers the full caller →
+  backend chain. Docs: [`docs/self-observability.md`](docs/self-observability.md).
+- **Shared session store** — `OMCP_REDIS_URL` opts every replica
+  into a shared Redis-backed store for sessions / OIDC flow / DCR /
+  federation cache. Default in-memory store preserves the pre-2.0
+  single-replica behaviour exactly. Helm chart renders a
+  `PodDisruptionBudget` (minAvailable 1) when `replicaCount > 1`.
+  Sticky-ingress annotations (`ingressSticky.enabled`) as a fallback
+  for deployments that can't run Redis. Docs:
+  [`docs/horizontal-scaling.md`](docs/horizontal-scaling.md).
+
+### Added — security
+
+- **CSRF double-submit cookie** on every mutating `/api/*` request.
+  Bearer / X-API-Key clients bypass by default
+  (`OMCP_CSRF_BYPASS_BEARER=true`) — they can't be a browser
+  confused-deputy and CI/agents/MCP clients keep working.
+- **SSRF strict-mode** on operator-supplied connector URLs. Rejects
+  cloud-metadata IPs (always), RFC1918 + loopback + link-local IPv4,
+  IPv6 loopback / ULA / link-local. Opt-out for in-cluster backends
+  via `OMCP_ALLOW_PRIVATE_BACKENDS=true`.
+- **Plugin signature verification default ON** — `VERIFY_PLUGINS=true`
+  is now the default. Operators who run unsigned filesystem plugins
+  must opt out with `VERIFY_PLUGINS=false`. Builtin connectors stay
+  always-loadable (part of the trusted image), so the demo and any
+  deployment without `/app/plugins` is unaffected. Docs:
+  [`docs/plugin-architecture.md`](docs/plugin-architecture.md).
+
+### Deferred to v2.x (incremental)
+
+- Resource / prompt hook seams + manifest-driven loader that auto-
+  registers from disk (the F7 foundation ships; existing consumers
+  register programmatically).
+- Stdio + WebSocket federation upstream transports, caller-OIDC /
+  UAID passthrough auth, `/api/federation` runtime management,
+  `sources.yaml` federation schema, UI add-modal.
+- Redis migration of in-memory MCP transport map + OIDC flow state +
+  DCR registrations (the F8 SessionStore is ready; F10 is the first
+  consumer).
+- S3-compatible audit sink (the F4 plugin-sink architecture is in
+  place; webhook is the first concrete sink).
+- JWT revocation blocklist, account lockout for local accounts,
+  configurable password policy, CSP nonces with `report-to`,
+  rate-limit headers on `/api/*`, `@requirePermission` completeness
+  audit pass (F11b).
+
+### Backwards compatibility
+
+Every new capability above is opt-in via env / Helm value. The
+default single-replica anonymous-auth Docker-compose demo runs
+identically on 1.8.x and 2.0.0. The one behaviour flip is plugin
+signature verification — see migration guide for the opt-out path.
+
 
 ### Added
 - **`GET /api/policy`** (admin-only) — read-only view of the active

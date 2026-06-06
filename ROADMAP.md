@@ -4,7 +4,41 @@ Where the project is going at a thematic level. For the connector-plugin enginee
 
 Items here are **directions, not promises** — order will shift based on what users actually need. If something here matters to you, open a Discussion or an Issue.
 
-## Now — landed
+## v2.0 — shipped 2026-06-06
+
+The v2.0 release closed the remaining adoption-blocking gaps so a
+single deployment is a complete MCP control plane. See
+[CHANGELOG.md](CHANGELOG.md) for the per-capability detail.
+
+- ✅ Upstream MCP federation (proxies other gateways' tools under a stable namespace)
+- ✅ Multi-replica HA — shared session store + PodDisruptionBudget + sticky-ingress fallback
+- ✅ WebSocket MCP transport at `/mcp/ws`
+- ✅ Virtual MCP servers per Product at `/mcp/v/<id>`
+- ✅ Plugin lifecycle hooks (`tool_pre_invoke` / `tool_post_invoke`)
+- ✅ Pluggable audit sinks (Splunk/SIEM webhook with retries + DLQ)
+- ✅ OpenTelemetry self-tracing
+- ✅ MCP 2025-11-25 conformance harness + `GET /api/conformance` probe
+- ✅ SSO vendor profiles (GitHub / Google / Microsoft Entra / Okta / Keycloak / generic)
+- ✅ RFC 7591 Dynamic Client Registration
+- ✅ Hardening — CSRF for SPA, SSRF strict-mode, plugin signature default-on
+
+## v3.0 — next
+
+A second sprint that extends the moats v2.0 secured. Track in
+`/home/neo/.claude/plans/hub-parity-sprint.md` Phases F13–F23.
+
+- `query_traces` MCP tool + Tempo/Jaeger integration
+- Multi-cloud topology providers (AWS / GCP / Consul / Istio / Linkerd)
+- TSDB-backed anomaly history for replay + post-mortem
+- Batch policy dry-run probe
+- MkDocs documentation site
+- MCP Inspector quickstart
+- Auto-generated post-mortem reports
+- Plugin SDK as standalone npm package
+- SCIM 2.0 provisioning
+- Verifiable-offline CI (egress-blocked container)
+
+## Earlier — landed
 
 - ✅ MCP Streamable HTTP transport with all 6 tools
 - ✅ Prometheus + Loki as filesystem plugins (PluginLoader + Zod manifest schema)
