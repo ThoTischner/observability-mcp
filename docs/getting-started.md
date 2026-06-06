@@ -82,6 +82,7 @@ See [configuration](configuration.md) for the full schema and
 
 ## Next steps
 
+- [Install via Helm](install-helm.md) — production install on Kubernetes
 - [Access control](access-control.md) — RBAC, OIDC, audit
 - [Federation](federation.md) — proxy upstream MCP servers
 - [Horizontal scaling](horizontal-scaling.md) — multi-replica HA

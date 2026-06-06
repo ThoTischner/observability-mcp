@@ -35,6 +35,7 @@ Drop the snippet into Claude Desktop / Cursor / any MCP client; the eight observ
 ## What's where
 
 - **[Getting started](getting-started.md)** — install, configure, first tool call.
+- **[Install via Helm](install-helm.md)** — `helm repo add` + values + signature verification.
 - **[Configuration](configuration.md)** — `sources.yaml`, env vars, hot-reload.
 - **[Topology vocabulary](topology-vocabulary.md)** — the shared graph language every connector speaks.
 - **[Federation](federation.md)** — fan tools out from upstream MCP gateways.

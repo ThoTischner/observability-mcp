@@ -42,8 +42,41 @@ jobs:
         # in the published site are warnings, not failures. A
         # follow-up cleans up those links so we can flip to strict.
         run: mkdocs build
+      - name: Merge Helm chart-releaser repo into site/
+        # We switched Pages source from the gh-pages branch to a
+        # workflow-driven deploy so MkDocs could serve from /. The
+        # chart-releaser workflow still pushes index.yaml + chart
+        # tarballs to gh-pages, and operators rely on the same URL
+        # for `helm repo add observability-mcp https://thotischner.github.io/observability-mcp`.
+        # Copy those files into the MkDocs output BEFORE upload so
+        # both surfaces live side by side under the same Pages site:
+        #   /                 → MkDocs landing
+        #   /index.yaml       → Helm repo index
+        #   /<chart>-X.Y.Z.tgz → chart tarballs
+        # mkdocs's own index.html stays in place (it was written
+        # first and copy never overwrites it because cp -n skips
+        # existing). The gh-pages root index.html is the chart-
+        # releaser auto-generated listing — fine to drop.
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        run: |
+          set -euo pipefail
+          if git fetch --depth 1 origin gh-pages 2>/dev/null; then
+            git worktree add /tmp/ghpages FETCH_HEAD
+            # copy *.tgz, *.tgz.prov, index.yaml — skip index.html
+            # (mkdocs landing wins) and the chart-releaser-noise.
+            shopt -s nullglob
+            for f in /tmp/ghpages/*.tgz /tmp/ghpages/*.tgz.prov /tmp/ghpages/index.yaml; do
+              [ -f "$f" ] || continue
+              cp -n "$f" site/
+              echo "  preserved $(basename "$f")"
+            done
+            git worktree remove --force /tmp/ghpages || true
+            echo "::notice::Helm repo files preserved alongside docs site"
+          else
+            echo "::notice::No gh-pages branch yet — nothing to preserve"
+          fi
       - name: Upload Pages artifact
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
         with:
           path: site
@@ -51,7 +84,7 @@ jobs:
   deploy:
     name: Deploy to Pages
     needs: build
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     environment:
       name: github-pages
