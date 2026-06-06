@@ -1167,7 +1167,9 @@ async function main() {
     const client = new UpstreamClient(
       cfg.kind === "stdio"
         ? { transport: "stdio", name: cfg.name, command: cfg.command, args: cfg.args }
-        : { name: cfg.name, url: cfg.url, bearerToken: cfg.bearerToken },
+        : cfg.kind === "ws"
+          ? { transport: "ws", name: cfg.name, url: cfg.url }
+          : { name: cfg.name, url: cfg.url, bearerToken: cfg.bearerToken },
     );
     federationRegistry.add(client);
     client.connect().catch((err: unknown) => {
