@@ -1164,11 +1164,11 @@ async function main() {
   // (no tools) so the gateway boots regardless of upstream health.
   const federationRegistry = new FederationRegistry();
   for (const cfg of parseFederationEnv()) {
-    const client = new UpstreamClient({
-      name: cfg.name,
-      url: cfg.url,
-      bearerToken: cfg.bearerToken,
-    });
+    const client = new UpstreamClient(
+      cfg.kind === "stdio"
+        ? { transport: "stdio", name: cfg.name, command: cfg.command, args: cfg.args }
+        : { name: cfg.name, url: cfg.url, bearerToken: cfg.bearerToken },
+    );
     federationRegistry.add(client);
     client.connect().catch((err: unknown) => {
       console.warn(
