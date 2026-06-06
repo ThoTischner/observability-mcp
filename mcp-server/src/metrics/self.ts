@@ -54,6 +54,15 @@ export const mcpActiveSessions = new Gauge({
   registers: [selfRegistry],
 });
 
+// P9: Audit webhook dead-letter queue depth. Refreshed on each
+// `/metrics` scrape and when the operator hits `/api/audit/dlq`.
+// Stays at 0 when no DLQ file is configured or the file is missing.
+export const auditDlqDepth = new Gauge({
+  name: "obsmcp_audit_webhook_dlq_depth",
+  help: "Number of audit entries waiting in the webhook-sink dead-letter queue.",
+  registers: [selfRegistry],
+});
+
 /**
  * Wrap a (potentially async) tool handler to record call count + latency.
  * Outcome is "ok" or "error" — never throws on its own.
