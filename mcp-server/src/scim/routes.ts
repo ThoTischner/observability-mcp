@@ -41,7 +41,11 @@ export interface ScimRoutesDeps {
 
 const constantTimeBearerMatch = (raw: string | undefined, expected: string): boolean => {
   if (!raw) return false;
-  const m = raw.match(/^Bearer\s+(.+)$/i);
+  // Use bounded whitespace ({1,16}) instead of `\s+` to avoid the
+  // polynomial-ReDoS class — `\s+` followed by `(.+)` backtracks on
+  // strings like "bearer<many spaces><payload>". 16 is generous;
+  // RFC 7235 only requires one space.
+  const m = raw.match(/^Bearer[ \t]{1,16}(.+)$/i);
   if (!m) return false;
   const a = Buffer.from(m[1].trim());
   const b = Buffer.from(expected);
@@ -240,6 +244,30 @@ function withGroups(u: ScimUser, store: ScimStore): ScimUser {
  *  `remove` for members/emails arrays are a follow-up — the
  *  Entra/Okta provisioning checklists exercise replace-only on the
  *  attributes we expose. */
+// Allow-list of attribute names patchable via SCIM PatchOp.
+// `applyPatchOps` writes into a plain object using a user-supplied
+// path/key — every key is gated through this set so a malicious
+// client can't inject __proto__ / constructor / arbitrary fields.
+const PATCH_ALLOWED_ATTRS: ReadonlySet<string> = new Set([
+  "userName", "active", "displayName", "name", "emails", "externalId",
+  "members", "groups",
+]);
+
+function safePatchKey(k: unknown): k is string {
+  return typeof k === "string" && PATCH_ALLOWED_ATTRS.has(k);
+}
+
+/** Translate a SCIM PatchOp into a partial resource patch. Minimal:
+ *  we accept `op: "replace"` with no path (whole-resource merge) or
+ *  with a single-segment path naming a top-level attribute. `add` and
+ *  `remove` for members/emails arrays are a follow-up — the
+ *  Entra/Okta provisioning checklists exercise replace-only on the
+ *  attributes we expose.
+ *
+ *  Every property name written into `out` is gated through
+ *  `PATCH_ALLOWED_ATTRS` so a SCIM client can't inject __proto__ /
+ *  constructor / arbitrary fields (CodeQL js/remote-property-injection +
+ *  js/prototype-polluting-assignment). */
 function applyPatchOps<T extends { id: string }>(current: T | undefined, patch: ScimPatchRequest): Partial<T> {
   if (!current) throw new ScimNotFoundError("target resource not found");
   if (!patch?.Operations || !Array.isArray(patch.Operations)) return {};
@@ -247,13 +275,14 @@ function applyPatchOps<T extends { id: string }>(current: T | undefined, patch: 
   for (const op of patch.Operations) {
     if (op.op !== "replace") continue; // skip add/remove for F21a
     if (!op.path) {
-      // value is a partial object — merge top-level keys
       if (op.value && typeof op.value === "object") {
-        Object.assign(out, op.value);
+        for (const [k, v] of Object.entries(op.value as Record<string, unknown>)) {
+          if (safePatchKey(k)) out[k] = v;
+        }
       }
       continue;
     }
-    out[op.path] = op.value;
+    if (safePatchKey(op.path)) out[op.path] = op.value;
   }
   return out as Partial<T>;
 }

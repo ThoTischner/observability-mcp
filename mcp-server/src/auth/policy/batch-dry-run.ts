@@ -120,14 +120,28 @@ export async function evaluateBatch(
     actions.length = limits.maxActions;
   }
 
+  // Reject keys that could mutate Object.prototype if injected from
+  // user input — `__proto__`, `constructor`, `prototype`. CodeQL
+  // js/prototype-polluting-assignment + js/remote-property-injection.
+  const DANGEROUS = new Set(["__proto__", "constructor", "prototype"]);
+  const isSafeKey = (k: string): boolean => !DANGEROUS.has(k);
+
+  // Plain object so JSON round-trip + deep-equal in tests keeps
+  // working; the DANGEROUS guard below is the actual protection.
   const matrix: BatchDryRunResult["matrix"] = {};
   let allowCount = 0;
   let denyCount = 0;
   for (const s of subjects) {
+    if (!isSafeKey(s.key)) {
+      dropped.push({ kind: "subject", value: s.key, reason: "reserved key name" });
+      continue;
+    }
     matrix[s.key] = {};
     for (const r of resources) {
+      if (!isSafeKey(String(r))) continue;
       matrix[s.key][r] = {};
       for (const a of actions) {
+        if (!isSafeKey(String(a))) continue;
         const verdict = await Promise.resolve(
           engine.evaluate(
             s.roles,
