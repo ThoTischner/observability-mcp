@@ -1,0 +1,21 @@
+{
+  "name": "@observability-mcp/connector-aws",
+  "version": "1.0.0",
+  "description": "AWS topology connector for observability-mcp — EC2 + ECS + EKS discovery via the AWS SDK, emitted as a Resource graph the gateway can merge with Kubernetes / service-mesh views.",
+  "type": "module",
+  "main": "./index.js",
+  "license": "Apache-2.0",
+  "files": ["index.js", "manifest.json"],
+  "observabilityMcp": {
+    "kind": "connector",
+    "name": "aws"
+  },
+  "scripts": {
+    "test": "node --test index.test.mjs"
+  },
+  "dependencies": {
+    "@aws-sdk/client-ec2": "^3.658.0",
+    "@aws-sdk/client-ecs": "^3.658.0",
+    "@aws-sdk/client-eks": "^3.658.0"
+  }
+}

@@ -19,7 +19,7 @@ This page describes:
 | Provider | Source name | Status | Notes |
 |---|---|---|---|
 | Kubernetes | `kubernetes` | ✅ shipped (in-tree) | Watches Deployments, Pods, Services, Namespaces, Nodes. Edges via ownerReferences + service selectors. |
-| AWS | `aws` | 🔧 follow-up | Will discover ECS services, RDS, ELB/ALB target groups, SQS, Lambda. Edges via CloudMap + ALB target groups + SG references. |
+| AWS | `aws` | ✅ shipped (Q1 / v3.1) | EC2 + ECS clusters/services/tasks + EKS clusters/nodegroups. Edges: ECS task → service (OWNED_BY); ECS service → cluster (OWNED_BY); EKS nodegroup → cluster (OWNED_BY). Snapshots memoized for 30 s. Auth via standard AWS SDK credential chain. |
 | GCP | `gcp` | 🔧 follow-up | GKE workloads, Cloud Run, Cloud SQL, Pub/Sub. Edges via Service Directory + VPC peerings. |
 | Consul | `consul` | 🔧 follow-up | Service registry + intentions over the Consul HTTP API. |
 | Istio | `istio` | 🔧 follow-up | mTLS-protected call edges + service-mesh resource graph. |

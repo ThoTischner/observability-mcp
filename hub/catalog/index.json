@@ -2,6 +2,26 @@
   "catalogVersion": 1,
   "connectors": [
     {
+      "name": "aws",
+      "displayName": "AWS",
+      "description": "AWS topology connector — discovers EC2 instances, ECS services + tasks, and EKS clusters + nodepools via the AWS SDK, then emits them as a Resource graph the gateway can merge with Kubernetes / service-mesh views. RUNS_ON edges link ECS tasks to EC2 hosts; OWNED_BY links ECS tasks to their services and EKS nodes to their clusters.",
+      "tier": "official",
+      "builtin": false,
+      "signalTypes": [
+        "topology"
+      ],
+      "latest": "1.0.0",
+      "versions": [
+        {
+          "version": "1.0.0",
+          "releasedAt": "2026-06-06",
+          "serverCompat": ">=3.0.0",
+          "integrity": "sha256-3uTC6abysie6o1VpNlWlOxYfCwat1RVjJoZSvH1nEIM=",
+          "changelog": "Initial release: EC2 + ECS + EKS topology discovery. Snapshots memoized for 30s. Watch-mode delivers initial resync + periodic poll. Standard AWS SDK credential chain (env, IAM role, profile)."
+        }
+      ]
+    },
+    {
       "name": "datadog",
       "displayName": "Datadog",
       "description": "Datadog connector — metrics via the v1 query API and logs via the v2 logs search API. The first optional, hub-installable connector.",
