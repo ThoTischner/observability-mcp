@@ -1,0 +1,54 @@
+name: sdk-publish
+
+on:
+  push:
+    tags:
+      - 'sdk-v*'
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Pack only — do not publish to npm'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  id-token: write   # required for npm provenance
+
+jobs:
+  publish:
+    name: Build + publish @thotischner/observability-mcp-sdk
+    runs-on: ubuntu-latest
+    environment:
+      name: npm-sdk
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install
+        working-directory: packages/sdk
+        run: npm install --no-audit --no-fund
+
+      - name: Build
+        working-directory: packages/sdk
+        run: npm run build
+
+      - name: Vendor parity check (packages/sdk mirrors mcp-server/src/sdk)
+        run: |
+          diff -q mcp-server/src/sdk/hooks.ts packages/sdk/src/hooks.ts
+          diff -q mcp-server/src/sdk/manifest-schema.ts packages/sdk/src/manifest-schema.ts
+
+      - name: Pack
+        working-directory: packages/sdk
+        run: npm pack
+
+      - name: Publish to npm (with provenance)
+        if: ${{ github.event_name == 'push' || inputs.dry-run == false }}
+        working-directory: packages/sdk
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public --provenance
