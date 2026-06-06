@@ -91,6 +91,7 @@ import { selfRegistry, withToolMetrics, apiRequests, mcpActiveSessions, auditDlq
 import { initOtel } from "./observability/otel.js";
 import { WebSocketServerTransport } from "./transport/websocket.js";
 import { HookRegistry } from "./sdk/hooks.js";
+import { wrapToolHandler, wrapResourceHandler, wrapPromptHandler } from "./sdk/hook-wrappers.js";
 import { UpstreamClient } from "./federation/upstream.js";
 import { FederationRegistry, parseFederationEnv } from "./federation/registry.js";
 import { buildCsrfIssuer, buildCsrfEnforcer, csrfBypassFromEnv } from "./auth/csrf.js";
@@ -381,43 +382,48 @@ async function main() {
   const registerTool = ((name: string, ...rest: unknown[]) => {
     if (!allowsTool(ctx.allowedTools, name)) return undefined as never;
     if (rest.length > 0 && typeof rest[rest.length - 1] === "function") {
-      const originalHandler = rest[rest.length - 1] as (...a: unknown[]) => unknown;
-      const wrappedHandler = async (args: unknown, extra: unknown) => {
-        const hookCtxBase = {
-          principal: ctx.principalId,
-          tenant: ctx.tenant || "default",
-          target: name,
-        };
-        const pre = await hookRegistry.fire(
-          "tool_pre_invoke",
-          { ...hookCtxBase, kind: "tool_pre_invoke" as const },
-          { args },
-        );
-        if (!pre.allow) {
-          return {
-            content: [{ type: "text", text: pre.reason ?? "denied by plugin hook" }],
-            isError: true,
-          };
-        }
-        const effectiveArgs = (pre.payload as { args?: unknown } | undefined)?.args ?? args;
-        const result = await originalHandler(effectiveArgs, extra);
-        const post = await hookRegistry.fire(
-          "tool_post_invoke",
-          { ...hookCtxBase, kind: "tool_post_invoke" as const },
-          { args: effectiveArgs, result },
-        );
-        if (!post.allow) {
-          return {
-            content: [{ type: "text", text: post.reason ?? "denied by plugin hook" }],
-            isError: true,
-          };
-        }
-        return (post.payload as { result?: unknown } | undefined)?.result ?? result;
-      };
-      rest[rest.length - 1] = wrappedHandler;
+      const originalHandler = rest[rest.length - 1] as (args: unknown, extra: unknown) => unknown;
+      rest[rest.length - 1] = wrapToolHandler(
+        hookRegistry,
+        { principal: ctx.principalId, tenant: ctx.tenant || "default", target: name },
+        originalHandler,
+      );
     }
     return (mcpServer.tool as unknown as (...a: unknown[]) => unknown)(name, ...rest) as never;
   }) as typeof mcpServer.tool;
+
+  // Q12: resource + prompt registrations get the same hook-fan-out
+  // treatment so a plugin's resource_pre_fetch / resource_post_fetch /
+  // prompt_pre_fetch / prompt_post_fetch handlers actually fire when
+  // a future resource/prompt registration lands. The wrappers stay
+  // thin pass-throughs when no hooks are registered (the OSS default).
+  // Wrappers are tested in mcp-server/src/sdk/hook-wrappers.test.ts.
+  const registerResource = ((name: string, ...rest: unknown[]) => {
+    if (rest.length > 0 && typeof rest[rest.length - 1] === "function") {
+      const originalHandler = rest[rest.length - 1] as (uri: URL | string, extra?: unknown) => unknown;
+      rest[rest.length - 1] = wrapResourceHandler(
+        hookRegistry,
+        { principal: ctx.principalId, tenant: ctx.tenant || "default", target: name },
+        originalHandler,
+      );
+    }
+    return (mcpServer.resource as unknown as (...a: unknown[]) => unknown)(name, ...rest) as never;
+  }) as typeof mcpServer.resource;
+
+  const registerPrompt = ((name: string, ...rest: unknown[]) => {
+    if (rest.length > 0 && typeof rest[rest.length - 1] === "function") {
+      const originalHandler = rest[rest.length - 1] as (args: unknown, extra?: unknown) => unknown;
+      rest[rest.length - 1] = wrapPromptHandler(
+        hookRegistry,
+        { principal: ctx.principalId, tenant: ctx.tenant || "default", target: name },
+        originalHandler,
+      );
+    }
+    return (mcpServer.prompt as unknown as (...a: unknown[]) => unknown)(name, ...rest) as never;
+  }) as typeof mcpServer.prompt;
+  // Suppress unused-warn — kept for the moment registrations land.
+  void registerResource;
+  void registerPrompt;
 
   registerTool(
     "list_sources",
