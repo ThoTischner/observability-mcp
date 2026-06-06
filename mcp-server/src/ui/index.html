@@ -1384,6 +1384,48 @@
       stroke: var(--accent); stroke-width: 3;
       filter: drop-shadow(0 0 4px var(--accent-soft));
     }
+
+    /* ===== Playground (Q13) — restrained, monochrome ===== */
+    .pg-seg { display:inline-flex; gap:0; border:1px solid var(--border); border-radius:6px; overflow:hidden; }
+    .pg-seg button { border:none; background:transparent; color:var(--text-2,var(--text)); font:inherit; font-size:12px; padding:3px 11px; cursor:pointer; }
+    .pg-seg button + button { border-left:1px solid var(--border); }
+    .pg-seg button.active { background:var(--surface-3); color:var(--text); font-weight:600; }
+    /* JSON: two tones only — keys at full strength, scalars muted. */
+    .pg-json { white-space:pre-wrap; font-family:var(--mono); font-size:12px; background:var(--bg); padding:12px; border:1px solid var(--border); border-radius:4px; max-height:540px; overflow:auto; margin:0; color:var(--text-3,#8a93a5); }
+    .pg-json .k { color:var(--text); }
+    .pg-json .s { color:var(--text-2,var(--text)); }
+    .pg-json .n, .pg-json .b { color:var(--text-2,var(--text)); }
+    .pg-json .z { color:var(--text-3,#8a93a5); }
+    .pg-tbl-wrap { max-height:540px; overflow:auto; border:1px solid var(--border); border-radius:4px; }
+    table.pg-tbl { border-collapse:collapse; width:100%; font-size:12px; }
+    table.pg-tbl th, table.pg-tbl td { text-align:left; padding:6px 10px; border-bottom:1px solid var(--border); white-space:nowrap; }
+    table.pg-tbl th { position:sticky; top:0; background:var(--surface-2); color:var(--text-2,var(--text)); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.03em; }
+    table.pg-tbl tr:last-child td { border-bottom:none; }
+    table.pg-tbl tr:hover td { background:var(--surface-2); }
+    /* Status: plain text by default; only failure states get a tint. */
+    table.pg-tbl td .pill { font-weight:600; }
+    table.pg-tbl td .pill.down, table.pg-tbl td .pill.error, table.pg-tbl td .pill.crit { color:var(--danger); }
+    table.pg-tbl td .pill.warn, table.pg-tbl td .pill.degraded { color:var(--warning); }
+    .pg-err-banner { border:1px solid var(--danger); color:var(--danger); border-radius:4px; padding:8px 12px; margin-bottom:10px; font-size:13px; }
+
+    /* Tool picker — type-ahead combobox, closed at rest (Carbon-style). */
+    .pg-combo { position:relative; max-width:560px; }
+    .pg-combo input { width:100%; padding-right:30px; }
+    .pg-combo input:focus { border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-soft); outline:none; }
+    .pg-combo-chev { position:absolute; right:6px; top:50%; transform:translateY(-50%); background:none; border:none; color:var(--text-3,#8a93a5); cursor:pointer; font-size:11px; padding:4px; line-height:1; }
+    .pg-combo-menu { position:absolute; z-index:30; left:0; right:0; top:calc(100% + 4px); background:var(--surface); border:1px solid var(--border); border-radius:4px; box-shadow:0 6px 18px rgba(0,0,0,0.28); max-height:340px; overflow:auto; }
+    .pg-grp-hdr { font-size:11px; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-3,#8a93a5); padding:8px 14px 4px; pointer-events:none; }
+    .pg-grp-hdr + .pg-grp-hdr { display:none; } /* no empty headers */
+    .pg-opt { padding:7px 14px; cursor:pointer; border-left:2px solid transparent; }
+    .pg-opt:hover, .pg-opt.hl { background:var(--surface-2); }
+    .pg-opt.sel { background:var(--surface-3); border-left-color:var(--accent); }
+    .pg-opt .nm { font-family:var(--mono); font-size:13px; color:var(--text); }
+    .pg-opt .sm { font-size:12px; color:var(--text-3,#8a93a5); margin-top:1px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .pg-opt .src { font-size:10px; text-transform:uppercase; letter-spacing:.04em; color:var(--text-3,#8a93a5); }
+    .pg-sel-sum { font-size:12px; color:var(--text-3,#8a93a5); margin-top:6px; min-height:1em; max-width:560px; }
+    .pg-args-tools { float:right; display:inline-flex; gap:4px; }
+    .pg-args-box { font-family:var(--mono); font-size:12px; line-height:1.5; }
+    .pg-args-err { color:var(--danger); font-size:12px; margin-top:6px; }
   </style>
 </head>
 <body>
@@ -1960,28 +2002,50 @@ curl -X PUT http://localhost:3000/api/enterprise/policy \
             onclick="infoPop(this)">?</button>
         </h2></div>
         <div class="content">
+          <!-- hidden field carries the selected tool name -->
+          <input type="hidden" id="pg-tool" value="">
           <div class="form-row">
-            <label for="pg-tool">Tool</label>
-            <select id="pg-tool" class="input" onchange="pgOnToolChange()">
-              <option value="">Loading…</option>
-            </select>
+            <label for="pg-combo-input">Tool</label>
+            <div class="pg-combo" id="pg-combo">
+              <input type="text" id="pg-combo-input" class="input" autocomplete="off" spellcheck="false"
+                     placeholder="Select or filter tools…" role="combobox" aria-expanded="false" aria-controls="pg-combo-menu"
+                     oninput="pgComboFilter(this.value)" onfocus="pgComboOpen()" onkeydown="pgComboKey(event)">
+              <button type="button" class="pg-combo-chev" id="pg-combo-chev" tabindex="-1" aria-label="Toggle tool list" onclick="pgComboToggle()">▾</button>
+              <div class="pg-combo-menu" id="pg-combo-menu" role="listbox" hidden></div>
+            </div>
+            <div id="pg-sel-sum" class="pg-sel-sum"></div>
           </div>
-          <div id="pg-tool-summary" class="muted" style="margin:6px 0 12px;font-size:13px"></div>
-          <div class="form-row">
-            <label for="pg-args">Arguments (JSON)</label>
-            <textarea id="pg-args" class="input" rows="8" style="font-family:var(--mono);font-size:12px" spellcheck="false">{}</textarea>
+
+          <div class="form-row" style="margin-top:20px">
+            <label for="pg-args">Arguments <span class="muted" style="font-weight:normal">(JSON)</span>
+              <span class="pg-args-tools">
+                <button type="button" class="btn btn-ghost btn-sm" onclick="pgFormatArgs()">Format</button>
+                <button type="button" class="btn btn-ghost btn-sm" onclick="document.getElementById('pg-args').value='{}'">Reset</button>
+              </span>
+            </label>
+            <textarea id="pg-args" class="input pg-args-box" rows="8" spellcheck="false">{}</textarea>
+            <div id="pg-args-err" class="pg-args-err" hidden></div>
           </div>
           <div class="row" style="gap:8px;margin-top:8px">
-            <button class="btn btn-primary" onclick="pgRun()" id="pg-run-btn">Invoke</button>
+            <button class="btn btn-primary" onclick="pgRun()" id="pg-run-btn" disabled>Invoke</button>
             <button class="btn btn-ghost" onclick="pgClear()">Clear result</button>
           </div>
         </div>
       </div>
 
       <div class="card" id="pg-result-card" hidden>
-        <div class="card-header"><h2>Result <span id="pg-result-meta" class="muted" style="font-weight:normal;font-size:12px"></span></h2></div>
+        <div class="card-header">
+          <h2>Result <span id="pg-result-meta" class="muted" style="font-weight:normal;font-size:12px"></span></h2>
+          <span style="flex:1"></span>
+          <div class="pg-seg" id="pg-view-seg">
+            <button data-view="pretty" class="active" onclick="pgSetView('pretty')">Pretty</button>
+            <button data-view="table" onclick="pgSetView('table')">Table</button>
+            <button data-view="raw" onclick="pgSetView('raw')">Raw</button>
+          </div>
+          <button class="btn btn-ghost btn-sm" style="margin-left:8px" onclick="pgCopy()">Copy</button>
+        </div>
         <div class="content">
-          <pre id="pg-result-body" style="white-space:pre-wrap;font-family:var(--mono);font-size:12px;background:var(--bg);padding:12px;border:1px solid var(--border);border-radius:4px;max-height:540px;overflow:auto"></pre>
+          <div id="pg-result-body"></div>
         </div>
       </div>
     </div>
@@ -2651,30 +2715,134 @@ function showPage(name) {
 // the UI just shows whatever comes back.
 
 let PG_TOOLS = [];
+let PG_FILTERED = [];   // flat list of tool names currently shown in the menu (keyboard nav)
+let PG_HL = -1;         // highlighted index into PG_FILTERED
+let PG_COMBO_WIRED = false;
+// Category display order + label. Unknown categories fall into "other"
+// so nothing silently vanishes.
+const PG_CAT_ORDER = ['discovery', 'query', 'diagnose', 'topology', 'federated', 'other'];
+const PG_CAT_LABEL = { discovery:'Discovery', query:'Query', diagnose:'Diagnose', topology:'Topology', federated:'Federated', other:'Other' };
 
 async function pgInit() {
-  const sel = document.getElementById('pg-tool');
   if (PG_TOOLS.length) return; // already loaded
   try {
     const res = await fetch('/api/tools/registry');
-    const body = await res.json();
-    PG_TOOLS = body.tools || [];
-    sel.innerHTML = '<option value="">— select a tool —</option>' +
-      PG_TOOLS.map(t =>
-        '<option value="' + encodeURIComponent(t.name) + '">' + t.name + ' · ' + (t.category || '') + '</option>'
-      ).join('');
+    PG_TOOLS = (await res.json()).tools || [];
   } catch (e) {
-    sel.innerHTML = '<option value="">failed to load tool catalogue: ' + (e && e.message ? e.message : e) + '</option>';
+    document.getElementById('pg-sel-sum').textContent = 'Failed to load tool catalogue: ' + (e && e.message ? e.message : String(e));
+  }
+  if (!PG_COMBO_WIRED) {
+    // One document-level outside-click closer.
+    document.addEventListener('click', (ev) => {
+      const combo = document.getElementById('pg-combo');
+      if (combo && !combo.contains(ev.target)) pgComboClose();
+    });
+    PG_COMBO_WIRED = true;
   }
 }
 
-function pgOnToolChange() {
-  const sel = document.getElementById('pg-tool');
-  const summary = document.getElementById('pg-tool-summary');
-  const name = decodeURIComponent(sel.value || '');
-  const t = PG_TOOLS.find(x => x.name === name);
-  summary.textContent = t ? t.summary : '';
+// A tool name with a dot is federated in from an upstream gateway —
+// the prefix is its source; route those into the "federated" group.
+function pgEnrich(t) {
+  const dot = t.name.indexOf('.');
+  return {
+    name: t.name,
+    summary: t.summary || '',
+    category: dot > 0 ? 'federated' : (t.category || 'other'),
+    source: dot > 0 ? t.name.slice(0, dot) : null,
+  };
 }
+
+function pgComboRender(q) {
+  const menu = document.getElementById('pg-combo-menu');
+  const sel = document.getElementById('pg-tool').value;
+  const norm = (q || '').trim().toLowerCase();
+  const showAll = !norm || norm === sel.toLowerCase();
+  const match = (t) => showAll || t.name.toLowerCase().includes(norm) || t.summary.toLowerCase().includes(norm);
+  const byCat = {};
+  PG_TOOLS.map(pgEnrich).filter(match).forEach((t) => { (byCat[t.category] = byCat[t.category] || []).push(t); });
+  const cats = PG_CAT_ORDER.filter((c) => byCat[c]).concat(Object.keys(byCat).filter((c) => !PG_CAT_ORDER.includes(c)));
+  PG_FILTERED = [];
+  let html = '';
+  cats.forEach((cat) => {
+    html += '<div class="pg-grp-hdr">' + escHtml(PG_CAT_LABEL[cat] || cat) + '</div>';
+    byCat[cat].forEach((t) => {
+      const idx = PG_FILTERED.length;
+      PG_FILTERED.push(t.name);
+      html += '<div class="pg-opt' + (t.name === sel ? ' sel' : '') + '" role="option" data-idx="' + idx + '" data-name="' + escHtml(t.name) + '" onclick="pgComboPick(this.dataset.name)">' +
+        '<div class="nm">' + escHtml(t.name) + (t.source ? ' <span class="src">via ' + escHtml(t.source) + '</span>' : '') + '</div>' +
+        '<div class="sm">' + escHtml(t.summary) + '</div>' +
+      '</div>';
+    });
+  });
+  if (!PG_FILTERED.length) html = '<div class="pg-grp-hdr">No matches</div>';
+  menu.innerHTML = html;
+  PG_HL = -1;
+}
+
+function pgComboOpen() {
+  const menu = document.getElementById('pg-combo-menu');
+  pgComboRender(document.getElementById('pg-combo-input').value);
+  menu.hidden = false;
+  document.getElementById('pg-combo-input').setAttribute('aria-expanded', 'true');
+}
+function pgComboClose() {
+  const menu = document.getElementById('pg-combo-menu');
+  if (menu) menu.hidden = true;
+  const inp = document.getElementById('pg-combo-input');
+  if (inp) inp.setAttribute('aria-expanded', 'false');
+}
+function pgComboToggle() {
+  const menu = document.getElementById('pg-combo-menu');
+  if (menu.hidden) { document.getElementById('pg-combo-input').focus(); pgComboOpen(); }
+  else pgComboClose();
+}
+function pgComboFilter(v) { pgComboRender(v); document.getElementById('pg-combo-menu').hidden = false; }
+
+function pgComboPick(name) {
+  document.getElementById('pg-tool').value = name;
+  document.getElementById('pg-combo-input').value = name;
+  const t = PG_TOOLS.find((x) => x.name === name);
+  document.getElementById('pg-sel-sum').textContent = t ? t.summary : '';
+  document.getElementById('pg-run-btn').disabled = false;
+  pgComboClose();
+}
+
+function pgComboKey(e) {
+  const menu = document.getElementById('pg-combo-menu');
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (menu.hidden) { pgComboOpen(); return; }
+    if (!PG_FILTERED.length) return;
+    PG_HL = e.key === 'ArrowDown'
+      ? (PG_HL + 1) % PG_FILTERED.length
+      : (PG_HL - 1 + PG_FILTERED.length) % PG_FILTERED.length;
+    const opts = menu.querySelectorAll('.pg-opt');
+    opts.forEach((o) => o.classList.remove('hl'));
+    const cur = menu.querySelector('.pg-opt[data-idx="' + PG_HL + '"]');
+    if (cur) { cur.classList.add('hl'); cur.scrollIntoView({ block: 'nearest' }); }
+  } else if (e.key === 'Enter') {
+    if (!menu.hidden && PG_HL >= 0 && PG_FILTERED[PG_HL]) { e.preventDefault(); pgComboPick(PG_FILTERED[PG_HL]); }
+  } else if (e.key === 'Escape') {
+    pgComboClose();
+  }
+}
+
+function pgFormatArgs() {
+  const el = document.getElementById('pg-args');
+  const err = document.getElementById('pg-args-err');
+  try {
+    el.value = JSON.stringify(JSON.parse(el.value || '{}'), null, 2);
+    err.hidden = true;
+  } catch (e) {
+    err.hidden = false;
+    err.textContent = 'Invalid JSON: ' + (e && e.message ? e.message : e);
+  }
+}
+
+// Last invocation state — drives the view toggle without re-running.
+let PG_LAST = null;   // { raw: <full {tool,result} JSON>, data: <unwrapped payload>, error: <string|null> }
+let PG_VIEW = 'pretty';
 
 async function pgRun() {
   const sel = document.getElementById('pg-tool');
@@ -2683,15 +2851,19 @@ async function pgRun() {
   const card = document.getElementById('pg-result-card');
   const body = document.getElementById('pg-result-body');
   const meta = document.getElementById('pg-result-meta');
-  const tool = decodeURIComponent(sel.value || '');
+  const tool = sel.value || '';
   if (!tool) { return; }
+  const argErr = document.getElementById('pg-args-err');
   let args;
   try {
     args = argsEl.value.trim() ? JSON.parse(argsEl.value) : {};
+    if (argErr) argErr.hidden = true;
   } catch (e) {
+    if (argErr) { argErr.hidden = false; argErr.textContent = 'Arguments are not valid JSON: ' + (e && e.message ? e.message : e); }
     card.hidden = false;
     meta.textContent = ' · client-side error';
-    body.textContent = 'Arguments are not valid JSON: ' + (e && e.message ? e.message : e);
+    PG_LAST = { raw: null, data: null, error: 'Arguments are not valid JSON: ' + (e && e.message ? e.message : e) };
+    pgRenderResult();
     return;
   }
   btn.disabled = true;
@@ -2707,19 +2879,123 @@ async function pgRun() {
     });
     const json = await res.json();
     meta.textContent = ' · HTTP ' + res.status + ' · ' + (Date.now() - t0) + ' ms';
-    body.textContent = JSON.stringify(json, null, 2);
+    PG_LAST = pgUnwrap(json, res.ok);
+    pgRenderResult();
   } catch (e) {
     meta.textContent = ' · network error';
-    body.textContent = (e && e.message) ? e.message : String(e);
+    PG_LAST = { raw: null, data: null, error: (e && e.message) ? e.message : String(e) };
+    pgRenderResult();
   } finally {
     btn.disabled = false;
   }
+}
+
+// Pull the meaningful payload out of an MCP CallToolResult. Tools return
+// { tool, result:{ content:[{type:'text',text}], isError? } }. The text
+// is usually itself JSON — parse it so we can pretty/table-render it.
+function pgUnwrap(json, httpOk) {
+  if (!httpOk || (json && json.error)) {
+    return { raw: json, data: null, error: (json && (json.error || json.message)) || ('HTTP error') };
+  }
+  const result = json && json.result;
+  let data = result;
+  let error = (result && result.isError) ? 'Tool reported isError' : null;
+  const content = result && result.content;
+  if (Array.isArray(content)) {
+    const text = content.filter(c => c && c.type === 'text' && typeof c.text === 'string').map(c => c.text).join('\n');
+    if (text) {
+      try { data = JSON.parse(text); }
+      catch (e) { data = text; }  // not JSON — show the raw text
+    }
+  }
+  return { raw: json, data, error };
+}
+
+function pgSetView(v) {
+  PG_VIEW = v;
+  document.querySelectorAll('#pg-view-seg button').forEach(b => b.classList.toggle('active', b.dataset.view === v));
+  pgRenderResult();
+}
+
+function pgRenderResult() {
+  const body = document.getElementById('pg-result-body');
+  if (!PG_LAST) { body.textContent = ''; return; }
+  let html = '';
+  if (PG_LAST.error) html += '<div class="pg-err-banner">⚠ ' + escHtml(PG_LAST.error) + '</div>';
+
+  if (PG_VIEW === 'raw' || PG_LAST.raw == null && PG_LAST.data == null) {
+    html += '<pre class="pg-json">' + pgHighlight(PG_LAST.raw != null ? PG_LAST.raw : (PG_LAST.error || '')) + '</pre>';
+  } else if (PG_VIEW === 'table') {
+    const tbl = pgTryTable(PG_LAST.data);
+    html += tbl || ('<div class="muted" style="font-size:13px;margin-bottom:8px">No tabular shape detected — showing Pretty.</div><pre class="pg-json">' + pgHighlight(PG_LAST.data) + '</pre>');
+  } else { // pretty
+    html += '<pre class="pg-json">' + pgHighlight(PG_LAST.data) + '</pre>';
+  }
+  body.innerHTML = html;
+}
+
+// Syntax-highlight a value as pretty JSON. Escapes first (XSS-safe),
+// then wraps tokens in colour spans.
+function pgHighlight(value) {
+  let s;
+  if (typeof value === 'string') s = value;
+  else s = JSON.stringify(value, null, 2);
+  if (typeof s !== 'string') s = String(s);
+  s = escHtml(s);
+  // strings (incl. keys), then numbers / bools / null
+  s = s.replace(/&quot;(\\.|[^&]|&(?!quot;))*?&quot;(\s*:)?/g, (m, _g, colon) =>
+    '<span class="' + (colon ? 'k' : 's') + '">' + m.replace(/(\s*:)$/, '') + '</span>' + (colon || ''));
+  s = s.replace(/\b(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\b/g, '<span class="n">$1</span>');
+  s = s.replace(/\b(true|false)\b/g, '<span class="b">$1</span>');
+  s = s.replace(/\bnull\b/g, '<span class="z">null</span>');
+  return s;
+}
+
+// Render an array-of-objects (or an object whose first array value is one)
+// as a table. Returns null when nothing tabular is found.
+function pgTryTable(data) {
+  let rows = null;
+  if (Array.isArray(data) && data.length && data.every(r => r && typeof r === 'object' && !Array.isArray(r))) {
+    rows = data;
+  } else if (data && typeof data === 'object') {
+    for (const k of Object.keys(data)) {
+      const v = data[k];
+      if (Array.isArray(v) && v.length && v.every(r => r && typeof r === 'object' && !Array.isArray(r))) { rows = v; break; }
+    }
+  }
+  if (!rows) return null;
+  // Union of keys, preserving first-seen order.
+  const cols = [];
+  rows.forEach(r => Object.keys(r).forEach(k => { if (!cols.includes(k)) cols.push(k); }));
+  const head = '<tr>' + cols.map(c => '<th>' + escHtml(c) + '</th>').join('') + '</tr>';
+  const bodyRows = rows.map(r => '<tr>' + cols.map(c => '<td>' + pgCell(r[c]) + '</td>').join('') + '</tr>').join('');
+  return '<div class="pg-tbl-wrap"><table class="pg-tbl"><thead>' + head + '</thead><tbody>' + bodyRows + '</tbody></table></div>';
+}
+
+// One table cell. Status-like strings get a coloured pill; objects/arrays
+// collapse to compact JSON.
+function pgCell(v) {
+  if (v == null) return '<span class="muted">—</span>';
+  if (typeof v === 'object') return '<span class="muted" style="font-family:var(--mono);font-size:11px">' + escHtml(JSON.stringify(v)) + '</span>';
+  const s = String(v);
+  const cls = { up:'up', healthy:'healthy', ok:'ok', down:'down', error:'error', critical:'crit', crit:'crit', warn:'warn', warning:'warn', degraded:'degraded' }[s.toLowerCase()];
+  if (cls) return '<span class="pill ' + cls + '">' + escHtml(s) + '</span>';
+  return escHtml(s);
+}
+
+function pgCopy() {
+  if (!PG_LAST) return;
+  const text = PG_VIEW === 'raw'
+    ? JSON.stringify(PG_LAST.raw, null, 2)
+    : (typeof PG_LAST.data === 'string' ? PG_LAST.data : JSON.stringify(PG_LAST.data, null, 2));
+  navigator.clipboard.writeText(text).then(() => toast('Copied'), () => toast('Copy failed'));
 }
 
 function pgClear() {
   document.getElementById('pg-result-card').hidden = true;
   document.getElementById('pg-result-body').textContent = '';
   document.getElementById('pg-result-meta').textContent = '';
+  PG_LAST = null;
 }
 
 // --- Postmortems tab (P6) -----------------------------------------------
@@ -3661,7 +3937,29 @@ function toggleTheme(){
 const _omcpRawFetch = window.fetch.bind(window);
 let _omcpLoginInflight = null;
 let _omcpLoginResolve = null;
+// CSRF double-submit: the server issues a non-HttpOnly omcp-csrf
+// cookie and enforces that mutating /api requests echo it back in
+// X-CSRF-Token. The browser sends the cookie automatically but never
+// the header — so this wrapper reads the cookie and injects the
+// matching header on every state-changing request. Safe methods and
+// cross-origin requests are left untouched.
+function _omcpCsrfToken() {
+  const m = document.cookie.match(/(?:^|;\s*)omcp-csrf=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : null;
+}
+function _omcpWithCsrf(input, init) {
+  const method = ((init && init.method) || (typeof input === 'object' && input.method) || 'GET').toUpperCase();
+  if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return init;
+  const token = _omcpCsrfToken();
+  if (!token) return init;
+  const next = Object.assign({}, init);
+  const headers = new Headers((init && init.headers) || (typeof input === 'object' && input.headers) || {});
+  if (!headers.has('X-CSRF-Token')) headers.set('X-CSRF-Token', token);
+  next.headers = headers;
+  return next;
+}
 window.fetch = async function omcpAuthedFetch(input, init) {
+  init = _omcpWithCsrf(input, init);
   const res = await _omcpRawFetch(input, init);
   if (res.status !== 401) return res;
   let body = null;

@@ -11,23 +11,48 @@ test.describe("Playground tab (Q13)", () => {
     await page.locator('.nav-btn[data-page="playground"]').click();
     await expect(page.locator('#page-playground')).toHaveClass(/active/);
 
-    // The picker populates from /api/tools/registry — at least the
-    // placeholder + one real tool should be present after init runs.
-    const sel = page.locator('#pg-tool');
-    await expect(sel).toBeVisible();
-    await expect(sel).toContainText("select a tool", { ignoreCase: true });
-    // Wait for at least one option beyond the placeholder to appear.
-    await expect.poll(async () => sel.locator('option').count()).toBeGreaterThan(1);
+    // The tool picker is a combobox, CLOSED at rest — no menu visible.
+    const combo = page.locator('#pg-combo-input');
+    await expect(combo).toBeVisible();
+    await expect(page.locator('#pg-combo-menu')).toBeHidden();
+
+    // Invoke is disabled until a tool is picked.
+    await expect(page.locator('#pg-run-btn')).toBeDisabled();
+
+    // Focusing the field opens the menu with grouped options.
+    await combo.click();
+    await expect(page.locator('#pg-combo-menu')).toBeVisible();
+    await expect.poll(async () => page.locator('#pg-combo-menu .pg-opt').count()).toBeGreaterThan(0);
+    await expect(page.locator('#pg-combo-menu .pg-grp-hdr').first()).toBeVisible();
+
+    // Picking an option fills the field, shows the summary, enables Invoke,
+    // and closes the menu.
+    await page.locator('#pg-combo-menu .pg-opt').first().click();
+    await expect(page.locator('#pg-combo-menu')).toBeHidden();
+    await expect(combo).not.toHaveValue("");
+    await expect(page.locator('#pg-run-btn')).toBeEnabled();
 
     // The JSON args textarea defaults to `{}`.
-    const args = page.locator('#pg-args');
-    await expect(args).toHaveValue("{}");
-
-    // The Invoke button is wired.
-    await expect(page.locator('#pg-run-btn')).toBeEnabled();
+    await expect(page.locator('#pg-args')).toHaveValue("{}");
 
     // The result panel starts hidden.
     await expect(page.locator('#pg-result-card')).toBeHidden();
+  });
+
+  test("combobox type-ahead filters the option list", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(BASE, { waitUntil: "networkidle" });
+    await page.locator('.nav-btn[data-page="playground"]').click();
+    const combo = page.locator('#pg-combo-input');
+    await combo.click();
+    await expect(page.locator('#pg-combo-menu')).toBeVisible();
+    const total = await page.locator('#pg-combo-menu .pg-opt').count();
+    // Type a fragment that only some tools match.
+    await combo.fill("list");
+    await expect.poll(async () => page.locator('#pg-combo-menu .pg-opt').count()).toBeLessThan(total);
+    // Every visible option name contains the query.
+    const names = await page.locator('#pg-combo-menu .pg-opt .nm').allTextContents();
+    for (const n of names) expect(n.toLowerCase()).toContain("list");
   });
 
   test("invalid JSON args surface a client-side error without hitting the server", async ({ page }) => {
@@ -35,11 +60,11 @@ test.describe("Playground tab (Q13)", () => {
     await page.goto(BASE, { waitUntil: "networkidle" });
     await page.locator('.nav-btn[data-page="playground"]').click();
 
-    // Wait for tool list to load, then pick the first real tool
-    const sel = page.locator('#pg-tool');
-    await expect.poll(async () => sel.locator('option').count()).toBeGreaterThan(1);
-    const firstReal = await sel.locator('option:not([value=""])').first().getAttribute('value');
-    await sel.selectOption(firstReal);
+    // Open the combobox and pick the first option.
+    const combo = page.locator('#pg-combo-input');
+    await combo.click();
+    await expect.poll(async () => page.locator('#pg-combo-menu .pg-opt').count()).toBeGreaterThan(0);
+    await page.locator('#pg-combo-menu .pg-opt').first().click();
 
     // Type broken JSON into the args box
     await page.locator('#pg-args').fill('{ not valid json');

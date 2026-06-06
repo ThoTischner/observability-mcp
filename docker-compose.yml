@@ -196,7 +196,7 @@ services:
     build:
       context: ./mcp-server
     ports:
-      - "3000:3000"
+      - "${MCP_HOST_PORT:-3000}:3000"
     environment:
       - PROMETHEUS_URL=http://prometheus:9090
       - LOKI_URL=http://loki:3100
