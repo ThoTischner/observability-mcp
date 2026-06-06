@@ -51,7 +51,7 @@ const PATTERNS: Array<{ category: RedactionCategory; re: RegExp }> = [
   // - PEM private-key blocks: greedy match across newlines.
   { category: "aws-key", re: /\b(?:AKIA|ASIA|AROA)[0-9A-Z]{16,20}\b/g },
   { category: "slack-token", re: /\bxox[abprsu]-[A-Za-z0-9-]{10,}\b/g },
-  { category: "gh-pat", re: /\b(?:github_pat_[A-Za-z0-9_]{40,}|gh[opsuru]_[A-Za-z0-9]{36})\b/g },
+  { category: "gh-pat", re: /\b(?:github_pat_[A-Za-z0-9_]{40,}|gh[oprsu]_[A-Za-z0-9]{36})\b/g },
   { category: "private-key", re: /-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP |ENCRYPTED )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |DSA |OPENSSH |PGP |ENCRYPTED )?PRIVATE KEY-----/g },
 
   // emails before other patterns so they don't get eaten partially

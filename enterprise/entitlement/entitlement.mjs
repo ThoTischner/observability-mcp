@@ -29,7 +29,10 @@ export function canonical(value) {
 }
 
 const b64url = (buf) =>
-  Buffer.from(buf).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  // `={1,4}$` instead of `=+$` so the engine doesn't backtrack on
+  // attacker-controlled strings with many `=` chars (CodeQL
+  // js/polynomial-redos). base64 padding is at most 4 chars anyway.
+  Buffer.from(buf).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/={1,4}$/, "");
 
 function b64urlDecode(str) {
   const pad = str.length % 4 === 0 ? "" : "=".repeat(4 - (str.length % 4));

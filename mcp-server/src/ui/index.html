@@ -6317,7 +6317,10 @@ function renderTopologyGraph(){
     const r = idx.byId.get(id);
     const base = topoKindColor(r ? r.kind : 'scope');
     // soft alpha + slightly lighter
-    return base.replace(/^#/, '#') + '22'; // append alpha (works because we use hex)
+    // `base` already starts with `#` from topoKindColor; just append
+    // a 1-byte alpha to get an 8-digit hex CSS colour. The dead
+    // `.replace(/^#/, '#')` step from an earlier refactor is gone.
+    return base + '22';
   };
   const scopeBands = [];
   for (const scopeId of pureScope){
