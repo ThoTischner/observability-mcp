@@ -229,7 +229,21 @@ otel:
 # See docs/scim-provisioning.md.
 scim:
   enabled: false
+  # backend: file | redis. file (default) uses storePath. redis is
+  # safe for multi-replica deployments — every replica reads/writes
+  # the same Redis key so IDPushes delivered to one replica are
+  # immediately visible to the others. See
+  # docs/scim-provisioning.md "Multi-replica" section.
+  backend: file
   storePath: /var/lib/observability-mcp/scim.json
+  # Used when backend == redis. Format: redis://[user:pass@]host:port[/db]
+  redisUrl: ""
+  # Secret with key `url` containing the redis URL (preferred for
+  # real deployments — keeps credentials out of the values file).
+  redisExistingSecret: ""
+  # Key the snapshot is stored under. Override if you share the
+  # redis instance with unrelated workloads.
+  redisKey: "omcp:scim:snapshot"
   # Bearer token the IdP sends in the Authorization header. For
   # real deployments reference a Secret via existingSecret.
   token: ""

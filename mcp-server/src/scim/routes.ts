@@ -30,10 +30,10 @@ import {
   type ScimGroup,
   type ScimPatchRequest,
 } from "./types.js";
-import { ScimNotFoundError, ScimStore, ScimValidationError } from "./store.js";
+import { ScimNotFoundError, type IScimStore, ScimValidationError } from "./store.js";
 
 export interface ScimRoutesDeps {
-  store: ScimStore;
+  store: IScimStore;
   bearerToken: string;
   /** Audit hook called after every successful mutation. Best-effort. */
   audit?: (event: { actor: string; action: string; target: string; result: "ok" | "error"; status: number }) => void;
@@ -234,7 +234,7 @@ export function registerScimRoutes(app: Application, deps: ScimRoutesDeps): void
   });
 }
 
-function withGroups(u: ScimUser, store: ScimStore): ScimUser {
+function withGroups(u: ScimUser, store: IScimStore): ScimUser {
   return { ...u, groups: store.groupsContaining(u.id) };
 }
 

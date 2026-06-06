@@ -1,71 +1,74 @@
-// SCIM store — file-backed JSON for users + groups (default), with a
-// Redis-backed alternative for multi-replica deployments behind the
-// `OMCP_SCIM_BACKEND=redis` env / `scim.backend: redis` Helm value.
+// Redis-backed SCIM store — same surface as the file-backed ScimStore,
+// persists the snapshot in a single Redis key.
 //
-// F21a shipped the on-disk JSON file (atomic tmp+rename, mode 0600).
-// F21b (Q6) adds the Redis variant + the IScimStore interface every
-// route handler now talks to. The factory `createScimStore` picks
-// the implementation at boot; everything downstream is unchanged.
+// Multi-replica deployments need a shared store so that a Microsoft
+// Entra / Okta SCIM-push delivered to replica A is visible to replica
+// B's reads. The file store can't do that without a shared filesystem;
+// this one targets the same Redis the F8 SessionStore + the F8b
+// transport-map ride on (Q11 promotes the transport-map onto the same
+// interface).
+//
+// Concurrency note. SCIM clients (Entra, Okta, JumpCloud, generic
+// SCIM) deliver provisioning requests SERIALLY per resource — the
+// upstream IDP holds the connection open until the gateway responds.
+// A single load-balanced gateway in front of N replicas observes one
+// in-flight request per resource at a time, so last-writer-wins on
+// the single-key snapshot matches the source-of-truth semantics of
+// SCIM provisioning. We still serialise persists within a replica
+// via a small mutex so concurrent route handlers don't lose writes
+// to each other in the read-modify-write window.
 
-import { readFile, writeFile, mkdir, rename } from "node:fs/promises";
-import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 
-import { nowIso, type ScimGroup, type ScimUser, SCIM_SCHEMA_GROUP, SCIM_SCHEMA_USER } from "./types.js";
-
-export interface ScimSnapshot {
-  users: ScimUser[];
-  groups: ScimGroup[];
-}
+import {
+  nowIso,
+  type ScimGroup,
+  type ScimUser,
+  SCIM_SCHEMA_GROUP,
+  SCIM_SCHEMA_USER,
+} from "./types.js";
+import { ScimNotFoundError, ScimValidationError, type IScimStore, type ScimSnapshot } from "./store.js";
 
 /**
- * The store surface route handlers and group-role-map depend on.
- * Both file + redis backends implement this. New backends (DynamoDB,
- * Postgres, …) just need to satisfy these methods.
+ * Minimal Redis surface we depend on. Matches both `ioredis` and the
+ * built-in promisified node-redis client — easier to swap clients
+ * and trivial to fake in unit tests.
  */
-export interface IScimStore {
-  load(): Promise<void>;
-  listUsers(): ScimUser[];
-  getUser(id: string): ScimUser | undefined;
-  getUserByUserName(userName: string): ScimUser | undefined;
-  createUser(input: Partial<ScimUser>): Promise<ScimUser>;
-  updateUser(id: string, patch: Partial<ScimUser>): Promise<ScimUser>;
-  deleteUser(id: string): Promise<boolean>;
-  listGroups(): ScimGroup[];
-  getGroup(id: string): ScimGroup | undefined;
-  createGroup(input: Partial<ScimGroup>): Promise<ScimGroup>;
-  updateGroup(id: string, patch: Partial<ScimGroup>): Promise<ScimGroup>;
-  deleteGroup(id: string): Promise<boolean>;
-  groupsContaining(userId: string): Array<{ value: string; display?: string }>;
+export interface RedisLike {
+  get(key: string): Promise<string | null>;
+  set(key: string, value: string): Promise<unknown>;
 }
 
-const EMPTY: ScimSnapshot = { users: [], groups: [] };
+const DEFAULT_KEY = "omcp:scim:snapshot";
 
-export class ScimStore implements IScimStore {
-  private readonly path: string;
-  private snapshot: ScimSnapshot = EMPTY;
+export class RedisScimStore implements IScimStore {
+  private readonly redis: RedisLike;
+  private readonly key: string;
+  private snapshot: ScimSnapshot = { users: [], groups: [] };
   private bootstrapped: Promise<void> | null = null;
+  private writeQueue: Promise<void> = Promise.resolve();
 
-  constructor(path: string) {
-    this.path = path;
+  constructor(redis: RedisLike, opts: { key?: string } = {}) {
+    this.redis = redis;
+    this.key = opts.key || DEFAULT_KEY;
   }
 
   async load(): Promise<void> {
     if (this.bootstrapped) return this.bootstrapped;
     this.bootstrapped = (async () => {
       try {
-        const raw = await readFile(this.path, "utf8");
+        const raw = await this.redis.get(this.key);
+        if (!raw) {
+          this.snapshot = { users: [], groups: [] };
+          return;
+        }
         const parsed = JSON.parse(raw) as Partial<ScimSnapshot>;
         this.snapshot = {
           users: Array.isArray(parsed.users) ? parsed.users : [],
           groups: Array.isArray(parsed.groups) ? parsed.groups : [],
         };
-      } catch (err: unknown) {
-        if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-          this.snapshot = { users: [], groups: [] };
-          return;
-        }
-        console.warn(`[scim] failed to load ${this.path}: ${(err as Error).message} — starting empty`);
+      } catch (err) {
+        console.warn(`[scim] failed to load redis snapshot ${this.key}: ${(err as Error).message} — starting empty`);
         this.snapshot = { users: [], groups: [] };
       }
     })();
@@ -128,7 +131,6 @@ export class ScimStore implements IScimStore {
     const before = this.snapshot.users.length;
     this.snapshot.users = this.snapshot.users.filter((u) => u.id !== id);
     if (this.snapshot.users.length === before) return false;
-    // Also remove the user from every group's members list.
     for (const g of this.snapshot.groups) {
       g.members = (g.members ?? []).filter((m) => m.value !== id);
     }
@@ -186,67 +188,18 @@ export class ScimStore implements IScimStore {
     return true;
   }
 
-  /** Look up the groups a user is currently a member of — used to
-   *  populate `User.groups` on read responses. */
   groupsContaining(userId: string): Array<{ value: string; display?: string }> {
     return this.snapshot.groups
       .filter((g) => (g.members ?? []).some((m) => m.value === userId))
       .map((g) => ({ value: g.id, display: g.displayName }));
   }
 
-  private async persist(): Promise<void> {
-    await mkdir(dirname(this.path), { recursive: true }).catch(() => undefined);
-    const tmp = `${this.path}.tmp`;
-    await writeFile(tmp, JSON.stringify(this.snapshot, null, 2), { mode: 0o600 });
-    await rename(tmp, this.path);
+  private persist(): Promise<void> {
+    // Serialise persists so two concurrent updateUser calls don't
+    // race each other to the SET — the snapshot in memory is the
+    // canonical state, Redis just mirrors it.
+    const snap = { users: this.snapshot.users.slice(), groups: this.snapshot.groups.slice() };
+    this.writeQueue = this.writeQueue.then(() => this.redis.set(this.key, JSON.stringify(snap)).then(() => undefined));
+    return this.writeQueue;
   }
-}
-
-export class ScimValidationError extends Error {
-  constructor(message: string, public readonly scimType?: string) {
-    super(message);
-    this.name = "ScimValidationError";
-  }
-}
-
-export class ScimNotFoundError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "ScimNotFoundError";
-  }
-}
-
-/**
- * Boot-time factory. Reads OMCP_SCIM_BACKEND and returns the matching
- * implementation. Loadbearing on Helm too — values.yaml exposes a
- * scim.backend toggle that ends up as the env var.
- *
- * config.path  — file backend storage path (file backend only).
- * config.redis — RedisLike client (redis backend only).
- * config.redisKey — override default key name.
- */
-export interface CreateScimStoreConfig {
-  backend?: "file" | "redis";
-  path?: string;
-  redis?: import("./redis-store.js").RedisLike;
-  redisKey?: string;
-}
-
-export async function createScimStore(config: CreateScimStoreConfig = {}): Promise<IScimStore> {
-  const backend = (config.backend || process.env.OMCP_SCIM_BACKEND || "file") as "file" | "redis";
-  if (backend === "redis") {
-    if (!config.redis) {
-      throw new Error(
-        "createScimStore: backend=redis requires a redis client. Pass config.redis (RedisLike).",
-      );
-    }
-    const { RedisScimStore } = await import("./redis-store.js");
-    const store = new RedisScimStore(config.redis, { key: config.redisKey });
-    await store.load();
-    return store;
-  }
-  const path = config.path || process.env.OMCP_SCIM_STORE || "/var/lib/observability-mcp/scim.json";
-  const store = new ScimStore(path);
-  await store.load();
-  return store;
 }
