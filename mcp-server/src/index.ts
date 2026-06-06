@@ -97,6 +97,7 @@ import { listSourcesHandler } from "./tools/list-sources.js";
 import { listServicesHandler } from "./tools/list-services.js";
 import { queryMetricsHandler } from "./tools/query-metrics.js";
 import { queryLogsHandler } from "./tools/query-logs.js";
+import { queryTracesHandler } from "./tools/query-traces.js";
 import { getServiceHealthHandler, setHealthThresholds } from "./tools/get-service-health.js";
 import { detectAnomaliesHandler } from "./tools/detect-anomalies.js";
 import { getTopologyHandler, getBlastRadiusHandler } from "./tools/topology.js";
@@ -576,6 +577,29 @@ async function main() {
       const redacted = redactToolText(result, { bypass });
       return chargeTokenBudget(redacted, ctx, "query_logs");
     }
+  );
+
+  registerTool(
+    "query_traces",
+    [
+      "Query distributed traces for a service over a given timeframe.",
+      "Returns ranked trace summaries (duration, span count, error status) with a p50/p95 aggregate across the returned set.",
+      "When to use: investigate tail-latency outliers, walk call chains across services for a specific time window, or pull traces related to an anomaly that the metric/log tools surfaced first.",
+      "Prerequisites: get the exact service name from `list_services`. A Tempo / Jaeger / OTLP connector must be configured.",
+      "Behavior: read-only. `filter` accepts the backend's native query language (TraceQL on Tempo, tag query on Jaeger). When `errorsOnly=true`, only traces with at least one error span are returned. Default limit is 50.",
+    ].join(" "),
+    {
+      service: z.string().describe("Service name (e.g. 'payment-service')."),
+      duration: z.string().optional().describe("Rolling time window, e.g. '5m', '1h'. Default '15m'."),
+      filter: z.string().optional().describe("Backend-native filter (TraceQL on Tempo, tag query on Jaeger). Optional."),
+      limit: z.number().int().positive().optional().describe("Soft cap on returned trace summaries. Default 50."),
+      errorsOnly: z.boolean().optional().describe("If true, only traces with at least one error span."),
+    },
+    async (args) => {
+      await enforceEntitledAccess(ctx, { tool: "query_traces", service: (args as { service?: string })?.service });
+      const result = await withToolMetrics("query_traces", () => queryTracesHandler(registry, args, ctx));
+      return chargeTokenBudget(result, ctx, "query_traces");
+    },
   );
 
   registerTool(
