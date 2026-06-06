@@ -104,12 +104,15 @@ nav:
       - Comparison: comparison.md
   - Observability Intelligence:
       - Anomaly history: anomaly-history.md
+      - Distributed traces (query_traces): query-traces.md
+      - Auto-postmortems (generate_postmortem): postmortems.md
       - Astronomy-shop benchmark: benchmark-astronomy-shop.md
   - Reference:
       - Demo agent: agent.md
       - Entitlement gate: enterprise-gate.md
   - Migrations:
       - 1.x → 2.0: migrations/1.x-to-2.0.md
+      - 2.x → 3.0: migrations/2.x-to-3.0.md
 
 extra:
   social:

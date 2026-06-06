@@ -13,6 +13,14 @@ talk to.
 
 ## Configuring upstreams
 
+!!! note "Env-only configuration today"
+    Upstreams are configured exclusively via `OMCP_FEDERATION_UPSTREAMS` —
+    there is no `/api/federation` runtime-management endpoint yet
+    (planned as a v3.x increment). To change the upstream set, edit
+    the env / Helm value and restart the gateway. Tool calls and
+    metrics already in flight survive the restart on a sticky-
+    ingress / multi-replica deployment.
+
 Set `OMCP_FEDERATION_UPSTREAMS` to a comma-separated list of
 `name=url` pairs. Each name must start with a letter and use only
 `[a-z0-9_-]`. The URL must end at the upstream's Streamable HTTP
