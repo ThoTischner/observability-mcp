@@ -198,6 +198,23 @@ conformance: ## Run the MCP 2025-11-25 conformance test suite against the demo s
 	  node:20-alpine sh -c \
 	  "npx --yes tsx --test src/conformance/mcp-2025-11-25.test.ts"
 
+# SCIM 2.0 (RFC 7643/7644) compliance harness. Requires the gateway to
+# run with SCIM enabled (OMCP_SCIM_TOKEN set); point the suite at
+# /scim/v2 with the matching bearer. Skips entirely if the URL is
+# unset, so it's safe to call even when SCIM isn't configured.
+scim-compliance: ## Run the SCIM 2.0 compliance suite against a SCIM-enabled gateway
+	@for i in $$(seq 1 60); do \
+	  curl -fsS http://localhost:3000/healthz >/dev/null 2>&1 && break; \
+	  if [ $$i -eq 1 ]; then echo "Waiting for /healthz..."; fi; \
+	  sleep 2; \
+	done
+	docker run --rm -w /app -v "$(PWD)/mcp-server:/app" \
+	  --network=host \
+	  -e OMCP_SCIM_COMPLIANCE_URL=$${OMCP_SCIM_COMPLIANCE_URL:-http://localhost:3000/scim/v2} \
+	  -e OMCP_SCIM_COMPLIANCE_TOKEN=$${OMCP_SCIM_COMPLIANCE_TOKEN:-} \
+	  node:20-alpine sh -c \
+	  "npx --yes tsx --test src/scim/compliance.test.ts"
+
 ##@ Release
 
 release-dryrun: ## Print what the auto-release workflow would publish

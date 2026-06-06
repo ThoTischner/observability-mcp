@@ -60,7 +60,7 @@ import {
 } from "./auth/rbac.js";
 import { resolveOidcConfig, buildOidcRuntime } from "./auth/oidc/runtime.js";
 import { registerOidcRoutes } from "./auth/oidc/endpoints.js";
-import { ScimStore } from "./scim/store.js";
+import { createScimStore } from "./scim/store.js";
 import { registerScimRoutes } from "./scim/routes.js";
 import { BuiltinPolicyEngine, type PolicyEngine } from "./auth/policy/engine.js";
 import { loadPolicyFromFile, writePolicyFile, PolicyLoadError, VALID_RESOURCES, VALID_ACTIONS } from "./auth/policy/loader.js";
@@ -946,7 +946,12 @@ async function main() {
     }
   }
 
-  app.use(express.json({ limit: "1mb" }));
+  // Parse application/json AND any *+json media type. SCIM clients
+  // (Entra, Okta) send `application/scim+json` per RFC 7644 §3.1 —
+  // without the wildcard the body silently arrives empty and every
+  // SCIM POST/PATCH 400s. The wildcard also future-proofs other
+  // structured-suffix JSON content types.
+  app.use(express.json({ limit: "1mb", type: ["application/json", "application/*+json"] }));
 
   // Security headers
   app.use((req, res, next) => {
@@ -2091,34 +2096,52 @@ async function main() {
     console.log("[auth] OIDC endpoints registered: /api/auth/oidc/{login,callback,logout}");
   }
 
-  // Phase F21: SCIM 2.0 — opt-in. OMCP_SCIM_TOKEN gates access;
-  // OMCP_SCIM_STORE points at the on-disk JSON (mode 0600, atomic).
-  // Multi-replica deployments should plug the F8 SessionStore in
-  // when F21b lands.
+  // Phase F21 / Q6: SCIM 2.0 — opt-in. OMCP_SCIM_TOKEN gates access.
+  // The store backend is chosen by createScimStore from
+  // OMCP_SCIM_BACKEND (file | redis). file (default) → OMCP_SCIM_STORE
+  // on-disk JSON (mode 0600, atomic). redis → a shared snapshot so
+  // multi-replica deployments stay coherent (Q6); the redis client is
+  // built from OMCP_SCIM_REDIS_URL here, mirroring the session store.
   const scimToken = process.env.OMCP_SCIM_TOKEN?.trim();
   if (scimToken) {
-    const scimStorePath = process.env.OMCP_SCIM_STORE?.trim() || "/tmp/scim.json";
-    const scimStore = new ScimStore(scimStorePath);
-    await scimStore.load();
-    registerScimRoutes(app, {
-      store: scimStore,
-      bearerToken: scimToken,
-      audit: (ev) =>
-        void mgmtAudit.record({
-          actor: { sub: `scim:${ev.actor}` },
-          tenant: "default",
-          resource: "users",
-          action: ev.action.includes("delete") ? "delete" : "write",
-          method: "SCIM",
-          path: `/scim/v2/${ev.action}`,
-          status: ev.status,
-          target: ev.target,
-        }).catch(() => undefined),
-    });
-    console.log(
-      "[scim] /scim/v2/* registered (store: %s)",
-      scimStorePath,
-    );
+    try {
+      const scimBackend = (process.env.OMCP_SCIM_BACKEND?.trim() || "file") as "file" | "redis";
+      let scimRedis: import("./scim/redis-store.js").RedisLike | undefined;
+      if (scimBackend === "redis") {
+        const redisUrl = process.env.OMCP_SCIM_REDIS_URL?.trim();
+        if (!redisUrl) throw new Error("OMCP_SCIM_BACKEND=redis requires OMCP_SCIM_REDIS_URL");
+        const { createClient } = await import("redis");
+        const client = createClient({ url: redisUrl });
+        client.on("error", (err: unknown) =>
+          console.warn("[scim] redis client error: %s", err instanceof Error ? err.message : String(err)));
+        await client.connect();
+        scimRedis = client as unknown as import("./scim/redis-store.js").RedisLike;
+      }
+      const scimStore = await createScimStore({
+        backend: scimBackend,
+        path: process.env.OMCP_SCIM_STORE?.trim() || "/tmp/scim.json",
+        redis: scimRedis,
+        redisKey: process.env.OMCP_SCIM_REDIS_KEY?.trim(),
+      });
+      registerScimRoutes(app, {
+        store: scimStore,
+        bearerToken: scimToken,
+        audit: (ev) =>
+          void mgmtAudit.record({
+            actor: { sub: `scim:${ev.actor}` },
+            tenant: "default",
+            resource: "users",
+            action: ev.action.includes("delete") ? "delete" : "write",
+            method: "SCIM",
+            path: `/scim/v2/${ev.action}`,
+            status: ev.status,
+            target: ev.target,
+          }).catch(() => undefined),
+      });
+      console.log("[scim] /scim/v2/* registered (backend: %s)", scimBackend);
+    } catch (err) {
+      console.warn("[scim] enable failed (routes not mounted): %s", err instanceof Error ? err.message : String(err));
+    }
   }
 
   // Phase P6: Postmortems persistence. /api/postmortems lets the
