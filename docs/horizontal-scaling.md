@@ -97,6 +97,39 @@ is the production answer.
   liveness via the session-id header). DCR registrations are
   permanent (deleted explicitly on revoke).
 
+## Transport session map (Q11 / v3.1)
+
+Until v3.1, the MCP Streamable HTTP sessions held in a process-local
+`Map<sessionId, Transport>` were the *only* per-session state — no
+cross-replica visibility. With `replicaCount > 1` and no sticky
+ingress, a request for sessionId `S` minted on replica A could land
+on replica B; B silently created a new transport and the client
+ended up alternating between two transports for the same logical
+session.
+
+v3.1 promotes the per-session metadata (owner-replica id +
+last-active + virtual-server product slug) onto the same
+`SessionStore` backend the OIDC + DCR state already uses
+(`mcp-server/src/transport/transportSessionMap.ts`). Pick:
+
+- `InMemoryTransportSessionMap` — identical to pre-v3.1 behaviour,
+  used when no Redis is configured.
+- `SessionStoreBackedTransportSessionMap` — wraps the existing
+  `RedisSessionStore`, every replica writes its own session
+  metadata to the shared store. A replica that receives a request
+  for a locally-unknown sessionId consults the shared map and
+  refuses with `410 Gone` if the session was minted elsewhere;
+  the client retries and load-balancer rehashing eventually finds
+  the owner.
+
+Transport objects themselves stay local — they hold open HTTP
+response handles and aren't serialisable. The TTL on each metadata
+entry (default 30 minutes matching `SESSION_TTL_MS`) reaps stale
+entries when a replica disappears without graceful shutdown.
+
+With this in place sticky ingress is a **performance optimisation**,
+not a correctness requirement.
+
 ## Migration from in-memory single replica
 
 Single-replica deployments without `OMCP_REDIS_URL` continue working
