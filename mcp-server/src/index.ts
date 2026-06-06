@@ -60,6 +60,8 @@ import {
 } from "./auth/rbac.js";
 import { resolveOidcConfig, buildOidcRuntime } from "./auth/oidc/runtime.js";
 import { registerOidcRoutes } from "./auth/oidc/endpoints.js";
+import { ScimStore } from "./scim/store.js";
+import { registerScimRoutes } from "./scim/routes.js";
 import { BuiltinPolicyEngine, type PolicyEngine } from "./auth/policy/engine.js";
 import { loadPolicyFromFile, writePolicyFile, PolicyLoadError, VALID_RESOURCES, VALID_ACTIONS } from "./auth/policy/loader.js";
 import { OpaPolicyEngine } from "./auth/policy/opa.js";
@@ -1955,6 +1957,36 @@ async function main() {
   if (authRuntime.mode === "oidc" && oidcRuntime && sessionCfg) {
     registerOidcRoutes(app, { sessionCfg, oidc: oidcRuntime });
     console.log("[auth] OIDC endpoints registered: /api/auth/oidc/{login,callback,logout}");
+  }
+
+  // Phase F21: SCIM 2.0 — opt-in. OMCP_SCIM_TOKEN gates access;
+  // OMCP_SCIM_STORE points at the on-disk JSON (mode 0600, atomic).
+  // Multi-replica deployments should plug the F8 SessionStore in
+  // when F21b lands.
+  const scimToken = process.env.OMCP_SCIM_TOKEN?.trim();
+  if (scimToken) {
+    const scimStorePath = process.env.OMCP_SCIM_STORE?.trim() || "/tmp/scim.json";
+    const scimStore = new ScimStore(scimStorePath);
+    await scimStore.load();
+    registerScimRoutes(app, {
+      store: scimStore,
+      bearerToken: scimToken,
+      audit: (ev) =>
+        void mgmtAudit.record({
+          actor: { sub: `scim:${ev.actor}` },
+          tenant: "default",
+          resource: "users",
+          action: ev.action.includes("delete") ? "delete" : "write",
+          method: "SCIM",
+          path: `/scim/v2/${ev.action}`,
+          status: ev.status,
+          target: ev.target,
+        }).catch(() => undefined),
+    });
+    console.log(
+      "[scim] /scim/v2/* registered (store: %s)",
+      scimStorePath,
+    );
   }
 
   // Connectors currently loaded into this server (builtin + filesystem

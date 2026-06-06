@@ -92,6 +92,7 @@ nav:
           - Google: auth-oidc-providers/google.md
           - Microsoft Entra ID: auth-oidc-providers/microsoft-entra.md
           - Okta: auth-oidc-providers/okta.md
+      - SCIM provisioning: scim-provisioning.md
       - Auth + TLS: auth-and-tls.md
       - Policy engines: policy-engines.md
       - Products: products.md
