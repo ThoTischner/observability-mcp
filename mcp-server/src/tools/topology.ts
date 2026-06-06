@@ -15,8 +15,9 @@
 
 import type { ConnectorRegistry } from "../connectors/registry.js";
 import { isTopologyProvider } from "../connectors/interface.js";
-import type { Resource, Edge } from "../types.js";
+import type { Resource, Edge, TopologySnapshot } from "../types.js";
 import { defaultContext, type RequestContext } from "../context.js";
+import { mergeTopologies } from "../topology/merge.js";
 
 // --- Shared helpers ----------------------------------------------------
 
@@ -28,8 +29,7 @@ interface AggregatedTopology {
 
 export async function aggregateTopology(registry: ConnectorRegistry, tenant?: string): Promise<AggregatedTopology> {
   const sources: AggregatedTopology["sources"] = [];
-  const resources: Resource[] = [];
-  const edges: Edge[] = [];
+  const snapshots: TopologySnapshot[] = [];
   // Tenant-scoped when a tenant is supplied (call sites at the MCP
   // tool layer pass ctx.tenant); undefined preserves the original
   // global behaviour for internal / non-request callers.
@@ -45,13 +45,31 @@ export async function aggregateTopology(registry: ConnectorRegistry, tenant?: st
         resources: snap.resources.length,
         edges: snap.edges.length,
       });
-      resources.push(...snap.resources);
-      edges.push(...snap.edges);
+      snapshots.push(snap);
     } catch {
       // A misbehaving connector must not poison the agent's view of the graph.
     }
   }
-  return { sources, resources, edges };
+  // P1: run the snapshots through mergeTopologies so workloads
+  // surfaced by more than one provider (e.g. the same Deployment
+  // observed by both Kubernetes + a service-mesh connector) collapse
+  // into a single canonical node and edges are rewritten to match.
+  //
+  // ONLY engages for multi-source topologies — with a single snapshot
+  // the merger would mis-group intra-source siblings that happen to
+  // share a canonical label (e.g. two pod replicas with
+  // `app.kubernetes.io/name=api`). The merger is designed for
+  // cross-provider de-duplication, not intra-provider.
+  if (snapshots.length <= 1) {
+    const only = snapshots[0];
+    return {
+      sources,
+      resources: only?.resources ?? [],
+      edges: only?.edges ?? [],
+    };
+  }
+  const merged = mergeTopologies(snapshots);
+  return { sources, resources: merged.resources, edges: merged.edges };
 }
 
 /**
