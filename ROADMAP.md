@@ -4,6 +4,31 @@ Where the project is going at a thematic level. For the connector-plugin enginee
 
 Items here are **directions, not promises** — order will shift based on what users actually need. If something here matters to you, open a Discussion or an Issue.
 
+## v3.0 — shipped 2026-06-06
+
+The moat-extension sprint on top of v2.0. See
+[CHANGELOG.md](CHANGELOG.md) for per-capability detail.
+
+- ✅ `query_traces` + `get_anomaly_history` + `generate_postmortem` MCP tools (8 → 11)
+- ✅ Multi-cloud topology merger foundation + 8 reserved kinds (concrete cloud-provider connectors land as filesystem plugins in v3.x)
+- ✅ Anomaly history TSDB sink + replay tool
+- ✅ Batch policy dry-run + CSV export
+- ✅ MkDocs Material documentation site at <https://thotischner.github.io/observability-mcp/>
+- ✅ MCP Inspector quickstart (`omcp inspector-config`)
+- ✅ SCIM 2.0 Users + Groups provisioning (Entra + Okta push)
+- ✅ Plugin SDK published as `@thotischner/observability-mcp-sdk` + scaffolder CLI
+- ✅ Verifiable-offline CI workflow (iptables-egress-blocked smoke test)
+- ✅ Helm `airgapped: true` with egress-deny NetworkPolicy
+
+## v4.x — next (open for community input)
+
+The v3.x increments listed in [CHANGELOG.md](CHANGELOG.md) get
+shipped first. Beyond that, the field is open — see the
+[After-F23 candidates](#after-f23--candidates-for-the-next-sprint)
+section of the [hub-parity sprint plan](https://github.com/ThoTischner/observability-mcp/tree/main/.claude/plans)
+for the menu we'll pull from. Vote with thumbs-up emoji on the
+Discussion threads if any of them matters to you.
+
 ## v2.0 — shipped 2026-06-06
 
 The v2.0 release closed the remaining adoption-blocking gaps so a
