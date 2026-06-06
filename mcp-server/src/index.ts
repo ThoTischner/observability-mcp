@@ -63,6 +63,7 @@ import { registerOidcRoutes } from "./auth/oidc/endpoints.js";
 import { BuiltinPolicyEngine, type PolicyEngine } from "./auth/policy/engine.js";
 import { loadPolicyFromFile, writePolicyFile, PolicyLoadError, VALID_RESOURCES, VALID_ACTIONS } from "./auth/policy/loader.js";
 import { OpaPolicyEngine } from "./auth/policy/opa.js";
+import { evaluateBatch, batchResultToCsv } from "./auth/policy/batch-dry-run.js";
 import { AuditLog } from "./audit/log.js";
 import { buildAuditMiddleware } from "./audit/middleware.js";
 import { WebhookSink } from "./audit/sinks/webhook.js";
@@ -1460,6 +1461,32 @@ async function main() {
         ? "DEFAULT_POLICY shipped with this build. Set OMCP_RBAC_POLICY_FILE to override."
         : `policy loaded from ${policyEngine.kind()}; restart to reload.`,
     });
+  });
+
+  // Phase F16: batch policy dry-run. Evaluates every
+  // (subject × resource × action) cell against the active engine and
+  // returns a matrix the UI heat-map renders. Gated identically to
+  // the single-call dry-run on GET /api/policy. Capped at 100×100×10
+  // cells per request — a single OPA query per cell is cheap on the
+  // BuiltinPolicyEngine but a careless caller could hose an external
+  // OPA, so the limit fences that. Operators get CSV via
+  // Accept: text/csv for ticket attachments.
+  app.post("/api/policy/dry-run-batch", need("users", "delete"), audit("policy", "read"), async (req, res) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const subjects = Array.isArray(body.subjects) ? body.subjects : [];
+    const resources = Array.isArray(body.resources) ? body.resources : [];
+    const actions = Array.isArray(body.actions) ? body.actions : [];
+    const result = await evaluateBatch(
+      policyEngine,
+      { subjects, resources, actions } as never,
+      VALID_RESOURCES as unknown as Set<string>,
+      VALID_ACTIONS as unknown as Set<string>,
+    );
+    if (req.headers["accept"]?.toString().includes("text/csv")) {
+      res.type("text/csv").send(batchResultToCsv(result));
+      return;
+    }
+    res.json(result);
   });
 
   // --- /api/subjects — aggregated principals catalogue ------------------
