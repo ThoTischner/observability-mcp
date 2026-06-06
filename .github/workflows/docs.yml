@@ -66,10 +66,15 @@ jobs:
           set -euo pipefail
           if git fetch --depth 1 origin gh-pages 2>/dev/null; then
             git worktree add /tmp/ghpages FETCH_HEAD
-            # copy *.tgz, *.tgz.prov, index.yaml — skip index.html
-            # (mkdocs landing wins) and the chart-releaser-noise.
+            # copy *.tgz, *.tgz.prov, index.yaml, artifacthub-repo.yml,
+            # .artifacthub-repo.yml — skip index.html (mkdocs landing
+            # wins) and the chart-releaser noise.
+            #
+            # artifacthub-repo.yml is what claims the chart for the
+            # ArtifactHub Verified Publisher badge. Without it the
+            # badge silently drops on the next scan.
             shopt -s nullglob
-            for f in /tmp/ghpages/*.tgz /tmp/ghpages/*.tgz.prov /tmp/ghpages/index.yaml; do
+            for f in /tmp/ghpages/*.tgz /tmp/ghpages/*.tgz.prov /tmp/ghpages/index.yaml /tmp/ghpages/artifacthub-repo.yml /tmp/ghpages/.artifacthub-repo.yml; do
               [ -f "$f" ] || continue
               cp -n "$f" site/
               echo "  preserved $(basename "$f")"
@@ -78,6 +83,14 @@ jobs:
             echo "::notice::Helm repo files preserved alongside docs site"
           else
             echo "::notice::No gh-pages branch yet — nothing to preserve"
+          fi
+          # Source-of-truth path: ship the repo-root .artifacthub-repo.yml
+          # under the dotless name ArtifactHub expects at the chart-repo
+          # URL. This puts the publisher-claim in main/PR diffs instead
+          # of only-on-gh-pages where stale or drift goes unnoticed.
+          if [ -f .artifacthub-repo.yml ]; then
+            cp .artifacthub-repo.yml site/artifacthub-repo.yml
+            echo "::notice::Copied .artifacthub-repo.yml → site/artifacthub-repo.yml"
           fi
       - name: Upload Pages artifact
         if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
