@@ -145,6 +145,17 @@ jobs:
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io \
             -u "${{ github.actor }}" --password-stdin
+      - name: Log in to GHCR (docker config — cosign reads this)
+        # cosign signs by pushing the signature artifact next to the
+        # chart in the same OCI registry. It reads credentials from
+        # ~/.docker/config.json, NOT helm's registry config — so the
+        # helm-login above isn't enough on its own. Without this the
+        # cosign sign step 401s on the signature blob upload.
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Install cosign
         # Pin matches docker-publish.yml — sigstore/cosign-installer v4.1.2.
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
