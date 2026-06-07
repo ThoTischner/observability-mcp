@@ -41,6 +41,8 @@ jobs:
         run: npm run build
 
       - name: Vendor parity check (packages/sdk mirrors mcp-server/src/sdk)
+        # Same check as `make sdk-parity`. If this fails, run
+        # `make sdk-sync` locally to regenerate the mirror, then commit.
         run: |
           diff -q mcp-server/src/sdk/hooks.ts packages/sdk/src/hooks.ts
           diff -q mcp-server/src/sdk/manifest-schema.ts packages/sdk/src/manifest-schema.ts
