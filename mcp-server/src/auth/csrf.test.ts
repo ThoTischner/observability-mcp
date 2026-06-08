@@ -114,6 +114,31 @@ test("enforcer: bearer auth bypasses CSRF when bypassBearer=true", () => {
   assert.equal(r.nexted, true);
 });
 
+test("enforcer: skip predicate exempts a matching request (no token needed)", () => {
+  // Mirror the production predicate, which checks BOTH req.path and
+  // req.originalUrl — under `app.use("/api", ...)` Express strips the
+  // mount prefix from req.path (→ "/csp-violations"), so originalUrl is
+  // what actually matches at runtime.
+  const skip = (r: any) =>
+    r.method === "POST" &&
+    (r.path === "/api/csp-violations" || (r.originalUrl || "").split("?")[0] === "/api/csp-violations");
+  const mw = buildCsrfEnforcer({ bypassBearer: false, secureCookie: () => false, skip });
+
+  // Mounted shape: path stripped to "/csp-violations", originalUrl intact.
+  const mounted = call(mw, { method: "POST", path: "/csp-violations", originalUrl: "/api/csp-violations", headers: {} });
+  assert.equal(mounted.nexted, true, "originalUrl match must exempt under the /api mount");
+  // Query string can't widen the match.
+  const withQuery = call(mw, { method: "POST", path: "/csp-violations", originalUrl: "/api/csp-violations?x=1", headers: {} });
+  assert.equal(withQuery.nexted, true);
+  // A different path is still enforced (rejected without a token).
+  const other = call(mw, { method: "POST", path: "/settings", originalUrl: "/api/settings", headers: {} });
+  assert.equal(other.nexted, false);
+  assert.equal(other.res.status_, 403);
+  // GET is exempt anyway (safe method) regardless of skip.
+  const get = call(mw, { method: "GET", path: "/settings", originalUrl: "/api/settings", headers: {} });
+  assert.equal(get.nexted, true);
+});
+
 test("enforcer: X-API-Key also bypasses when bypassBearer=true", () => {
   const mw = buildCsrfEnforcer(defaultCfg({ bypassBearer: true }));
   const r = call(mw, {

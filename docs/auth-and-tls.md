@@ -78,3 +78,30 @@ sources:
 ```
 
 Prefer `caCert` over `skipVerify` — verification still catches MITM, expired certs, and hostname mismatches.
+
+## Content-Security-Policy (Web UI)
+
+The management UI ships with a Content-Security-Policy, set on every
+response. Two policies run side by side:
+
+- **Enforced** (`Content-Security-Policy`): `default-src 'self'`,
+  `object-src 'none'`, `base-uri 'self'`, `frame-ancestors 'none'`,
+  `connect-src 'self'` — no remote scripts, no plugins, no framing, XHR
+  to the same origin only. `script-src` keeps `'unsafe-inline'` because
+  the single-file UI uses inline event-handler attributes; a nonce there
+  would *disable* `'unsafe-inline'` and break the UI. This policy is a
+  real lockdown that does not regress the UI.
+- **Report-Only** (`Content-Security-Policy-Report-Only`): the strict
+  target — `script-src 'self' 'nonce-<per-request>'`, no
+  `'unsafe-inline'`. The UI's two legitimate inline `<script>` blocks
+  carry the per-request nonce, so this policy flags only the inline
+  event-handler debt. It blocks nothing; it reports, so the migration to
+  `addEventListener` can be tracked before the strict policy is promoted.
+
+Both policies report violations to `POST /api/csp-violations` (wired via
+the modern `Reporting-Endpoints`/`report-to` headers and the legacy
+`report-uri`). That endpoint is unauthenticated (browsers send reports
+with no credentials), CSRF-exempt, rate-limited, and records only a
+sanitised summary (`directive`, `blocked-uri`, `document-uri`) into the
+management audit log. There is nothing to configure — the CSP is always
+on.
