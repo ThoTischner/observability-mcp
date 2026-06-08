@@ -37,6 +37,88 @@ entries:
       artifacthub.io/containsSecurityUpdates: "false"
       artifacthub.io/images: |
         - name: observability-mcp
+          image: ghcr.io/thotischner/observability-mcp:3.0.1
+          platforms:
+            - linux/amd64
+            - linux/arm64
+      artifacthub.io/license: Apache-2.0
+      artifacthub.io/links: |
+        - name: Source
+          url: https://github.com/ThoTischner/observability-mcp
+        - name: Container image
+          url: https://github.com/ThoTischner/observability-mcp/pkgs/container/observability-mcp
+        - name: npm
+          url: https://www.npmjs.com/package/@thotischner/observability-mcp
+        - name: Connector Hub
+          url: https://thotischner.github.io/observability-mcp/hub/
+      artifacthub.io/operator: "false"
+      artifacthub.io/prerelease: "false"
+      artifacthub.io/signKey: |
+        fingerprint: C240A58EC3B9D596C685FB0079826B0CB9A6329F
+        url: https://raw.githubusercontent.com/ThoTischner/observability-mcp/main/docs/helm-signing.pub.asc
+    apiVersion: v2
+    appVersion: 3.0.1
+    created: "2026-06-08T00:07:10.367737161Z"
+    description: Unified observability gateway for AI agents — one MCP server for
+      Prometheus, Loki, and any backend
+    digest: 54c4642673e026a34142762613a64b1db5c2799934cbe23d8c524eacfbc874e8
+    home: https://github.com/ThoTischner/observability-mcp
+    icon: https://raw.githubusercontent.com/ThoTischner/observability-mcp/main/docs/logo.svg
+    keywords:
+    - mcp
+    - model-context-protocol
+    - observability
+    - prometheus
+    - loki
+    - sre
+    - monitoring
+    - ai-agents
+    maintainers:
+    - name: ThoTischner
+      url: https://github.com/ThoTischner
+    name: observability-mcp
+    sources:
+    - https://github.com/ThoTischner/observability-mcp
+    type: application
+    urls:
+    - https://github.com/ThoTischner/observability-mcp/releases/download/observability-mcp-2.0.2/observability-mcp-2.0.2.tgz
+    version: 2.0.2
+  - annotations:
+      artifacthub.io/category: monitoring-logging
+      artifacthub.io/changes: |
+        - kind: fixed
+          description: artifacthub.io/images now points at the current 3.0.0 image (was stale at 1.8.1, causing ArtifactHub to scan an old image with 4 medium-severity findings — the 3.0.0 image scans clean)
+        - kind: added
+          description: plugins.persistence — back /app/plugins with a PVC so connectors installed at runtime (Web UI / bundle upload / omcp) survive pod restarts
+        - kind: added
+          description: plugins.uiInstall — enable the fail-closed Web UI / API connector install + upload endpoints (ENABLE_UI_INSTALL; requires a plugin trust root)
+        - kind: changed
+          description: plugins.image now defaults to the official signed bundle (ghcr.io/thotischner/observability-mcp-plugins:latest) — connectors available on a plain helm install; set plugins.image="" to opt out
+        - kind: added
+          description: Connector Hub link (https://thotischner.github.io/observability-mcp/hub/)
+        - kind: added
+          description: plugins.image init-container extraction + plugins.verify (VERIFY_PLUGINS + trust-root) for airgapped connectors
+        - kind: fixed
+          description: Chart packages are now actually GPG-signed (.prov shipped) — signing key regenerated, CI import fixed
+        - kind: fixed
+          description: Chart icon points at an existing SVG (logo.png 404 fixed)
+        - kind: added
+          description: GPG signing of chart packages — \"signed\" badge on ArtifactHub
+        - kind: fixed
+          description: Chart icon points at an existing SVG (logo.png 404 fixed)
+        - kind: added
+          description: values.schema.json — Helm validates input types before render
+        - kind: added
+          description: Helm test pod (`helm test <release>`) that probes /readyz on the service
+        - kind: added
+          description: Optional prometheus.io/scrape annotations on the Service for clusters without prometheus-operator
+        - kind: added
+          description: NOTES.txt with post-install instructions
+        - kind: added
+          description: artifacthub.io/images and artifacthub.io/changes annotations
+      artifacthub.io/containsSecurityUpdates: "false"
+      artifacthub.io/images: |
+        - name: observability-mcp
           image: ghcr.io/thotischner/observability-mcp:3.0.0
           platforms:
             - linux/amd64
@@ -1442,4 +1524,4 @@ entries:
     urls:
     - https://github.com/ThoTischner/observability-mcp/releases/download/observability-mcp-0.3.0/observability-mcp-0.3.0.tgz
     version: 0.3.0
-generated: "2026-06-06T12:35:04.487124531Z"
+generated: "2026-06-08T00:07:10.367872104Z"
