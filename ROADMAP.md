@@ -18,6 +18,7 @@ per-capability detail and
 - ✅ S3-compatible audit sink + Redis-backed transport session map (sticky-ingress-free multi-replica)
 - ✅ In-product Playground tab + Health-tab anomaly sparkline
 - ✅ Security hardening: session revocation, per-account lockout, password policy, Content-Security-Policy
+- ✅ Agent log analytics (issue #415): `query_logs` structured label filters + server-side aggregation (count/sum/topk)
 
 ### v3.2 — candidates
 
@@ -27,7 +28,7 @@ Discussions):
 - A custom postmortem template engine (persistence + the Postmortems UI tab already ship)
 - SCIM filter/search on the collection endpoints + a UI Provisioning sub-tab
 - Strict-mode MkDocs build (resolve the cross-repo link warnings)
-- Raw PromQL/LogQL passthrough + log label-selectors/aggregation for agent analytics (see issue #415) — gated behind a `raw_query` capability
+- Raw PromQL/LogQL passthrough for agent analytics (issue #415 item #3) — gated behind a `raw_query` capability (label-selectors + aggregation already shipped in 3.1)
 
 ## v3.0 — shipped 2026-06-06
 

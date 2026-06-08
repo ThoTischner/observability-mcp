@@ -78,6 +78,21 @@ graph so a single service collapses across providers.
   `AnomalyHistory` sink (`GET /api/health/anomaly-sparklines`); no
   TSDB round-trip required.
 
+### Added — agent log analytics (issue #415)
+
+- **`query_logs` structured label filters** — a `labels` map of
+  exact-match filters (method/status/url/ip/environment, …), AND'd
+  together, compiled to LogQL label filters after `| json`. Far more
+  reliable than regex on structured JSON logs, where `GET /` never
+  appears verbatim. `environment` filtering falls out for free. Log
+  `level` is now also derived from HTTP status (5xx→error, 4xx→warn)
+  when no explicit level field exists.
+- **`query_logs` server-side aggregation** — an `aggregate`
+  ({op: count_over_time|sum|topk, by, k, step}) that pushes counting
+  down to LogQL metric queries, so an agent gets a number (top paths,
+  per-status totals, a count time series) instead of pulling raw rows
+  and hitting `limit`.
+
 ### Added — security hardening
 
 - **Session revocation blocklist** — `POST /api/auth/revocations`
