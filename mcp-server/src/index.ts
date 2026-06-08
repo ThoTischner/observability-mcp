@@ -67,6 +67,16 @@ import {
   lockoutDisabledFromEnv,
 } from "./auth/lockout.js";
 import { resolveSessionStore } from "./transport/sessionStore.js";
+import {
+  generateNonce,
+  enforcedCsp,
+  reportOnlyCsp,
+  reportingEndpointsHeader,
+  reportToHeader,
+  summariseViolation,
+  cspStrictReportFromEnv,
+  CSP_NONCE_PLACEHOLDER,
+} from "./security/csp.js";
 import { createScimStore } from "./scim/store.js";
 import { registerScimRoutes } from "./scim/routes.js";
 import { BuiltinPolicyEngine, type PolicyEngine } from "./auth/policy/engine.js";
@@ -972,7 +982,18 @@ async function main() {
   // without the wildcard the body silently arrives empty and every
   // SCIM POST/PATCH 400s. The wildcard also future-proofs other
   // structured-suffix JSON content types.
-  app.use(express.json({ limit: "1mb", type: ["application/json", "application/*+json"] }));
+  // application/csp-report is the legacy media type browsers use for CSP
+  // violation reports (the modern Reporting API uses application/reports+json,
+  // already covered by the wildcard). Without it the report body arrives empty.
+  app.use(express.json({ limit: "1mb", type: ["application/json", "application/*+json", "application/csp-report"] }));
+
+  // Q20 — resolve the opt-in strict Report-Only CSP toggle once at boot.
+  // Default off: with ~200 inline handlers the report-only policy would
+  // emit a [Report Only] console message per handler on every page load.
+  const cspStrictReport = cspStrictReportFromEnv();
+  if (cspStrictReport) {
+    console.log("[csp] strict report-only policy ON (OMCP_CSP_STRICT_REPORT) — inline-handler violations will be reported to /api/csp-violations");
+  }
 
   // Security headers
   app.use((req, res, next) => {
@@ -980,6 +1001,21 @@ async function main() {
     res.setHeader("X-Frame-Options", "DENY");
     res.setHeader("X-XSS-Protection", "1; mode=block");
     res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    // Q20 — Content-Security-Policy. A per-request nonce is minted and
+    // stashed on res.locals so the UI handler can stamp it into the two
+    // inline <script> blocks. The enforced policy keeps the UI working
+    // (script-src 'unsafe-inline' for the ~200 inline handlers) and is
+    // always on; the strict report-only policy is opt-in (it surfaces the
+    // inline-handler debt but is console-noisy). Both report to
+    // /api/csp-violations.
+    const nonce = generateNonce();
+    res.locals.cspNonce = nonce;
+    res.setHeader("Content-Security-Policy", enforcedCsp());
+    if (cspStrictReport) {
+      res.setHeader("Content-Security-Policy-Report-Only", reportOnlyCsp(nonce));
+    }
+    res.setHeader("Reporting-Endpoints", reportingEndpointsHeader());
+    res.setHeader("Report-To", reportToHeader());
     // Dynamic API responses must never be served from the browser/proxy
     // cache: after a mutation (e.g. installing a connector) the UI
     // re-fetches these GETs immediately, and a heuristically-cached stale
@@ -1038,6 +1074,12 @@ async function main() {
     bypassBearer: csrfBypassFromEnv(),
     secureCookie: (r: import("express").Request) =>
       r.secure || r.headers["x-forwarded-proto"] === "https",
+    // CSP violation reports are unauthenticated browser POSTs that by
+    // construction carry no cookie + no custom header — exempt them from
+    // CSRF. The endpoint only records a sanitised summary, so accepting it
+    // cross-site is harmless.
+    skip: (r: import("express").Request) =>
+      r.method === "POST" && (r.path === "/api/csp-violations" || r.originalUrl.split("?")[0] === "/api/csp-violations"),
   };
   app.use(buildCsrfIssuer(csrfCfg));
   app.use("/api", buildCsrfEnforcer(csrfCfg));
@@ -1172,6 +1214,37 @@ async function main() {
   });
   const audit = (resource: string, action: string) =>
     buildAuditMiddleware({ audit: mgmtAudit, resource, action });
+
+  // Q20 — CSP violation report sink. Unauthenticated browser POST (exempt
+  // from CSRF via csrfCfg.skip), tightly rate-limited so a misbehaving or
+  // hostile client can't flood the audit log, and only a sanitised summary
+  // (directive / blocked-uri / document-uri) is recorded. Always 204 so the
+  // browser never retries. The report-only strict policy is what drives most
+  // of these today (the inline-handler debt) — they roll into mgmtAudit so an
+  // operator can watch the migration surface shrink.
+  const cspReportRateLimit = rateLimit({
+    windowMs: 60_000,
+    max: 60,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "rate limited" },
+  });
+  app.post("/api/csp-violations", cspReportRateLimit, (req, res) => {
+    const summary = summariseViolation(req.body);
+    if (summary) {
+      void mgmtAudit.record({
+        actor: { sub: "browser:csp" },
+        tenant: "default",
+        resource: "settings",
+        action: "read",
+        method: "POST",
+        path: "/api/csp-violations",
+        status: 204,
+        target: `${summary.directive} blocked ${summary.blockedUri}`.slice(0, 256),
+      }).catch(() => {});
+    }
+    res.status(204).end();
+  });
 
   // Plugin lifecycle hook registry — populated by the loader at boot
   // (one entry per manifest `hooks[]` entry) and mutable at runtime
@@ -1350,7 +1423,28 @@ async function main() {
     });
   }
 
-  // Serve Web UI
+  // Serve Web UI. The index page is served dynamically so the per-request
+  // CSP nonce can be stamped into its inline <script> blocks (the rest of
+  // ui/ stays on express.static). Read once at boot; if the file is
+  // missing we fall through to static, which 404s like before.
+  let uiHtmlTemplate: string | null = null;
+  try {
+    uiHtmlTemplate = readFileSync(join(__dirname, "ui", "index.html"), "utf8");
+  } catch {
+    uiHtmlTemplate = null;
+  }
+  if (uiHtmlTemplate) {
+    const template = uiHtmlTemplate;
+    const serveIndex: import("express").RequestHandler = (_req, res) => {
+      const nonce = (res.locals.cspNonce as string | undefined) ?? "";
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      // Index is identity/nonce-specific — never let a proxy cache it.
+      res.setHeader("Cache-Control", "no-store");
+      res.send(template.split(CSP_NONCE_PLACEHOLDER).join(nonce));
+    };
+    app.get("/", serveIndex);
+    app.get("/index.html", serveIndex);
+  }
   app.use(express.static(join(__dirname, "ui")));
 
   // --- API endpoints for Web UI ---

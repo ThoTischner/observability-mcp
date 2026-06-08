@@ -46,6 +46,12 @@ export interface CsrfConfig {
   /** Set cookies with `Secure` flag. Default mirrors the existing
    *  session-cookie behaviour: only when the request is on https. */
   secureCookie: (req: Request) => boolean;
+  /** Optional predicate to exempt specific requests from CSRF entirely.
+   *  Used for unauthenticated browser-initiated POSTs that can't carry a
+   *  token by construction — e.g. CSP violation reports, which the browser
+   *  sends with no credentials and no custom headers. Keep this list
+   *  minimal: an exempt endpoint must be safe to accept cross-site. */
+  skip?: (req: Request) => boolean;
 }
 
 export function csrfBypassFromEnv(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -84,6 +90,10 @@ export function buildCsrfIssuer(cfg: CsrfConfig) {
 export function buildCsrfEnforcer(cfg: CsrfConfig) {
   return (req: Request, res: Response, next: NextFunction): void => {
     if (SAFE_METHODS.has(req.method.toUpperCase())) {
+      next();
+      return;
+    }
+    if (cfg.skip?.(req)) {
       next();
       return;
     }
