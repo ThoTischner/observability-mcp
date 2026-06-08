@@ -30,8 +30,8 @@ for the full plugin contract.
 
 ## Compatibility
 
-Version-tracks the parent gateway. SDK `2.x` works with
-observability-mcp `2.x`; the manifest `schemaVersion` is the
+Version-tracks the parent gateway. SDK `3.x` works with
+observability-mcp `3.x`; the manifest `schemaVersion` is the
 authoritative compat marker — see
 [`docs/plugin-architecture.md`](https://github.com/ThoTischner/observability-mcp/blob/main/docs/plugin-architecture.md).
 
