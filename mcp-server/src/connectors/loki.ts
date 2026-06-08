@@ -16,6 +16,48 @@ import { buildTlsAgent } from "./tls.js";
 const DEFAULT_SERVICE_LABELS = ["service_name", "service", "job", "app", "container"];
 const LABEL_CACHE_TTL_MS = 60_000;
 
+/** Escape a value for a double-quoted LogQL string literal. Backslash and
+ *  quote first (breakout chars), then control chars — a raw newline/tab in
+ *  a Go-style `"..."` literal is a parse error, so emit the escape sequence. */
+export function escapeLogQLValue(value: string): string {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, "\\n")
+    .replace(/\r/g, "\\r")
+    .replace(/\t/g, "\\t");
+}
+
+/**
+ * Compile a `labels` equality map into LogQL label-filter expressions that
+ * run AFTER `| json`, e.g. `{...} | json | method="GET" | status="200"`.
+ * Placed after the json parse so fields the pipeline extracts (not just
+ * stream labels) are filterable. Keys are sorted for deterministic output.
+ * Reusable, side-effect-free unit — also the basis for the Q-LOG2
+ * aggregation path and a future named-LogQL catalog. Callers validate the
+ * map (see validateLogLabels); this only escapes values.
+ */
+export function logqlLabelFilters(labels: Record<string, string> | undefined): string {
+  if (!labels) return "";
+  return Object.keys(labels)
+    .sort()
+    .map((k) => ` | ${k}="${escapeLogQLValue(labels[k])}"`)
+    .join("");
+}
+
+/**
+ * Derive a log level from an HTTP status code when the line carries no
+ * explicit level: 5xx → error, 4xx → warn. Returns undefined otherwise so
+ * the caller keeps its existing fallback chain.
+ */
+export function levelFromStatus(status: unknown): "error" | "warn" | undefined {
+  const n = typeof status === "number" ? status : parseInt(String(status ?? ""), 10);
+  if (!Number.isFinite(n)) return undefined;
+  if (n >= 500 && n <= 599) return "error";
+  if (n >= 400 && n <= 499) return "warn";
+  return undefined;
+}
+
 export class LokiConnector implements ObservabilityConnector {
   readonly type = "loki";
   readonly signalType: SignalType = "logs";
@@ -119,13 +161,13 @@ export class LokiConnector implements ObservabilityConnector {
     // matches the real stream.
     const { label: matchedLabel, value: rawValue } = await this.resolveServiceSelector(params.service);
     const service = this.escapeLogQLValue(rawValue);
-    let logql = `{${matchedLabel}="${service}"}`;
+    let logql = `{${matchedLabel}="${service}"} | json`;
     if (params.level) {
-      const level = this.escapeLogQLValue(params.level);
-      logql += ` | json | level="${level}"`;
-    } else {
-      logql += ` | json`;
+      logql += ` | level="${this.escapeLogQLValue(params.level)}"`;
     }
+    // Structured equality filters (method/status/url/environment/…) — run
+    // after `| json` so backend-extracted fields are selectable.
+    logql += logqlLabelFilters(params.labels);
     if (params.query) {
       const query = this.escapeLogQLRegex(params.query);
       logql += ` |~ \`${query}\``;
@@ -142,9 +184,17 @@ export class LokiConnector implements ObservabilityConnector {
       const labels = stream.stream;
       for (const [ts, line] of stream.values) {
         const parsed = this.parseLine(line);
+        // Prefer an explicit level; otherwise derive one from an HTTP
+        // status field (5xx→error, 4xx→warn) so structured access logs
+        // that carry `status` but no `level` are still filterable/triaged.
+        const level =
+          parsed.level ||
+          labels.level ||
+          levelFromStatus(parsed.status ?? labels.status) ||
+          "unknown";
         entries.push({
           timestamp: new Date(parseInt(ts) / 1_000_000).toISOString(),
-          level: parsed.level || labels.level || "unknown",
+          level,
           message: parsed.msg || line,
           labels,
         });
@@ -240,7 +290,8 @@ export class LokiConnector implements ObservabilityConnector {
   }
 
   private escapeLogQLValue(value: string): string {
-    return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    // Delegate to the canonical module-level escaper (single source of truth).
+    return escapeLogQLValue(value);
   }
 
   private escapeLogQLRegex(value: string): string {

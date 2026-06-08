@@ -24,6 +24,41 @@ LOKI_SERVICE_LABELS=service_name,container,job npx @thotischner/observability-mc
 
 Label values are cached per-label for 60 seconds.
 
+## Structured label filters (`labels`)
+
+`query_logs` accepts a `labels` map of exact-match filters on
+backend-extracted fields, AND'd together. For structured JSON access
+logs this is far more reliable than the `query` regex — a natural
+filter like `GET /` never appears verbatim in
+`{"method":"GET","url":"/"}`.
+
+```jsonc
+query_logs({
+  "service": "app",
+  "labels": { "method": "GET", "url": "/", "status": "200", "environment": "prod" }
+})
+```
+
+These compile to LogQL label-filter expressions **after** `| json`, so
+they work on fields the pipeline extracts, not just stream labels:
+
+```logql
+{service_name="app"} | json | environment="prod" | method="GET" | status="200" | url="/"
+```
+
+`environment` (or any label) is therefore a first-class filter — handy
+when prod and dev logs share one backend. A `level` filter and a free-
+text `query` (line filter) still compose on top. Label names must match
+`[a-zA-Z_][a-zA-Z0-9_]*` (max 20); values are escaped. An invalid name
+or value is rejected fail-closed rather than silently dropped.
+
+### Level from HTTP status
+
+When a structured line carries no explicit `level` but does carry an
+HTTP `status`, the connector derives one — `5xx → error`, `4xx → warn` —
+so access logs are triageable and `level`-filterable without a
+dedicated level field.
+
 ## Docker container label leading slash
 
 Docker's `loki.source.docker` writes container names with a leading `/` (Docker's `Names[0]` convention — `/my-app-1`). The connector handles this transparently:
