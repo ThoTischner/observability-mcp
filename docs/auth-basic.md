@@ -34,6 +34,11 @@ node scripts/hash-password.mjs alice --name "Alice" --roles operator
 # }
 ```
 
+The helper checks the password against the policy (see
+[Password policy](#password-policy) below) before hashing and refuses a
+weak one. Pass `--force` (or set `OMCP_PASSWORD_POLICY_DISABLED=true`) to
+override.
+
 **2. Build the users file** at any path the server can read:
 
 ```json
@@ -82,6 +87,10 @@ badge appears in the masthead.
 | `OMCP_AUTH_LOCKOUT_BASE` | optional | First lock duration in seconds; doubles each subsequent lock (default `60`). |
 | `OMCP_AUTH_LOCKOUT_MAX` | optional | Cap on a single lock duration in seconds (default `3600`). |
 | `OMCP_AUTH_LOCKOUT_DISABLED` | optional | Set truthy to turn the per-account lockout off entirely. |
+| `OMCP_PASSWORD_MIN_LENGTH` | optional | Minimum password length the minting helper enforces (default `12`). |
+| `OMCP_PASSWORD_MIN_CLASSES` | optional | Minimum character classes (lower/upper/digit/symbol) required, 1–4 (default `3`). |
+| `OMCP_PASSWORD_DENYLIST_DISABLED` | optional | Set truthy to skip the common-password denylist check. |
+| `OMCP_PASSWORD_POLICY_DISABLED` | optional | Set truthy to skip the password policy entirely. |
 
 If `OMCP_USERS_FILE` is missing/unreadable/empty when `OMCP_AUTH=basic`,
 the server **refuses to start** (process exit code 1) so a misconfigured
@@ -126,6 +135,29 @@ TTL); without it the lockout is per-process and resets on restart.
 A lockout is a temporary, automatic throttle — to permanently disable an
 account, remove it from `OMCP_USERS_FILE` (and revoke its live sessions,
 see [access-control.md](access-control.md#session-revocation)).
+
+### Password policy
+
+The minting helper (`scripts/hash-password.mjs`) checks each password
+against a small policy before hashing it:
+
+- **length** ≥ `OMCP_PASSWORD_MIN_LENGTH` (default 12),
+- **character classes** ≥ `OMCP_PASSWORD_MIN_CLASSES` of {lowercase,
+  uppercase, digit, symbol} (default 3),
+- not on a builtin **common-password denylist** (the usual `password123`
+  / `qwerty` set plus a few app-specific ones), and
+- does not **contain the username**.
+
+A weak password is refused with the list of violations; `--force` or
+`OMCP_PASSWORD_POLICY_DISABLED=true` overrides it.
+
+The check lives at the **minting** step because that is the only place a
+management password exists in plaintext — the users file stores scrypt
+hashes only, so there is nothing to re-validate at load time, and login
+never re-checks policy (that would lock out users whose passwords predate
+a tightened rule). The same rules are available as a reusable module
+(`mcp-server/src/auth/password-policy.ts`) for any future
+change-password endpoint.
 
 ## What's gated, what isn't
 
