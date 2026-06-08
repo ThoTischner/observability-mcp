@@ -97,6 +97,10 @@ response. Two policies run side by side:
   carry the per-request nonce, so this policy flags only the inline
   event-handler debt. It blocks nothing; it reports, so the migration to
   `addEventListener` can be tracked before the strict policy is promoted.
+  It is **opt-in** via `OMCP_CSP_STRICT_REPORT=true` — with ~200 inline
+  handlers it would otherwise emit a `[Report Only]` console message per
+  handler on every page load, which is noise for anyone with devtools
+  open. Turn it on when you're actively working the migration.
 
 Both policies report violations to `POST /api/csp-violations` (wired via
 the modern `Reporting-Endpoints`/`report-to` headers and the legacy

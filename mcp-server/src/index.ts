@@ -74,6 +74,7 @@ import {
   reportingEndpointsHeader,
   reportToHeader,
   summariseViolation,
+  cspStrictReportFromEnv,
   CSP_NONCE_PLACEHOLDER,
 } from "./security/csp.js";
 import { createScimStore } from "./scim/store.js";
@@ -986,6 +987,14 @@ async function main() {
   // already covered by the wildcard). Without it the report body arrives empty.
   app.use(express.json({ limit: "1mb", type: ["application/json", "application/*+json", "application/csp-report"] }));
 
+  // Q20 — resolve the opt-in strict Report-Only CSP toggle once at boot.
+  // Default off: with ~200 inline handlers the report-only policy would
+  // emit a [Report Only] console message per handler on every page load.
+  const cspStrictReport = cspStrictReportFromEnv();
+  if (cspStrictReport) {
+    console.log("[csp] strict report-only policy ON (OMCP_CSP_STRICT_REPORT) — inline-handler violations will be reported to /api/csp-violations");
+  }
+
   // Security headers
   app.use((req, res, next) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
@@ -995,13 +1004,16 @@ async function main() {
     // Q20 — Content-Security-Policy. A per-request nonce is minted and
     // stashed on res.locals so the UI handler can stamp it into the two
     // inline <script> blocks. The enforced policy keeps the UI working
-    // (script-src 'unsafe-inline' for the ~200 inline handlers); the
-    // report-only policy is the strict nonce target that surfaces that
-    // debt without breaking anything. Both report to /api/csp-violations.
+    // (script-src 'unsafe-inline' for the ~200 inline handlers) and is
+    // always on; the strict report-only policy is opt-in (it surfaces the
+    // inline-handler debt but is console-noisy). Both report to
+    // /api/csp-violations.
     const nonce = generateNonce();
     res.locals.cspNonce = nonce;
     res.setHeader("Content-Security-Policy", enforcedCsp());
-    res.setHeader("Content-Security-Policy-Report-Only", reportOnlyCsp(nonce));
+    if (cspStrictReport) {
+      res.setHeader("Content-Security-Policy-Report-Only", reportOnlyCsp(nonce));
+    }
     res.setHeader("Reporting-Endpoints", reportingEndpointsHeader());
     res.setHeader("Report-To", reportToHeader());
     // Dynamic API responses must never be served from the browser/proxy

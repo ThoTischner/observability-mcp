@@ -8,6 +8,7 @@ import {
   reportingEndpointsHeader,
   reportToHeader,
   summariseViolation,
+  cspStrictReportFromEnv,
   CSP_NONCE_PLACEHOLDER,
   CSP_REPORT_GROUP,
   CSP_REPORT_PATH,
@@ -58,6 +59,14 @@ test("reporting headers name the same group + endpoint", () => {
 
 test("the nonce placeholder is a stable token", () => {
   assert.equal(CSP_NONCE_PLACEHOLDER, "__CSP_NONCE__");
+});
+
+test("strict report-only is opt-in (default off)", () => {
+  assert.equal(cspStrictReportFromEnv({} as NodeJS.ProcessEnv), false);
+  assert.equal(cspStrictReportFromEnv({ OMCP_CSP_STRICT_REPORT: "true" } as NodeJS.ProcessEnv), true);
+  assert.equal(cspStrictReportFromEnv({ OMCP_CSP_STRICT_REPORT: "1" } as NodeJS.ProcessEnv), true);
+  assert.equal(cspStrictReportFromEnv({ OMCP_CSP_STRICT_REPORT: "no" } as NodeJS.ProcessEnv), false);
+  assert.equal(cspStrictReportFromEnv({ OMCP_CSP_STRICT_REPORT: "false" } as NodeJS.ProcessEnv), false);
 });
 
 test("summariseViolation parses the legacy csp-report envelope", () => {

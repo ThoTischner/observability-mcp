@@ -22,6 +22,13 @@
  *    (move the handlers to addEventListener) before a future slice can
  *    promote the strict policy to enforced.
  *
+ *    It is **opt-in** (`OMCP_CSP_STRICT_REPORT=true`): with ~200 inline
+ *    handlers it would otherwise emit a `[Report Only]` console message
+ *    per handler on every page load — noise an operator with devtools
+ *    open shouldn't eat by default. Enable it when you're actively
+ *    working the migration. The enforced policy + reporting endpoint are
+ *    always on regardless.
+ *
  * Both policies report to `/api/csp-violations` via the modern Reporting
  * API (`Reporting-Endpoints` + `report-to`) and the legacy `report-uri`.
  */
@@ -76,6 +83,13 @@ export function reportOnlyCsp(nonce: string): string {
     `report-uri ${CSP_REPORT_PATH}`,
     `report-to ${CSP_REPORT_GROUP}`,
   ].join("; ");
+}
+
+/** Whether the strict Report-Only policy is enabled. Default off — see
+ *  the module header for why (console noise from ~200 inline handlers). */
+export function cspStrictReportFromEnv(env: NodeJS.ProcessEnv = process.env): boolean {
+  const v = env.OMCP_CSP_STRICT_REPORT?.trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
 }
 
 /** Value for the modern `Reporting-Endpoints` header. */
