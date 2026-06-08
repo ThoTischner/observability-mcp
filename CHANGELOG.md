@@ -6,6 +6,124 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.1.0] — 2026-06-08
+
+Incremental release — the **Phase Q sprint** closes the
+"Deferred to v3.x" backlog from 3.0. Every item is opt-in via env /
+Helm value; migrating from 3.0 is **purely additive** (3.0.1 was a
+republish-only version bump with no behaviour change). See
+[`docs/migrations/3.0-to-3.1.md`](docs/migrations/3.0-to-3.1.md).
+
+### Added — topology providers
+
+Five concrete providers on the F14a multi-cloud merger foundation.
+Each ships as a filesystem connector (lazy-loaded SDK, manifest
+integrity + hub catalog entry) and merges into the unified topology
+graph so a single service collapses across providers.
+
+- **AWS** (`connectors/aws/`) — EC2 instances, ECS services/tasks,
+  EKS clusters/nodepools → `cloud_service` / `cloud_node` resources
+  with `OWNED_BY` / `RUNS_ON` edges. Standard AWS SDK credential
+  chain.
+- **GCP** (`connectors/gcp/`) — GKE clusters/nodepools, Cloud Run
+  services, Compute Engine instances.
+- **Istio** (`connectors/istio/`) — `CALLS` edges derived from
+  `istio_requests_total` in the mesh's Prometheus.
+- **Linkerd** (`connectors/linkerd/`) — `CALLS` edges from the viz
+  `response_total` series.
+- **Consul** (`connectors/consul/`) — Consul Connect service graph
+  via the catalog + health HTTP API.
+
+### Added — federation transports
+
+- **Stdio upstream** — federate an upstream MCP server spawned as a
+  child process (`name=stdio:<command>`).
+- **WebSocket upstream** — federate over the WS transport
+  (`name=ws://host/mcp/ws`). Both share the existing
+  `UpstreamClient` interface and the federation E2E harness.
+
+### Added — plugin / hook system
+
+- **Manifest-driven hook auto-registration** — `manifest.hooks[]`
+  entries register into the `HookRegistry` at load; plugins no
+  longer need programmatic wiring.
+- **Resource + prompt hooks at the MCP seam** —
+  `resource_pre_fetch` / `resource_post_fetch` / `prompt_pre_fetch`
+  / `prompt_post_fetch` now fire around `resources/read` and
+  `prompts/get`, mirroring the tool hooks.
+
+### Added — provisioning (SCIM 2.0)
+
+- **Redis-backed SCIM store** — `OMCP_SCIM_BACKEND=redis` shares a
+  single snapshot across replicas (file remains the default).
+- **PATCH add/remove on `members[]` + `emails[]`**, including the
+  `members[value eq "x"]` filter path Entra/Okta emit.
+- **Full SCIM 2.0 compliance suite** (`scim/compliance.test.ts`,
+  env-gated) — discovery, the 401 gate, the User+Group lifecycle,
+  409/404 with the SCIM error schema. Surfaced + fixed two
+  production wiring bugs (`application/scim+json` body parsing; the
+  Redis backend not reaching prod).
+
+### Added — operability
+
+- **S3-compatible audit sink** — per-minute JSONL rollups to
+  S3 / MinIO / R2 / B2 (`audit.s3.*`).
+- **Redis-backed transport session map** — multi-replica gateways
+  no longer need sticky ingress for Streamable HTTP sessions.
+- **In-product Playground tab** — pick a live tool, render its
+  input schema as a form, invoke, and view a pretty / table / raw
+  response. Backed by `POST /api/playground/invoke`.
+- **Health-tab anomaly sparkline** — each card shows the last hour
+  of `omcp_anomaly_score` from an in-process ring on the
+  `AnomalyHistory` sink (`GET /api/health/anomaly-sparklines`); no
+  TSDB round-trip required.
+
+### Added — security hardening
+
+- **Session revocation blocklist** — `POST /api/auth/revocations`
+  revokes a single session (`sid`) or every session for a subject;
+  checked on each request. On-disk JSONL
+  (`OMCP_AUTH_REVOCATION_FILE`).
+- **Per-account login lockout** — failed-login counter with
+  progressive backoff, on top of the per-IP rate limit; backed by
+  the shared session store. `OMCP_AUTH_LOCKOUT_*`.
+- **Password policy** for basic-auth credential minting — length /
+  character-class / common-password-denylist checks in
+  `hash-password.mjs`. `OMCP_PASSWORD_*`.
+- **Content-Security-Policy** for the Web UI — an enforced
+  lockdown policy (`default-src 'self'`, `object-src 'none'`, …)
+  plus per-request nonces and an opt-in strict report-only policy
+  (`OMCP_CSP_STRICT_REPORT`) that reports to `/api/csp-violations`.
+
+### Added — post-3.0 increments (first released here)
+
+These landed on `main` shortly after the 3.0.0 tag but were never cut
+into a release (3.0.1 was republish-only), so they ship to users for
+the first time in 3.1.0:
+
+- **Policies "Batch evaluate" panel** — a Policies-tab sub-view over
+  the existing `POST /api/policy/dry-run-batch` API (matrix / CSV).
+- **Postmortems persistence + UI tab** — `/api/postmortems` now
+  persists (`OMCP_POSTMORTEMS_FILE`) and a Postmortems nav page
+  lists + renders generated reports. (A custom template engine
+  remains future work.)
+
+### Changed — tooling
+
+- **SDK source-sync tooling** (`make sdk-sync` / `make sdk-parity`)
+  replaces hand-maintenance of the vendored SDK copy; a CI parity
+  gate prevents drift.
+
+### Backwards compatibility
+
+Every 3.1 capability is opt-in via env or Helm value. The default
+single-replica anonymous-auth demo runs identically on 3.0 and 3.1.
+
+## [3.0.1] — 2026-06-08
+
+Republish-only version bump (Helm chart + npm) to resolve an
+ArtifactHub image-scan mismatch. No code or behaviour changes.
+
 ## [3.0.0] — 2026-06-06
 
 Major release. v3.0 is the **moat-extension sprint** on top of the
@@ -81,26 +199,17 @@ is opt-in via env / Helm value. See
 
 ### Deferred to v3.x (incremental)
 
-- Concrete AWS / GCP / Consul / Istio / Linkerd topology-provider
-  connectors (F14a foundation ships; F14b–f are the providers).
-- Detector-side hook that fills the anomaly-history buffer from
-  the live `detect_anomalies` path (F15b — writer + tool already
-  live).
-- UI "Batch evaluate" panel in the Policies tab (F16b — API is
-  fully usable today).
-- F17b strict-mode mkdocs build (clean up the 14 cross-repo links
+> Most of this list shipped in **3.1.0** (the Phase Q sprint) — see
+> that section above. The items below remain open after 3.1:
+
+- F17b strict-mode mkdocs build (clean up the cross-repo links
   flagged as warnings).
-- Playground UI tab that mirrors Inspector inline (F18b — the
-  real Inspector via `omcp inspector-config` is the supported
-  path today).
-- `/api/postmortems` persistence, UI Postmortems tab, custom
-  template engine (F19b/c — tool is fully usable today).
-- npm-workspace setup so the SDK package becomes the canonical
-  source and mcp-server depends on it instead of vendoring
-  (F20b — current setup uses a CI parity check).
-- SCIM filter/search, member[] add/remove patch ops,
-  Redis-backed store, UI Provisioning sub-tab, full SCIM 2.0
-  compliance suite (F21b/c — push-only Entra+Okta work today).
+- A custom postmortem template engine (F19c — persistence and the
+  Postmortems UI tab already shipped; today templates are built-in).
+- SCIM filter/search on the collection endpoints + a UI
+  Provisioning sub-tab (F21 — push-only Entra+Okta provisioning
+  works today; PATCH add/remove, the Redis store, and the full
+  compliance suite all shipped in 3.1).
 
 ### Backwards compatibility
 

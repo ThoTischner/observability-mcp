@@ -4,6 +4,31 @@ Where the project is going at a thematic level. For the connector-plugin enginee
 
 Items here are **directions, not promises** — order will shift based on what users actually need. If something here matters to you, open a Discussion or an Issue.
 
+## v3.1 — shipped 2026-06-08
+
+The **Phase Q** sprint — closes the "Deferred to v3.x" backlog from
+3.0. All additive / opt-in. See [CHANGELOG.md](CHANGELOG.md) for
+per-capability detail and
+[`docs/migrations/3.0-to-3.1.md`](docs/migrations/3.0-to-3.1.md).
+
+- ✅ Concrete topology providers: AWS, GCP, Istio, Linkerd, Consul (on the v3.0 merger foundation)
+- ✅ Federation upstream transports: stdio + WebSocket
+- ✅ SCIM 2.0: Redis-backed store, PATCH add/remove on `members[]`/`emails[]`, full compliance suite
+- ✅ Manifest-driven plugin hook auto-registration + resource/prompt hooks at the MCP seam
+- ✅ S3-compatible audit sink + Redis-backed transport session map (sticky-ingress-free multi-replica)
+- ✅ In-product Playground tab + Health-tab anomaly sparkline
+- ✅ Security hardening: session revocation, per-account lockout, password policy, Content-Security-Policy
+
+### v3.2 — candidates
+
+The remaining 3.0 deferred items, still open after 3.1 (vote via
+Discussions):
+
+- A custom postmortem template engine (persistence + the Postmortems UI tab already ship)
+- SCIM filter/search on the collection endpoints + a UI Provisioning sub-tab
+- Strict-mode MkDocs build (resolve the cross-repo link warnings)
+- Raw PromQL/LogQL passthrough + log label-selectors/aggregation for agent analytics (see issue #415) — gated behind a `raw_query` capability
+
 ## v3.0 — shipped 2026-06-06
 
 The moat-extension sprint on top of v2.0. See
