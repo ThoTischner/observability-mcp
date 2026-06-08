@@ -21,6 +21,7 @@ test("openapi — every user-visible /api path is documented", () => {
     "/api/me",
     "/api/auth/login",
     "/api/auth/logout",
+    "/api/auth/revocations",
     "/api/auth/oidc/login",
     "/api/auth/oidc/callback",
     "/api/auth/oidc/logout",

@@ -28,6 +28,13 @@ export interface SessionPayload {
   tenant?: string;
   /** Optional list of role identifiers — used by later phases for RBAC. */
   roles?: string[];
+  /** Per-session random identifier. Minted at issue time. Lets the
+   *  revocation blocklist (see ./revocation.ts) drop a single session
+   *  without rotating the signing secret. Optional for backward compat:
+   *  cookies issued before this field existed still verify and simply
+   *  can't be revoked individually (a subject-wide revocation still
+   *  catches them via `iat`). */
+  sid?: string;
   /** Issued-at, seconds since epoch. */
   iat: number;
   /** Hard expiry, seconds since epoch. */
@@ -76,6 +83,10 @@ export function issueSession(
     email: identity.email,
     tenant: identity.tenant,
     roles: identity.roles,
+    // 16 random bytes ≈ 128 bits — collision-free across any realistic
+    // session population, and enough entropy that a sid can't be guessed
+    // to forge a revocation target for another user's session.
+    sid: randomBytes(16).toString("base64url"),
     iat: now,
     exp: now + ttl,
   };
@@ -127,6 +138,7 @@ function isSessionPayload(v: unknown): v is SessionPayload {
   if (typeof o.sub !== "string" || typeof o.name !== "string") return false;
   if (typeof o.iat !== "number" || typeof o.exp !== "number") return false;
   if (o.roles !== undefined && !(Array.isArray(o.roles) && o.roles.every((r) => typeof r === "string"))) return false;
+  if (o.sid !== undefined && typeof o.sid !== "string") return false;
   if (o.email !== undefined && typeof o.email !== "string") return false;
   if (o.tenant !== undefined && typeof o.tenant !== "string") return false;
   return true;

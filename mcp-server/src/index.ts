@@ -60,6 +60,7 @@ import {
 } from "./auth/rbac.js";
 import { resolveOidcConfig, buildOidcRuntime } from "./auth/oidc/runtime.js";
 import { registerOidcRoutes } from "./auth/oidc/endpoints.js";
+import { RevocationStore } from "./auth/revocation.js";
 import { createScimStore } from "./scim/store.js";
 import { registerScimRoutes } from "./scim/routes.js";
 import { BuiltinPolicyEngine, type PolicyEngine } from "./auth/policy/engine.js";
@@ -916,7 +917,21 @@ async function main() {
   } else if (requestedAuthMode !== "anonymous") {
     authMisconfig(`unknown OMCP_AUTH=${requestedAuthMode}`);
   }
-  const authRuntime: AuthRuntime = { mode: authMode, session: sessionCfg, secretEphemeral, oidc: oidcRuntime };
+  // Session revocation blocklist (Q17). Only meaningful when sessions
+  // exist (basic / oidc); anonymous mode leaves it undefined so the
+  // middleware check is a pure no-op. OMCP_AUTH_REVOCATION_FILE persists
+  // the blocklist across restarts and shares it across replicas when it
+  // points at shared storage; unset = in-memory only.
+  let revocationStore: RevocationStore | undefined;
+  if (authMode !== "anonymous") {
+    revocationStore = await RevocationStore.create({
+      path: process.env.OMCP_AUTH_REVOCATION_FILE?.trim() || undefined,
+    });
+    console.log(
+      `[auth] session revocation blocklist active — backend=${revocationStore.persistent ? `file (${revocationStore.filePath})` : "memory"}, ${revocationStore.size} existing entr${revocationStore.size === 1 ? "y" : "ies"}`,
+    );
+  }
+  const authRuntime: AuthRuntime = { mode: authMode, session: sessionCfg, secretEphemeral, oidc: oidcRuntime, revocation: revocationStore };
 
   // --- HTTP server ---
   const app = express();
@@ -1512,6 +1527,10 @@ async function main() {
       },
       permissions: listGrantedPermissions(sess.roles, policyEngineToMap(policyEngine)),
       exp: sess.exp,
+      // The current session's revocation id. Surfaced so an admin can
+      // copy it into POST /api/auth/revocations to kill a specific
+      // session. Absent for legacy cookies issued before sid existed.
+      sid: sess.sid,
       // When the user signed in via OIDC, surface the IdP issuer
       // URL so the UI can render an appropriate badge or link to
       // an IdP-side profile page. Empty / absent in basic mode.
@@ -2095,6 +2114,36 @@ async function main() {
     registerOidcRoutes(app, { sessionCfg, oidc: oidcRuntime });
     console.log("[auth] OIDC endpoints registered: /api/auth/oidc/{login,callback,logout}");
   }
+
+  // Q17 — session revocation blocklist. Admin-gated (same role tier as
+  // user/role management). A revoked-but-unexpired cookie is rejected by
+  // buildSessionAttacher on the next request. Revoke a single session by
+  // `sid` (read it from /api/me or the audit log) or every current
+  // session for a `sub` ("log this user out everywhere"). The blocklist
+  // is the stateful complement to the otherwise-stateless cookie.
+  app.post("/api/auth/revocations", need("users", "delete"), audit("users", "write"), async (req, res) => {
+    if (!revocationStore) {
+      res.status(503).json({ error: "revocation requires an auth mode (basic|oidc)" });
+      return;
+    }
+    const body = (req.body || {}) as { sid?: unknown; sub?: unknown; reason?: unknown };
+    const sid = typeof body.sid === "string" && body.sid.trim() ? body.sid.trim() : undefined;
+    const sub = typeof body.sub === "string" && body.sub.trim() ? body.sub.trim() : undefined;
+    const reason = typeof body.reason === "string" ? body.reason.slice(0, 500) : undefined;
+    if ((sid ? 1 : 0) + (sub ? 1 : 0) !== 1) {
+      res.status(400).json({ error: "exactly one of `sid` or `sub` is required" });
+      return;
+    }
+    const by = (req as AuthedRequest).session?.sub;
+    const entry = sid
+      ? await revocationStore.revokeSession(sid, { reason, by })
+      : await revocationStore.revokeSubject(sub as string, { reason, by });
+    res.status(201).json({ ok: true, revocation: entry });
+  });
+
+  app.get("/api/auth/revocations", need("users", "delete"), (_req, res) => {
+    res.json({ revocations: revocationStore ? revocationStore.list() : [] });
+  });
 
   // Phase F21 / Q6: SCIM 2.0 — opt-in. OMCP_SCIM_TOKEN gates access.
   // The store backend is chosen by createScimStore from

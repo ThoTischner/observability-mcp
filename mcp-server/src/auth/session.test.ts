@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { createHmac } from "node:crypto";
 
 import {
   issueSession,
@@ -27,6 +28,29 @@ test("issueSession + verifySession — round-trips identity", () => {
   assert.ok(verified, "expected verified payload");
   assert.equal(verified.sub, "alice");
   assert.deepEqual(verified.roles, ["operator"]);
+});
+
+test("issueSession mints a unique sid that round-trips through verify", () => {
+  const now = 1_700_000_000;
+  const a = issueSession({ sub: "alice", name: "Alice" }, { secret }, now);
+  const b = issueSession({ sub: "alice", name: "Alice" }, { secret }, now);
+  assert.ok(a.payload.sid, "expected a sid");
+  assert.notEqual(a.payload.sid, b.payload.sid, "each session gets its own sid");
+
+  const verified = verifySession(a.cookie, { secret }, now + 1);
+  assert.ok(verified);
+  assert.equal(verified.sid, a.payload.sid);
+});
+
+test("verifySession — a legacy cookie without a sid still verifies", () => {
+  const now = 1_700_000_000;
+  // Hand-craft a payload lacking sid (pre-Q17 shape) and sign it.
+  const payload = { sub: "alice", name: "Alice", iat: now, exp: now + 3600 };
+  const payloadStr = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const sig = createHmac("sha256", secret).update(payloadStr).digest("base64url");
+  const verified = verifySession(`${payloadStr}.${sig}`, { secret }, now + 1);
+  assert.ok(verified, "legacy cookie should still verify");
+  assert.equal(verified.sid, undefined);
 });
 
 test("issueSession + verifySession — round-trips email when present", () => {

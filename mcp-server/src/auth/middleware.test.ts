@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { buildSessionAttacher, buildRequireSession, type AuthRuntime } from "./middleware.js";
 import { issueSession, type SessionConfig } from "./session.js";
+import { RevocationStore } from "./revocation.js";
 
 const secret = "x".repeat(48);
 const sessionCfg: SessionConfig = { secret };
@@ -62,6 +63,39 @@ test("session attacher — tampered cookie leaves session undefined and still fl
   attach(req, mkRes() as unknown as import("express").Response, () => { called = true; });
   assert.equal(called, true);
   assert.equal(req.session, undefined);
+});
+
+test("session attacher — a revoked session (by sid) is not attached", async () => {
+  const { cookie, payload } = issueSession({ sub: "alice", name: "Alice" }, sessionCfg);
+  const revocation = await RevocationStore.create();
+  await revocation.revokeSession(payload.sid as string);
+  const attach = buildSessionAttacher({ mode: "basic", session: sessionCfg, revocation });
+  const req = mkReq({ cookieHeader: `omcp_session=${cookie}` }) as unknown as import("./middleware.js").AuthedRequest;
+  let called = false;
+  attach(req, mkRes() as unknown as import("express").Response, () => { called = true; });
+  assert.equal(called, true);
+  assert.equal(req.session, undefined);
+});
+
+test("session attacher — a subject-revoked session is not attached", async () => {
+  const { cookie } = issueSession({ sub: "bob", name: "Bob" }, sessionCfg);
+  const revocation = await RevocationStore.create();
+  // Revoke into the future so the just-issued session's iat is <= cutoff.
+  await revocation.revokeSubject("bob", { reason: "offboarded" });
+  const attach = buildSessionAttacher({ mode: "basic", session: sessionCfg, revocation });
+  const req = mkReq({ cookieHeader: `omcp_session=${cookie}` }) as unknown as import("./middleware.js").AuthedRequest;
+  attach(req, mkRes() as unknown as import("express").Response, () => {});
+  assert.equal(req.session, undefined);
+});
+
+test("session attacher — an unrevoked session still attaches when a blocklist is present", async () => {
+  const { cookie } = issueSession({ sub: "carol", name: "Carol" }, sessionCfg);
+  const revocation = await RevocationStore.create();
+  await revocation.revokeSession("some-other-sid");
+  const attach = buildSessionAttacher({ mode: "basic", session: sessionCfg, revocation });
+  const req = mkReq({ cookieHeader: `omcp_session=${cookie}` }) as unknown as import("./middleware.js").AuthedRequest;
+  attach(req, mkRes() as unknown as import("express").Response, () => {});
+  assert.equal(req.session?.sub, "carol");
 });
 
 test("require-session — anonymous always allows", () => {
