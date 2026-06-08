@@ -400,6 +400,47 @@ export function buildOpenApiSpec(version: string): OpenAPIV3_1.Document {
           responses: { "204": { description: "Cookie cleared." } },
         },
       },
+      "/api/auth/revocations": {
+        get: {
+          tags: ["auth"],
+          summary: "List session revocations (admin).",
+          description:
+            "Returns the current revocation blocklist. Admin-gated (users:delete). Empty in anonymous mode.",
+          responses: {
+            "200": { description: "Array of revocation entries." },
+            "401": { description: "Authentication required." },
+            "403": { description: "Caller lacks the admin permission." },
+          },
+        },
+        post: {
+          tags: ["auth"],
+          summary: "Revoke a session or all of a subject's sessions (admin).",
+          description:
+            "Adds an entry to the on-disk blocklist. Provide exactly one of `sid` (revoke one session — copy it from /api/me) or `sub` (log a user out everywhere — revokes every session issued so far; a fresh login afterwards is unaffected). The next request bearing a revoked cookie is treated as logged out.",
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    sid: { type: "string", description: "Session id to revoke (from /api/me)." },
+                    sub: { type: "string", description: "Subject whose current sessions to revoke." },
+                    reason: { type: "string", description: "Optional free-text reason (truncated to 500 chars)." },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            "201": { description: "Revocation recorded; the entry is returned." },
+            "400": { description: "Neither or both of sid/sub supplied." },
+            "401": { description: "Authentication required." },
+            "403": { description: "Caller lacks the admin permission." },
+            "503": { description: "Server is in anonymous mode (no sessions to revoke)." },
+          },
+        },
+      },
       "/api/auth/oidc/login": {
         get: {
           tags: ["auth"],

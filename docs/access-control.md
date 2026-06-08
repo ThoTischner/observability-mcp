@@ -152,6 +152,59 @@ JSON. Pair with a non-zero-exit handler in your job runner:
   page renders this alongside the entitlement-gate's MCP-tool audit
   feed.
 
+## Session revocation
+
+Web UI sessions (`OMCP_AUTH=basic` or `oidc`) are **stateless signed
+cookies** — the gateway verifies the HMAC and trusts the payload, with
+no server-side session table. That keeps the auth path cheap and
+horizontally scalable, but it means a plain logout only clears the
+cookie in *that* browser: a copied cookie, or a session on a lost
+laptop, stays valid until its `exp` (12h default).
+
+The revocation blocklist closes that gap. Every session carries a random
+`sid`, and every request consults an append-only blocklist before the
+session is trusted. Two shapes:
+
+- **Revoke one session** — by its `sid`. Read the current session's id
+  from `GET /api/me` (the `sid` field), then:
+
+  ```bash
+  curl -s -b "omcp_session=$ADMIN_COOKIE" -X POST "$URL/api/auth/revocations" \
+    -H 'content-type: application/json' \
+    -d '{ "sid": "Xy7…", "reason": "stolen laptop" }'
+  ```
+
+- **Log a user out everywhere** — by `sub`. Revokes every session for
+  that subject issued *so far*; a fresh login afterwards (with valid
+  credentials / a valid IdP assertion) is unaffected, so this is a
+  force-re-login, not a permanent ban:
+
+  ```bash
+  curl -s -b "omcp_session=$ADMIN_COOKIE" -X POST "$URL/api/auth/revocations" \
+    -H 'content-type: application/json' \
+    -d '{ "sub": "alice@example.com", "reason": "offboarded" }'
+  ```
+
+`GET /api/auth/revocations` lists the current blocklist. Both endpoints
+are admin-gated (`users:delete`) and every revocation is written to the
+audit log.
+
+- Persistence: `OMCP_AUTH_REVOCATION_FILE` (JSONL, append-only, mode
+  0600). Unset → in-memory only, so the blocklist is lost on restart;
+  set it so revocations survive a restart.
+- Multi-replica caveat: each replica loads the blocklist **once at
+  startup** and the writing replica updates its own in-memory index
+  immediately, but there is no live cross-replica propagation — a
+  revocation issued on replica A is not seen by replica B until B
+  restarts (or re-reads the file). For a single-replica gateway this is
+  a non-issue. For a load-balanced fleet, either pin auth-plane requests
+  to one replica, keep session TTLs short, or roll the deployment after
+  a bulk revocation. A shared-store backend (Redis, like the SCIM and
+  transport stores) is the planned path to live fleet-wide propagation.
+- A permanent ban is a directory operation, not a gateway one: remove /
+  disable the user in `OMCP_USERS_FILE` or your IdP. The blocklist is
+  for *sessions*, not *accounts*.
+
 ## Rate limits
 
 The `/mcp` HTTP transport carries one per-identity sliding window:

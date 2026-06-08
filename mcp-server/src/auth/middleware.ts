@@ -20,6 +20,9 @@ import { readCookie, verifySession, type SessionPayload, type SessionConfig } fr
 // middleware surface. Restores type safety on `runtime.oidc`
 // without changing the module graph.
 import type { OidcRuntime } from "./oidc/runtime.js";
+// Type-only — the store instance is injected at wire-up time; importing
+// the type adds no runtime coupling to node:fs here.
+import type { RevocationStore } from "./revocation.js";
 
 export type AuthMode = "anonymous" | "basic" | "oidc";
 
@@ -38,6 +41,10 @@ export interface AuthRuntime {
    *  runtime coupling — middleware.ts still doesn't depend on the
    *  OIDC sub-module's node:crypto path. */
   oidc?: OidcRuntime;
+  /** Session revocation blocklist. Present in basic / oidc mode; the
+   *  session attacher consults it on every request so a revoked but
+   *  not-yet-expired cookie is treated as logged out. */
+  revocation?: RevocationStore;
 }
 
 export interface AuthedRequest extends Request {
@@ -66,7 +73,13 @@ export function buildSessionAttacher(runtime: AuthRuntime): RequestHandler {
     // branch decides whether the check runs.
     const raw = readCookie(req.headers.cookie || "");
     const payload = verifySession(raw, sessionCfg);
-    if (payload) (req as AuthedRequest).session = payload;
+    // A valid signature is necessary but not sufficient: a session whose
+    // sid (or whose subject, before the revocation cutoff) is on the
+    // blocklist is treated as absent. isRevoked is a synchronous in-memory
+    // lookup, so this stays a no-await hot path.
+    if (payload && !runtime.revocation?.isRevoked(payload)) {
+      (req as AuthedRequest).session = payload;
+    }
     next();
   };
 }
