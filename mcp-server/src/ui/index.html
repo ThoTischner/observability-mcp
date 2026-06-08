@@ -6251,9 +6251,8 @@ function saveMetric() {
 // --- Health Dashboard ---
 let healthData={};
 let healthInterval=null;
-// Score history per service, kept client-side. The server doesn't yet
-// expose a per-service score timeseries — this gives an at-a-glance trend
-// for the last ~7.5 minutes (30 points × 15s refresh).
+// Client-side live-score trend, kept as a fallback for when the server's
+// anomaly-history sink isn't active. ~7.5 minutes (30 points × 15s refresh).
 const SPARK_MAX = 30;
 const scoreHistory = {};
 function pushScore(name, score) {
@@ -6262,31 +6261,59 @@ function pushScore(name, score) {
   arr.push(score);
   if (arr.length > SPARK_MAX) arr.shift();
 }
-function sparkSvg(name, status) {
-  const pts = scoreHistory[name] || [];
+// Server-side anomaly-score history (Q21). Populated from
+// /api/health/anomaly-sparklines — the last hour of omcp_anomaly_score
+// from the anomaly-history sink. Survives reloads; preferred over the
+// client-side trend when present.
+let anomalySpark = { enabled:false, windowMs:0, series:{} };
+
+function drawSpark(values, status, domainMax, title){
   const w = 100, h = 36, pad = 2;
-  if (pts.length < 2) {
-    // Placeholder dashed midline until we have ≥2 samples.
+  if (!values || values.length < 2) {
     return `<svg class="hc-spark ${status}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">`
       + `<line class="spark-empty" x1="0" y1="${h/2}" x2="${w}" y2="${h/2}"/></svg>`;
   }
-  const min = 0, max = 100;
-  const step = (w - pad*2) / (pts.length - 1);
-  const y = v => h - pad - ((v - min) / (max - min)) * (h - pad*2);
-  const coords = pts.map((v, i) => `${pad + i*step},${y(v)}`);
+  const min = 0, max = domainMax;
+  const step = (w - pad*2) / (values.length - 1);
+  const y = v => h - pad - ((Math.max(min, Math.min(max, v)) - min) / (max - min || 1)) * (h - pad*2);
+  const coords = values.map((v, i) => `${pad + i*step},${y(v)}`);
   const line = coords.join(' ');
-  const area = `M${coords[0]} L${line.split(' ').join(' L')} L${pad + (pts.length-1)*step},${h-pad} L${pad},${h-pad} Z`;
+  const area = `M${coords[0]} L${line.split(' ').join(' L')} L${pad + (values.length-1)*step},${h-pad} L${pad},${h-pad} Z`;
   const last = coords[coords.length - 1].split(',');
   return `<svg class="hc-spark ${status}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">`
+    + (title?`<title>${esc(title)}</title>`:'')
     + `<path class="spark-fill" d="${area}"/>`
     + `<polyline class="spark-line" points="${line}"/>`
     + `<circle class="spark-dot" cx="${last[0]}" cy="${last[1]}" r="1.8"/>`
     + `</svg>`;
 }
 
+function sparkSvg(name, status) {
+  // Prefer the server anomaly-score series (real omcp_anomaly_score, last
+  // hour, survives reload). Anomaly scores are 0..1; widen the domain if a
+  // score ever exceeds 1 so spikes aren't clipped.
+  const series = (anomalySpark.series && anomalySpark.series[name]) || [];
+  if (series.length >= 2) {
+    const scores = series.map(p => p.score);
+    const domainMax = Math.max(1, ...scores);
+    const mins = anomalySpark.windowMs ? Math.round(anomalySpark.windowMs/60000) : 60;
+    return drawSpark(scores, status, domainMax, `anomaly score · ${series.length} pts · last ${mins}m`);
+  }
+  // Fallback: client-side live health-score trend (0..100).
+  return drawSpark(scoreHistory[name] || [], status, 100, 'live score trend');
+}
+
 async function loadHealthData() {
   try {
-    healthData=await(await fetch('/api/health')).json();
+    // Fetch health + the server-side anomaly-score sparkline data in
+    // parallel. The sparkline endpoint is best-effort: if it fails we
+    // simply fall back to the client-side live-score trend.
+    const [h, spark] = await Promise.all([
+      fetch('/api/health').then(r=>r.json()),
+      fetch('/api/health/anomaly-sparklines').then(r=>r.ok?r.json():null).catch(()=>null),
+    ]);
+    healthData=h;
+    if (spark && spark.series) anomalySpark = spark;
     renderHealthCards();
   } catch(e){ document.getElementById('health-cards').innerHTML='<div class="empty">Failed to load health data.</div>'; }
   if(!healthInterval) healthInterval=setInterval(()=>{ if(document.getElementById('page-health').classList.contains('active')) loadHealthData(); },15000);

@@ -44,6 +44,14 @@ export interface AnomalyHistoryConfig {
   requestTimeoutMs?: number;
   /** Inject fetch for tests. */
   fetchImpl?: typeof fetch;
+  /** In-process ring retention window (ms). Default 3 600 000 (1h).
+   *  Powers the Health-tab sparkline; independent of remote-write. */
+  retentionMs?: number;
+  /** Hard cap on ring entries (defends memory under a score storm).
+   *  Default 5 000. */
+  ringMax?: number;
+  /** Clock injection for tests. Returns epoch ms. */
+  now?: () => number;
 }
 
 export function fromEnv(env: NodeJS.ProcessEnv = process.env): AnomalyHistoryConfig {
@@ -78,7 +86,14 @@ export class AnomalyHistory {
   private readonly maxBufferSize: number;
   private readonly requestTimeoutMs: number;
   private readonly fetchImpl: typeof fetch;
+  private readonly retentionMs: number;
+  private readonly ringMax: number;
+  private readonly nowFn: () => number;
   private buffer: AnomalyRecord[] = [];
+  /** Bounded, time-windowed in-process tier of the sink — powers the
+   *  Health-tab sparkline. Captured on every record() regardless of
+   *  remote-write so the sparkline works out of the box. */
+  private ring: AnomalyRecord[] = [];
   private timer?: NodeJS.Timeout;
   private flushing = false;
 
@@ -90,6 +105,9 @@ export class AnomalyHistory {
     this.maxBufferSize = cfg.maxBufferSize ?? 500;
     this.requestTimeoutMs = cfg.requestTimeoutMs ?? 5_000;
     this.fetchImpl = cfg.fetchImpl ?? fetch;
+    this.retentionMs = cfg.retentionMs ?? 60 * 60 * 1000;
+    this.ringMax = cfg.ringMax ?? 5_000;
+    this.nowFn = cfg.now ?? Date.now;
   }
 
   /** Whether the history sink is enabled (URL configured). */
@@ -118,14 +136,62 @@ export class AnomalyHistory {
     if (this.isEnabled()) await this.flush().catch(() => undefined);
   }
 
-  /** Add one anomaly to the buffer. Silently drops when disabled.
-   *  Triggers a synchronous flush if the buffer crosses maxBufferSize. */
+  /** Add one anomaly. Always captured into the in-process ring (powers
+   *  the sparkline); additionally buffered for remote-write only when the
+   *  sink is enabled. Triggers a synchronous flush past maxBufferSize. */
   async record(entry: AnomalyRecord): Promise<void> {
+    this.pushRing(entry);
     if (!this.isEnabled()) return;
     this.buffer.push(entry);
     if (this.buffer.length >= this.maxBufferSize) {
       await this.flush().catch(() => undefined);
     }
+  }
+
+  /** Append to the ring + evict anything outside the retention window or
+   *  beyond the hard cap. O(n) prune is fine — anomaly records are
+   *  infrequent and n is bounded by ringMax. */
+  private pushRing(entry: AnomalyRecord): void {
+    this.ring.push(entry);
+    const cutoff = this.nowFn() - this.retentionMs;
+    this.ring = this.ring.filter((r) => {
+      const t = Date.parse(r.ts);
+      return Number.isFinite(t) && t >= cutoff;
+    });
+    if (this.ring.length > this.ringMax) {
+      this.ring = this.ring.slice(this.ring.length - this.ringMax);
+    }
+  }
+
+  /**
+   * Recent records from the in-process ring, oldest-first. Filters by
+   * service and/or tenant when supplied and drops anything older than the
+   * retention window. Returns a fresh array (safe for the caller to map).
+   */
+  recent(opts: { service?: string; tenant?: string } = {}): AnomalyRecord[] {
+    const cutoff = this.nowFn() - this.retentionMs;
+    return this.ring
+      .filter((r) => {
+        const t = Date.parse(r.ts);
+        if (!Number.isFinite(t) || t < cutoff) return false;
+        if (opts.service && r.service !== opts.service) return false;
+        if (opts.tenant && r.tenant !== opts.tenant) return false;
+        return true;
+      })
+      .sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts));
+  }
+
+  /** Distinct services with at least one record in the retention window,
+   *  optionally tenant-scoped. */
+  recentServices(tenant?: string): string[] {
+    const seen = new Set<string>();
+    for (const r of this.recent({ tenant })) seen.add(r.service);
+    return [...seen];
+  }
+
+  /** Retention window in ms — surfaced so the API/UI can label the range. */
+  get windowMs(): number {
+    return this.retentionMs;
   }
 
   /** Send the current buffer to the remote-write endpoint. Drops the
