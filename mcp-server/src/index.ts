@@ -3048,6 +3048,31 @@ async function main() {
     });
   });
 
+  // Q21 — per-service anomaly-score sparklines for the Health tab. Reads
+  // the in-process ring of the anomaly-history sink (last hour), tenant-
+  // scoped. MUST be registered before "/api/health/:service" so the
+  // literal path isn't captured as a service name. `enabled` is true once
+  // any score exists; the UI falls back to its client-side trend otherwise.
+  app.get("/api/health/anomaly-sparklines", (req, res) => {
+    const sess = (req as AuthedRequest).session;
+    const callerTenant = sess?.tenant || "default";
+    // Anonymous (single-tenant) mode: no tenant filter, see everything.
+    const tenant = sess ? callerTenant : undefined;
+    const records = anomalyHistory.recent({ tenant });
+    const series: Record<string, Array<{ t: number; score: number }>> = {};
+    for (const r of records) {
+      const t = Date.parse(r.ts);
+      if (!Number.isFinite(t)) continue;
+      (series[r.service] ??= []).push({ t, score: r.score });
+    }
+    res.json({
+      enabled: records.length > 0,
+      remoteWrite: anomalyHistory.isEnabled(),
+      windowMs: anomalyHistory.windowMs,
+      series,
+    });
+  });
+
   // Health endpoint for UI dashboard
   app.get("/api/health/:service", async (req, res) => {
     try {

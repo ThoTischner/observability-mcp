@@ -81,6 +81,60 @@ test("flush: bearer token forwarded as Authorization header", async () => {
   assert.equal(captured.headers["authorization"], "Bearer tok-abc");
 });
 
+// --- Q21: in-process ring (Health-tab sparkline) ----------------------
+
+const NOW = Date.parse("2026-06-06T12:00:00.000Z");
+function at(msAgo: number): string {
+  return new Date(NOW - msAgo).toISOString();
+}
+
+test("ring captures records even when remote-write is disabled", async () => {
+  const h = new AnomalyHistory({ now: () => NOW });
+  assert.equal(h.isEnabled(), false);
+  await h.record(entry({ ts: at(0), score: 0.5 }));
+  const recent = h.recent();
+  assert.equal(recent.length, 1);
+  assert.equal(recent[0].score, 0.5);
+  // ...but the remote-write buffer stays empty when disabled.
+  assert.equal(h.bufferSize(), 0);
+});
+
+test("recent: drops records outside the retention window", async () => {
+  const h = new AnomalyHistory({ now: () => NOW, retentionMs: 60 * 60 * 1000 });
+  await h.record(entry({ ts: at(30 * 60 * 1000) })); // 30m ago — kept
+  await h.record(entry({ ts: at(90 * 60 * 1000) })); // 90m ago — evicted on next push/prune
+  const recent = h.recent();
+  assert.equal(recent.length, 1);
+  assert.equal(recent[0].ts, at(30 * 60 * 1000));
+});
+
+test("recent: oldest-first and filterable by service + tenant", async () => {
+  const h = new AnomalyHistory({ now: () => NOW });
+  await h.record(entry({ ts: at(3000), service: "payment", tenant: "a", score: 0.1 }));
+  await h.record(entry({ ts: at(1000), service: "payment", tenant: "a", score: 0.3 }));
+  await h.record(entry({ ts: at(2000), service: "orders", tenant: "a", score: 0.2 }));
+  await h.record(entry({ ts: at(500), service: "payment", tenant: "b", score: 0.9 }));
+
+  const pay = h.recent({ service: "payment", tenant: "a" });
+  assert.deepEqual(pay.map((r) => r.score), [0.1, 0.3], "oldest-first, service+tenant filtered");
+
+  const tenantA = h.recentServices("a").sort();
+  assert.deepEqual(tenantA, ["orders", "payment"]);
+  assert.deepEqual(h.recentServices("b"), ["payment"]);
+});
+
+test("ring honours the hard cap (ringMax)", async () => {
+  const h = new AnomalyHistory({ now: () => NOW, ringMax: 3 });
+  for (let i = 0; i < 10; i++) await h.record(entry({ ts: at(10_000 - i), score: i / 10 }));
+  const recent = h.recent();
+  assert.equal(recent.length, 3, "ring capped at ringMax");
+});
+
+test("windowMs surfaces the retention window", () => {
+  assert.equal(new AnomalyHistory({ retentionMs: 1234 }).windowMs, 1234);
+  assert.equal(new AnomalyHistory({}).windowMs, 60 * 60 * 1000);
+});
+
 test("flush: clears the buffer on success", async () => {
   const h = new AnomalyHistory({
     url: "https://tsdb/api/v1/write",

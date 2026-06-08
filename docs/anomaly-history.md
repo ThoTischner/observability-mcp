@@ -83,6 +83,15 @@ works without code changes.
 - **Retention** is the TSDB's job. The gateway never deletes —
   configure the receiver's retention to match your post-mortem
   window (e.g. 30 days).
-- **No live UI sparkline yet** — the Health-tab "score history" view
-  is a separate follow-up. Today the data is consumable via the MCP
-  tool, the operator's Grafana, or any PromQL client.
+- **Health-tab sparkline (since v3.1).** Each Health card renders an
+  inline sparkline of the last hour of `omcp_anomaly_score` for that
+  service, served from `GET /api/health/anomaly-sparklines`. The data
+  comes from an in-process ring the `AnomalyHistory` sink keeps
+  alongside the remote-write tier, so the sparkline works as soon as
+  the gateway records anomalies — it does **not** require the
+  remote-write TSDB round-trip. The series is tenant-scoped and capped
+  to a one-hour window. When no scores have been recorded yet the card
+  falls back to a short-lived client-side trend of the live health
+  score. The remote-write sink remains the durable, queryable store
+  (`get_anomaly_history`, Grafana, any PromQL client) for longer
+  windows and post-mortems.
