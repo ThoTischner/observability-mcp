@@ -1,6 +1,33 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { validateDuration, validateServiceName, sanitizeLabelValue, errorResponse } from "./validation.js";
+import { validateDuration, validateServiceName, sanitizeLabelValue, validateLogLabels, errorResponse } from "./validation.js";
+
+describe("validateLogLabels (Q-LOG1)", () => {
+  it("accepts undefined (no filter) and a valid map", () => {
+    assert.equal(validateLogLabels(undefined), null);
+    assert.equal(validateLogLabels({ method: "GET", status: "200", environment: "prod" }), null);
+  });
+  it("rejects non-object inputs", () => {
+    assert.ok(validateLogLabels("nope"));
+    assert.ok(validateLogLabels(["a"]));
+    assert.ok(validateLogLabels(42));
+  });
+  it("rejects label names with dots, dashes, or quotes (injection-safe, fail-closed)", () => {
+    assert.ok(validateLogLabels({ "a.b": "x" }));
+    assert.ok(validateLogLabels({ "a-b": "x" }));
+    assert.ok(validateLogLabels({ 'a"x': "y" }));
+    assert.ok(validateLogLabels({ "1abc": "x" })); // can't start with a digit
+  });
+  it("rejects non-string and over-long values", () => {
+    assert.ok(validateLogLabels({ method: 123 as unknown as string }));
+    assert.ok(validateLogLabels({ method: "x".repeat(1025) }));
+  });
+  it("rejects too many labels", () => {
+    const many: Record<string, string> = {};
+    for (let i = 0; i < 21; i++) many[`k${i}`] = "v";
+    assert.ok(validateLogLabels(many));
+  });
+});
 
 describe("validateDuration", () => {
   it("accepts valid durations", () => {

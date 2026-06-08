@@ -107,6 +107,12 @@ export interface LogQuery {
   duration: string;
   limit?: number;
   level?: string;
+  /** Structured label/field equality filters, AND'd together. For Loki
+   *  these compile to LogQL label-filter expressions after `| json`, so
+   *  fields the backend already extracts (method, status, url, ip,
+   *  environment, …) become first-class selectors instead of brittle
+   *  free-text regex. */
+  labels?: Record<string, string>;
 }
 
 // --- Query Results (Unified Data Model) ---

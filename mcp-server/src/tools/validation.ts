@@ -47,6 +47,39 @@ export function validateServiceName(service: string): string | null {
   return null;
 }
 
+/** A Prometheus/Loki label name: letter/underscore, then word chars. */
+const LABEL_NAME_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+
+/**
+ * Validate a structured `labels` filter map for query_logs. Fail-closed:
+ * any bad key/value rejects the whole request rather than silently
+ * dropping a filter (a dropped filter could widen results past what the
+ * caller intended). Bounds the map size + value length so a crafted input
+ * can't build a pathological query.
+ */
+export function validateLogLabels(labels: unknown): string | null {
+  if (labels === undefined) return null;
+  if (typeof labels !== "object" || labels === null || Array.isArray(labels)) {
+    return "Invalid labels: must be an object mapping label names to string values.";
+  }
+  const entries = Object.entries(labels as Record<string, unknown>);
+  if (entries.length > 20) {
+    return "Too many labels (max 20).";
+  }
+  for (const [k, v] of entries) {
+    if (!LABEL_NAME_RE.test(k)) {
+      return `Invalid label name "${k}". Must match [a-zA-Z_][a-zA-Z0-9_]* (no dots, dashes, or quotes).`;
+    }
+    if (typeof v !== "string") {
+      return `Invalid value for label "${k}": must be a string.`;
+    }
+    if (v.length > 1024) {
+      return `Value for label "${k}" too long (max 1024 chars).`;
+    }
+  }
+  return null;
+}
+
 export function errorResponse(message: string) {
   return {
     content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],

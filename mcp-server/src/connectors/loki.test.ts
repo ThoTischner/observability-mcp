@@ -1,8 +1,97 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { LokiConnector } from "./loki.js";
+import { LokiConnector, logqlLabelFilters, levelFromStatus, escapeLogQLValue } from "./loki.js";
 
 const proto = LokiConnector.prototype as any;
+
+function jsonRes(obj: unknown) {
+  return { ok: true, status: 200, statusText: "OK", json: async () => obj, text: async () => "" } as Response;
+}
+
+describe("Q-LOG1: logqlLabelFilters", () => {
+  it("returns empty string for undefined / empty", () => {
+    assert.equal(logqlLabelFilters(undefined), "");
+    assert.equal(logqlLabelFilters({}), "");
+  });
+  it("compiles a single filter", () => {
+    assert.equal(logqlLabelFilters({ method: "GET" }), ' | method="GET"');
+  });
+  it("compiles multiple filters, keys sorted for determinism", () => {
+    assert.equal(
+      logqlLabelFilters({ status: "200", method: "GET", url: "/" }),
+      ' | method="GET" | status="200" | url="/"',
+    );
+  });
+  it("escapes double quotes and backslashes in values", () => {
+    assert.equal(logqlLabelFilters({ path: 'a"b\\c' }), ' | path="a\\"b\\\\c"');
+  });
+});
+
+describe("Q-LOG1: levelFromStatus", () => {
+  it("maps 5xx → error", () => {
+    assert.equal(levelFromStatus(500), "error");
+    assert.equal(levelFromStatus("503"), "error");
+    assert.equal(levelFromStatus(599), "error");
+  });
+  it("maps 4xx → warn", () => {
+    assert.equal(levelFromStatus(404), "warn");
+    assert.equal(levelFromStatus("400"), "warn");
+  });
+  it("returns undefined for 2xx/3xx and non-numeric", () => {
+    assert.equal(levelFromStatus(200), undefined);
+    assert.equal(levelFromStatus(301), undefined);
+    assert.equal(levelFromStatus("abc"), undefined);
+    assert.equal(levelFromStatus(undefined), undefined);
+  });
+});
+
+describe("Q-LOG1: escapeLogQLValue", () => {
+  it("escapes backslash then quote", () => {
+    assert.equal(escapeLogQLValue('he said "hi"\\'), 'he said \\"hi\\"\\\\');
+  });
+  it("escapes control chars (newline/return/tab) into LogQL escape sequences", () => {
+    assert.equal(escapeLogQLValue("a\nb\rc\td"), "a\\nb\\rc\\td");
+  });
+});
+
+describe("Q-LOG1: queryLogs LogQL assembly", () => {
+  async function captureQuery(params: any): Promise<string> {
+    const conn = new LokiConnector();
+    await conn.connect({ name: "loki", type: "loki", url: "http://loki:3100", enabled: true } as any);
+    let captured = "";
+    const orig = globalThis.fetch;
+    globalThis.fetch = (async (url: any) => {
+      const u = String(url);
+      if (u.includes("/label/") && u.includes("/values")) return jsonRes({ data: ["payment"] });
+      if (u.includes("/query_range")) {
+        captured = decodeURIComponent((u.match(/query=([^&]+)/) || [])[1] || "");
+        return jsonRes({ data: { result: [] } });
+      }
+      return jsonRes({ data: [] });
+    }) as any;
+    try {
+      await conn.queryLogs({ service: "payment", duration: "5m", ...params });
+    } finally {
+      globalThis.fetch = orig;
+    }
+    return captured;
+  }
+
+  it("AND's label filters after | json, with level and line filter", async () => {
+    const q = await captureQuery({ level: "error", labels: { method: "GET", status: "200" }, query: "timeout" });
+    assert.equal(q, '{service_name="payment"} | json | level="error" | method="GET" | status="200" |~ `timeout`');
+  });
+
+  it("works with labels only (no level/query)", async () => {
+    const q = await captureQuery({ labels: { environment: "prod" } });
+    assert.equal(q, '{service_name="payment"} | json | environment="prod"');
+  });
+
+  it("plain query (no labels) is unchanged from prior behaviour", async () => {
+    const q = await captureQuery({});
+    assert.equal(q, '{service_name="payment"} | json');
+  });
+});
 
 describe("LokiConnector", () => {
   describe("parseLine", () => {
