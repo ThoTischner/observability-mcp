@@ -80,6 +80,48 @@ export function validateLogLabels(labels: unknown): string | null {
   return null;
 }
 
+const AGGREGATE_OPS = new Set(["count_over_time", "sum", "topk"]);
+
+/**
+ * Validate the query_logs `aggregate` spec. Fail-closed, like the labels
+ * validator. Returns an error string or null.
+ */
+export function validateLogAggregate(aggregate: unknown): string | null {
+  if (aggregate === undefined) return null;
+  if (typeof aggregate !== "object" || aggregate === null || Array.isArray(aggregate)) {
+    return "Invalid aggregate: must be an object with an `op`.";
+  }
+  const a = aggregate as Record<string, unknown>;
+  if (typeof a.op !== "string" || !AGGREGATE_OPS.has(a.op)) {
+    return `Invalid aggregate.op. Must be one of: ${[...AGGREGATE_OPS].join(", ")}.`;
+  }
+  if (a.by !== undefined) {
+    if (!Array.isArray(a.by) || !a.by.every((x) => typeof x === "string")) {
+      return "aggregate.by must be an array of label-name strings.";
+    }
+    if (a.by.length > 10) return "aggregate.by has too many labels (max 10).";
+    for (const name of a.by) {
+      if (!LABEL_NAME_RE.test(name as string)) {
+        return `Invalid aggregate.by label "${name}". Must match [a-zA-Z_][a-zA-Z0-9_]*.`;
+      }
+    }
+  }
+  if (a.k !== undefined) {
+    if (typeof a.k !== "number" || !Number.isFinite(a.k) || a.k <= 0 || a.k > 1000) {
+      return "aggregate.k must be a positive integer (max 1000).";
+    }
+  }
+  if (a.step !== undefined) {
+    if (typeof a.step !== "string" || validateDuration(a.step)) {
+      return "aggregate.step must be a duration like '15m', '1h'.";
+    }
+  }
+  if (a.op === "topk" && (a.by === undefined || (a.by as string[]).length === 0)) {
+    return "aggregate.op 'topk' requires at least one `by` label to rank.";
+  }
+  return null;
+}
+
 export function errorResponse(message: string) {
   return {
     content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],

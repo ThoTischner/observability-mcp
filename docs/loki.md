@@ -59,6 +59,40 @@ HTTP `status`, the connector derives one — `5xx → error`, `4xx → warn` —
 so access logs are triageable and `level`-filterable without a
 dedicated level field.
 
+## Server-side aggregation (`aggregate`)
+
+For analytics-style questions ("how many requests, top paths, per-route
+counts") pulling raw rows and counting by hand collapses at volume and
+hits `limit`. The `aggregate` parameter pushes the work down to LogQL
+metric queries so you get a **number, not a haystack**:
+
+```jsonc
+// Busiest paths in the last hour
+query_logs({ "service": "app", "duration": "1h",
+             "aggregate": { "op": "topk", "by": ["url"], "k": 10 } })
+
+// Requests per status code over the window
+query_logs({ "service": "app", "duration": "1h",
+             "aggregate": { "op": "sum", "by": ["status"] } })
+
+// Time series of request counts, 15-minute buckets
+query_logs({ "service": "app", "duration": "6h",
+             "aggregate": { "op": "count_over_time", "by": ["url"], "step": "15m" } })
+```
+
+| op | LogQL | result |
+|---|---|---|
+| `topk` | `topk(k, sum by (…) (count_over_time({…}[window])))` | top-k groups by total (instant) |
+| `sum` | `sum by (…) (count_over_time({…}[window]))` | total per group (instant) |
+| `count_over_time` | `sum by (…) (count_over_time({…}[step]))` | time series per group (range) |
+
+`labels` and `query` filters apply **before** aggregation, so you can
+e.g. `topk` paths within `{environment="prod", method="GET"}`. `topk`
+requires at least one `by` label to rank. `limit` does not apply in
+aggregate mode (the response says so in its `note`) — results are grouped
+counts, not rows. Validation is fail-closed: a bad `op`, `by` label,
+`k`, or `step` rejects the request.
+
 ## Docker container label leading slash
 
 Docker's `loki.source.docker` writes container names with a leading `/` (Docker's `Names[0]` convention — `/my-app-1`). The connector handles this transparently:

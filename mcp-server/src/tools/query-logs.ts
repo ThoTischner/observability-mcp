@@ -1,7 +1,7 @@
 import type { ConnectorRegistry } from "../connectors/registry.js";
 import { defaultContext, type RequestContext } from "../context.js";
-import type { LogResult } from "../types.js";
-import { validateDuration, validateServiceName, validateLogLabels, errorResponse } from "./validation.js";
+import type { LogResult, LogAggregateResult, LogAggregateQuery } from "../types.js";
+import { validateDuration, validateServiceName, validateLogLabels, validateLogAggregate, errorResponse } from "./validation.js";
 
 export const queryLogsDefinition = {
   name: "query_logs" as const,
@@ -34,7 +34,19 @@ export const queryLogsDefinition = {
       },
       limit: {
         type: "number",
-        description: "Maximum number of log entries to return. Default: 100",
+        description: "Maximum number of log entries to return. Default: 100. Ignored when `aggregate` is set.",
+      },
+      aggregate: {
+        type: "object",
+        description:
+          "Server-side aggregation — returns grouped counts, not raw rows, so you get a number instead of a haystack. op: 'count_over_time' (time series of counts per bucket), 'sum' (total per group over the window), 'topk' (top-k groups by total). Example: {\"op\":\"topk\",\"by\":[\"url\"],\"k\":10} for the busiest paths. Honours `labels`/`query` filters.",
+        properties: {
+          op: { type: "string", enum: ["count_over_time", "sum", "topk"] },
+          by: { type: "array", items: { type: "string" }, description: "Group-by label names (required for topk)." },
+          k: { type: "number", description: "Top-k count (default 10)." },
+          step: { type: "string", description: "Bucket size for count_over_time, e.g. '15m'. Defaults to ~1/60th of the window." },
+        },
+        required: ["op"],
       },
     },
     required: ["service"],
@@ -43,7 +55,15 @@ export const queryLogsDefinition = {
 
 export async function queryLogsHandler(
   registry: ConnectorRegistry,
-  args: { service: string; query?: string; duration?: string; level?: string; limit?: number; labels?: Record<string, string> },
+  args: {
+    service: string;
+    query?: string;
+    duration?: string;
+    level?: string;
+    limit?: number;
+    labels?: Record<string, string>;
+    aggregate?: { op: "count_over_time" | "sum" | "topk"; by?: string[]; k?: number; step?: string };
+  },
   ctx: RequestContext = defaultContext()
 ) {
   const svcErr = validateServiceName(args.service);
@@ -53,6 +73,8 @@ export async function queryLogsHandler(
   if (durationErr) return errorResponse(durationErr);
   const labelsErr = validateLogLabels(args.labels);
   if (labelsErr) return errorResponse(labelsErr);
+  const aggErr = validateLogAggregate(args.aggregate);
+  if (aggErr) return errorResponse(aggErr);
   const connectors = registry.getByTenant(ctx.tenant).filter((c) => c.signalType === "logs");
 
   if (connectors.length === 0) {
@@ -61,6 +83,48 @@ export async function queryLogsHandler(
         { type: "text" as const, text: JSON.stringify({ error: "No log backends configured" }) },
       ],
       isError: true,
+    };
+  }
+
+  // Aggregate mode (Q-LOG2): route to the connector's queryLogAggregate.
+  if (args.aggregate) {
+    const aggResults: LogAggregateResult[] = [];
+    const aggErrors: string[] = [];
+    let capable = 0;
+    for (const connector of connectors) {
+      if (!connector.queryLogAggregate) continue;
+      capable++;
+      try {
+        const q: LogAggregateQuery = {
+          service: args.service,
+          duration,
+          labels: args.labels,
+          query: args.query,
+          op: args.aggregate.op,
+          by: args.aggregate.by,
+          k: args.aggregate.k,
+          step: args.aggregate.step,
+        };
+        aggResults.push(await connector.queryLogAggregate(q));
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`Log aggregate failed on ${connector.name}:`, msg);
+        aggErrors.push(`${connector.name}: ${msg}`);
+      }
+    }
+    if (capable === 0) {
+      return errorResponse("No log backend supports aggregation (queryLogAggregate).");
+    }
+    if (aggResults.length === 0) {
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify({ error: aggErrors.length ? `Aggregate failed: ${aggErrors.join("; ")}` : "No data returned", service: args.service, duration }) }],
+        isError: aggErrors.length > 0,
+      };
+    }
+    return {
+      content: [
+        { type: "text" as const, text: JSON.stringify(aggResults.length === 1 ? aggResults[0] : aggResults, null, 2) },
+      ],
     };
   }
 
