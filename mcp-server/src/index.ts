@@ -61,6 +61,12 @@ import {
 import { resolveOidcConfig, buildOidcRuntime } from "./auth/oidc/runtime.js";
 import { registerOidcRoutes } from "./auth/oidc/endpoints.js";
 import { RevocationStore } from "./auth/revocation.js";
+import {
+  AccountLockout,
+  lockoutConfigFromEnv,
+  lockoutDisabledFromEnv,
+} from "./auth/lockout.js";
+import { resolveSessionStore } from "./transport/sessionStore.js";
 import { createScimStore } from "./scim/store.js";
 import { registerScimRoutes } from "./scim/routes.js";
 import { BuiltinPolicyEngine, type PolicyEngine } from "./auth/policy/engine.js";
@@ -2065,6 +2071,22 @@ async function main() {
     }
   }
 
+  // Q18 — per-username failed-login lockout with progressive backoff.
+  // Complements the per-IP loginRateLimit above: that bounds a noisy
+  // single source, this bounds a slow / distributed grind on one
+  // account. Backed by the shared SessionStore so a Redis deployment
+  // locks consistently across replicas (and self-cleans via TTL).
+  // Basic mode only — OIDC delegates auth (and lockout) to the IdP.
+  let lockout: AccountLockout | undefined;
+  if (authRuntime.mode === "basic" && !lockoutDisabledFromEnv()) {
+    const lockoutStore = await resolveSessionStore();
+    const lockoutCfg = lockoutConfigFromEnv();
+    lockout = new AccountLockout(lockoutStore, lockoutCfg);
+    console.log(
+      `[auth] account lockout active — ${lockoutCfg.maxFailures} failures / ${lockoutCfg.windowSeconds}s → lock ${lockoutCfg.baseLockSeconds}s (×2 up to ${lockoutCfg.maxLockSeconds}s), backend=${lockoutStore.backend}`,
+    );
+  }
+
   app.post("/api/auth/login", loginRateLimit, async (req, res) => {
     if (authRuntime.mode !== "basic" || !sessionCfg || !usersStore) {
       res.status(503).json({ error: "auth mode does not accept logins" });
@@ -2078,11 +2100,56 @@ async function main() {
       res.status(400).json({ error: "username and password are required" });
       return;
     }
+    // Gate on the lock BEFORE the (expensive) scrypt verify so a locked
+    // account can't be used to burn CPU. A locked account is a 429 with
+    // Retry-After, never a credential oracle — the response is identical
+    // whether or not the username exists.
+    if (lockout) {
+      const status = await lockout.check(username);
+      if (status.locked) {
+        res.setHeader("Retry-After", String(status.retryAfterSeconds ?? 0));
+        res.status(429).json({
+          error: "account temporarily locked due to repeated failed logins",
+          retryAfterSeconds: status.retryAfterSeconds,
+        });
+        void mgmtAudit.record({
+          actor: { sub: username },
+          tenant: "default",
+          resource: "users",
+          action: "write",
+          method: "POST",
+          path: "/api/auth/login",
+          status: 429,
+        }).catch(() => {});
+        return;
+      }
+    }
     const user = authenticate(username, password, usersStore);
     if (!user) {
+      if (lockout) {
+        const after = await lockout.recordFailure(username);
+        if (after.locked) {
+          res.setHeader("Retry-After", String(after.retryAfterSeconds ?? 0));
+          res.status(429).json({
+            error: "account temporarily locked due to repeated failed logins",
+            retryAfterSeconds: after.retryAfterSeconds,
+          });
+          void mgmtAudit.record({
+            actor: { sub: username },
+            tenant: "default",
+            resource: "users",
+            action: "write",
+            method: "POST",
+            path: "/api/auth/login",
+            status: 429,
+          }).catch(() => {});
+          return;
+        }
+      }
       res.status(401).json({ error: "invalid credentials" });
       return;
     }
+    if (lockout) await lockout.recordSuccess(user.username);
     const { cookie } = issueSession(
       { sub: user.username, name: user.name, roles: user.roles, tenant: user.tenant },
       sessionCfg,
