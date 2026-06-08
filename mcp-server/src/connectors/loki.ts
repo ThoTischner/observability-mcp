@@ -9,6 +9,9 @@ import type {
   LogQuery,
   LogResult,
   LogEntry,
+  LogAggregateQuery,
+  LogAggregateResult,
+  LogAggregateSeries,
   SignalType,
 } from "../types.js";
 import { buildTlsAgent } from "./tls.js";
@@ -56,6 +59,57 @@ export function levelFromStatus(status: unknown): "error" | "warn" | undefined {
   if (n >= 500 && n <= 599) return "error";
   if (n >= 400 && n <= 499) return "warn";
   return undefined;
+}
+
+/** Parse a `<n><m|h|d>` duration into seconds. Returns null when malformed. */
+export function parseDurationSeconds(duration: string): number | null {
+  const m = /^(\d+)([mhd])$/.exec(duration);
+  if (!m) return null;
+  const v = parseInt(m[1], 10);
+  return m[2] === "m" ? v * 60 : m[2] === "h" ? v * 3600 : v * 86400;
+}
+
+/** Pick a bucket size (seconds) that yields ~60 points across the window,
+ *  floored at 60s, so a count_over_time range query isn't absurdly dense. */
+export function defaultBucketSeconds(durationSeconds: number): number {
+  return Math.max(60, Math.floor(durationSeconds / 60));
+}
+
+export interface AggregateLogQL {
+  logql: string;
+  /** instant (vector) for sum/topk; range (matrix) for count_over_time. */
+  mode: "instant" | "range";
+  /** Step for the range query, e.g. "300s". Only set when mode === "range". */
+  step?: string;
+}
+
+/**
+ * Wrap a stream+pipeline expression (`{sel} | json | …`) in a LogQL metric
+ * aggregation. Pure + side-effect-free so it's unit-testable without a
+ * backend. `by` labels are assumed pre-validated (label-name shape).
+ */
+export function buildAggregateLogQL(
+  streamPipeline: string,
+  agg: { op: "count_over_time" | "sum" | "topk"; by?: string[]; k?: number; step?: string },
+  duration: string,
+): AggregateLogQL {
+  const durSec = parseDurationSeconds(duration) ?? 3600;
+  const byClause = agg.by && agg.by.length ? ` by (${agg.by.join(", ")})` : "";
+
+  if (agg.op === "count_over_time") {
+    const stepSec = (agg.step && parseDurationSeconds(agg.step)) || defaultBucketSeconds(durSec);
+    const inner = `count_over_time(${streamPipeline} [${stepSec}s])`;
+    const logql = byClause ? `sum${byClause} (${inner})` : inner;
+    return { logql, mode: "range", step: `${stepSec}s` };
+  }
+
+  // sum / topk: count over the whole window, then aggregate → instant vector.
+  const totals = `sum${byClause} (count_over_time(${streamPipeline} [${durSec}s]))`;
+  if (agg.op === "topk") {
+    const k = agg.k && agg.k > 0 ? Math.floor(agg.k) : 10;
+    return { logql: `topk(${k}, ${totals})`, mode: "instant" };
+  }
+  return { logql: totals, mode: "instant" };
 }
 
 export class LokiConnector implements ObservabilityConnector {
@@ -222,6 +276,64 @@ export class LokiConnector implements ObservabilityConnector {
     };
   }
 
+  async queryLogAggregate(params: LogAggregateQuery): Promise<LogAggregateResult> {
+    const { start, end } = this.parseTimeRange(params.duration);
+    const { label: matchedLabel, value: rawValue } = await this.resolveServiceSelector(params.service);
+    const service = this.escapeLogQLValue(rawValue);
+
+    // Same stream + pipeline prefix as queryLogs (reuses the Q-LOG1 unit),
+    // minus the level filter (aggregation groups, it doesn't level-filter).
+    let pipeline = `{${matchedLabel}="${service}"} | json`;
+    pipeline += logqlLabelFilters(params.labels);
+    if (params.query) {
+      pipeline += ` |~ \`${this.escapeLogQLRegex(params.query)}\``;
+    }
+
+    const { logql, mode, step } = buildAggregateLogQL(
+      pipeline,
+      { op: params.op, by: params.by, k: params.k, step: params.step },
+      params.duration,
+    );
+
+    const by = params.by ?? [];
+    const series: LogAggregateSeries[] = [];
+
+    if (mode === "instant") {
+      const url = `/loki/api/v1/query?query=${encodeURIComponent(logql)}&time=${end}000000000`;
+      const data = await this.apiGet<LokiMetricResponse>(url);
+      for (const r of data?.data?.result || []) {
+        const v = Array.isArray(r.value) ? Number(r.value[1]) : NaN;
+        series.push({ labels: r.metric || {}, value: Number.isFinite(v) ? v : 0 });
+      }
+      // topk is already ordered by Loki; sort sum desc for a stable, useful view.
+      series.sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
+    } else {
+      // `step` from the builder is `<n>s`; the query_range step param wants seconds.
+      const stepSec = step ? parseInt(step, 10) || 60 : 60;
+      const url =
+        `/loki/api/v1/query_range?query=${encodeURIComponent(logql)}` +
+        `&start=${start}000000000&end=${end}000000000&step=${stepSec}`;
+      const data = await this.apiGet<LokiMetricResponse>(url);
+      for (const r of data?.data?.result || []) {
+        const points = (r.values || []).map(([ts, val]) => ({
+          t: Math.round(Number(ts) * 1000),
+          value: Number(val),
+        }));
+        series.push({ labels: r.metric || {}, points });
+      }
+    }
+
+    return {
+      source: this.name,
+      op: params.op,
+      by,
+      step: mode === "range" ? step : undefined,
+      mode,
+      series,
+      note: "Aggregate mode: `limit` does not apply (results are grouped counts, not raw rows).",
+    };
+  }
+
   // --- Private helpers ---
 
   private async getLabelValues(label: string): Promise<string[]> {
@@ -340,6 +452,20 @@ interface LokiQueryResponse {
     result: Array<{
       stream: Record<string, string>;
       values: Array<[string, string]>;
+    }>;
+  };
+}
+
+/** Metric-query (vector/matrix) response from Loki's query / query_range. */
+interface LokiMetricResponse {
+  data: {
+    resultType: string;
+    result: Array<{
+      metric: Record<string, string>;
+      /** Present for vector (instant) results: [unixSeconds, "value"]. */
+      value?: [number, string];
+      /** Present for matrix (range) results. */
+      values?: Array<[number, string]>;
     }>;
   };
 }

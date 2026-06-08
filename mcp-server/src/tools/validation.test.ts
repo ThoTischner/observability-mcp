@@ -1,6 +1,33 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { validateDuration, validateServiceName, sanitizeLabelValue, validateLogLabels, errorResponse } from "./validation.js";
+import { validateDuration, validateServiceName, sanitizeLabelValue, validateLogLabels, validateLogAggregate, errorResponse } from "./validation.js";
+
+describe("validateLogAggregate (Q-LOG2)", () => {
+  it("accepts undefined and valid specs", () => {
+    assert.equal(validateLogAggregate(undefined), null);
+    assert.equal(validateLogAggregate({ op: "count_over_time" }), null);
+    assert.equal(validateLogAggregate({ op: "sum", by: ["url", "status"] }), null);
+    assert.equal(validateLogAggregate({ op: "topk", by: ["url"], k: 5, step: "15m" }), null);
+  });
+  it("rejects a bad/missing op", () => {
+    assert.ok(validateLogAggregate({}));
+    assert.ok(validateLogAggregate({ op: "median" }));
+    assert.ok(validateLogAggregate("nope"));
+  });
+  it("rejects bad by labels", () => {
+    assert.ok(validateLogAggregate({ op: "sum", by: ["a.b"] }));
+    assert.ok(validateLogAggregate({ op: "sum", by: "url" as unknown as string[] }));
+  });
+  it("rejects bad k and step", () => {
+    assert.ok(validateLogAggregate({ op: "topk", by: ["url"], k: 0 }));
+    assert.ok(validateLogAggregate({ op: "topk", by: ["url"], k: 99999 }));
+    assert.ok(validateLogAggregate({ op: "count_over_time", step: "soon" }));
+  });
+  it("requires a by label for topk", () => {
+    assert.ok(validateLogAggregate({ op: "topk" }));
+    assert.ok(validateLogAggregate({ op: "topk", by: [] }));
+  });
+});
 
 describe("validateLogLabels (Q-LOG1)", () => {
   it("accepts undefined (no filter) and a valid map", () => {

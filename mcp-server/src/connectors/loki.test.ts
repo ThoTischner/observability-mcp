@@ -1,6 +1,14 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { LokiConnector, logqlLabelFilters, levelFromStatus, escapeLogQLValue } from "./loki.js";
+import {
+  LokiConnector,
+  logqlLabelFilters,
+  levelFromStatus,
+  escapeLogQLValue,
+  buildAggregateLogQL,
+  parseDurationSeconds,
+  defaultBucketSeconds,
+} from "./loki.js";
 
 const proto = LokiConnector.prototype as any;
 
@@ -90,6 +98,99 @@ describe("Q-LOG1: queryLogs LogQL assembly", () => {
   it("plain query (no labels) is unchanged from prior behaviour", async () => {
     const q = await captureQuery({});
     assert.equal(q, '{service_name="payment"} | json');
+  });
+});
+
+describe("Q-LOG2: parseDurationSeconds / defaultBucketSeconds", () => {
+  it("parses m/h/d", () => {
+    assert.equal(parseDurationSeconds("5m"), 300);
+    assert.equal(parseDurationSeconds("2h"), 7200);
+    assert.equal(parseDurationSeconds("1d"), 86400);
+    assert.equal(parseDurationSeconds("bad"), null);
+  });
+  it("buckets to ~60 points, floored at 60s", () => {
+    assert.equal(defaultBucketSeconds(3600), 60);      // 1h → 60s
+    assert.equal(defaultBucketSeconds(86400), 1440);   // 24h → 1440s
+    assert.equal(defaultBucketSeconds(60), 60);        // tiny window floors at 60s
+  });
+});
+
+describe("Q-LOG2: buildAggregateLogQL", () => {
+  const PIPE = '{service_name="app"} | json | method="GET"';
+  it("count_over_time with by → sum by + range mode + step", () => {
+    const r = buildAggregateLogQL(PIPE, { op: "count_over_time", by: ["url"], step: "15m" }, "1h");
+    assert.equal(r.mode, "range");
+    assert.equal(r.step, "900s");
+    assert.equal(r.logql, `sum by (url) (count_over_time(${PIPE} [900s]))`);
+  });
+  it("count_over_time without by → bare count_over_time, default step", () => {
+    const r = buildAggregateLogQL(PIPE, { op: "count_over_time" }, "1h");
+    assert.equal(r.mode, "range");
+    assert.equal(r.step, "60s");
+    assert.equal(r.logql, `count_over_time(${PIPE} [60s])`);
+  });
+  it("sum → instant total per group over the whole window", () => {
+    const r = buildAggregateLogQL(PIPE, { op: "sum", by: ["status"] }, "1h");
+    assert.equal(r.mode, "instant");
+    assert.equal(r.logql, `sum by (status) (count_over_time(${PIPE} [3600s]))`);
+  });
+  it("topk → instant topk(k, sum by) with default k=10", () => {
+    const r = buildAggregateLogQL(PIPE, { op: "topk", by: ["url"] }, "1h");
+    assert.equal(r.mode, "instant");
+    assert.equal(r.logql, `topk(10, sum by (url) (count_over_time(${PIPE} [3600s])))`);
+  });
+  it("topk honours explicit k", () => {
+    const r = buildAggregateLogQL(PIPE, { op: "topk", by: ["url"], k: 3 }, "30m");
+    assert.equal(r.logql, `topk(3, sum by (url) (count_over_time(${PIPE} [1800s])))`);
+  });
+});
+
+describe("Q-LOG2: queryLogAggregate", () => {
+  async function run(agg: any): Promise<any> {
+    const conn = new LokiConnector();
+    await conn.connect({ name: "loki", type: "loki", url: "http://loki:3100", enabled: true } as any);
+    let capturedUrl = "";
+    const orig = globalThis.fetch;
+    globalThis.fetch = (async (url: any) => {
+      const u = String(url);
+      if (u.includes("/label/") && u.includes("/values")) return jsonRes({ data: ["app"] });
+      if (u.includes("/query_range")) {
+        capturedUrl = u;
+        return jsonRes({ data: { resultType: "matrix", result: [
+          { metric: { url: "/" }, values: [[1000, "3"], [1060, "5"]] },
+        ] } });
+      }
+      if (u.includes("/query")) {
+        capturedUrl = u;
+        return jsonRes({ data: { resultType: "vector", result: [
+          { metric: { url: "/a" }, value: [2000, "7"] },
+          { metric: { url: "/b" }, value: [2000, "12"] },
+        ] } });
+      }
+      return jsonRes({ data: [] });
+    }) as any;
+    try {
+      return await conn.queryLogAggregate({ service: "app", duration: "1h", ...agg });
+    } finally {
+      globalThis.fetch = orig;
+    }
+  }
+
+  it("topk → instant vector parsed + sorted desc, note set", async () => {
+    const res = await run({ op: "topk", by: ["url"], k: 2 });
+    assert.equal(res.mode, "instant");
+    assert.equal(res.op, "topk");
+    assert.deepEqual(res.by, ["url"]);
+    assert.deepEqual(res.series.map((s: any) => [s.labels.url, s.value]), [["/b", 12], ["/a", 7]]);
+    assert.match(res.note, /limit/);
+  });
+
+  it("count_over_time → range matrix parsed into points", async () => {
+    const res = await run({ op: "count_over_time", by: ["url"], step: "1m" });
+    assert.equal(res.mode, "range");
+    assert.equal(res.step, "60s");
+    assert.equal(res.series.length, 1);
+    assert.deepEqual(res.series[0].points, [{ t: 1000000, value: 3 }, { t: 1060000, value: 5 }]);
   });
 });
 

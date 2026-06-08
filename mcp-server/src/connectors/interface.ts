@@ -7,6 +7,8 @@ import type {
   MetricResult,
   LogQuery,
   LogResult,
+  LogAggregateQuery,
+  LogAggregateResult,
   TraceQuery,
   TraceResult,
   SourceConfig,
@@ -37,6 +39,10 @@ export interface ObservabilityConnector {
 
   queryMetrics?(params: MetricQuery): Promise<MetricResult>;
   queryLogs?(params: LogQuery): Promise<LogResult>;
+  /** Optional server-side log aggregation (count/sum/topk). Backends that
+   *  can push aggregation down (Loki → LogQL metric queries) implement it;
+   *  the query_logs tool routes here when an `aggregate` arg is present. */
+  queryLogAggregate?(params: LogAggregateQuery): Promise<LogAggregateResult>;
   /** Optional traces capability — Tempo / Jaeger / OTLP backends
    *  implement this. The MCP `query_traces` tool fans out to every
    *  connector that has it. */

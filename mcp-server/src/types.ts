@@ -115,6 +115,48 @@ export interface LogQuery {
   labels?: Record<string, string>;
 }
 
+/** Server-side log aggregation (Q-LOG2). Pushes count/group/topk down to
+ *  the backend's metric-query path so an agent gets a *number*, not a
+ *  *haystack*. */
+export interface LogAggregateQuery {
+  service: string;
+  duration: string;
+  /** Same structured filters as LogQuery, applied before aggregation. */
+  labels?: Record<string, string>;
+  /** Optional line filter applied before aggregation. */
+  query?: string;
+  /** count_over_time → time series of counts per bucket; sum → total per
+   *  group over the window; topk → the top-k groups by total. */
+  op: "count_over_time" | "sum" | "topk";
+  /** Group-by label names. */
+  by?: string[];
+  /** k for topk (default 10). */
+  k?: number;
+  /** Bucket size for count_over_time, e.g. "15m". Defaults to the window. */
+  step?: string;
+}
+
+export interface LogAggregateSeries {
+  /** The group key (the `by` label values). Empty object for an ungrouped total. */
+  labels: Record<string, string>;
+  /** Single value — present for instant ops (sum / topk). */
+  value?: number;
+  /** Time series — present for count_over_time. */
+  points?: Array<{ t: number; value: number }>;
+}
+
+export interface LogAggregateResult {
+  source: string;
+  op: string;
+  by: string[];
+  step?: string;
+  /** "instant" (vector) for sum/topk, "range" (matrix) for count_over_time. */
+  mode: "instant" | "range";
+  series: LogAggregateSeries[];
+  /** Operator-facing notes, e.g. that `limit` is ignored in aggregate mode. */
+  note?: string;
+}
+
 // --- Query Results (Unified Data Model) ---
 export interface DataPoint {
   timestamp: string; // ISO 8601
