@@ -77,6 +77,11 @@ badge appears in the masthead.
 | `OMCP_USERS_FILE` | basic only | absolute path to a users JSON file (format above) |
 | `OMCP_SESSION_SECRET` | recommended | ≥ 32-char symmetric secret used to sign cookies. If unset in basic mode, the server generates one for the process lifetime and logs a warning — sessions will not survive a restart. |
 | `OMCP_AUTH_ALLOW_FALLBACK` | optional | When `true` and basic-mode prereqs are missing/invalid, the server falls back to anonymous mode instead of refusing to start. Off by default — production deployments should let the start fail loudly. |
+| `OMCP_AUTH_LOCKOUT_MAX_FAILURES` | optional | Failed logins for one account before it locks (default `5`). |
+| `OMCP_AUTH_LOCKOUT_WINDOW` | optional | Sliding window in seconds over which failures accumulate (default `900`). |
+| `OMCP_AUTH_LOCKOUT_BASE` | optional | First lock duration in seconds; doubles each subsequent lock (default `60`). |
+| `OMCP_AUTH_LOCKOUT_MAX` | optional | Cap on a single lock duration in seconds (default `3600`). |
+| `OMCP_AUTH_LOCKOUT_DISABLED` | optional | Set truthy to turn the per-account lockout off entirely. |
 
 If `OMCP_USERS_FILE` is missing/unreadable/empty when `OMCP_AUTH=basic`,
 the server **refuses to start** (process exit code 1) so a misconfigured
@@ -94,6 +99,33 @@ and re-reads it when the mtime has changed since the previous attempt
 OMCP_USERS_FILE changed — reloaded N user(s)` line each time the file
 reloads. A transient read error (network FS hiccup) keeps the cached
 set so logins continue to work with the last known users.
+
+### Account lockout
+
+Two independent brute-force defences guard `POST /api/auth/login`:
+
+- **Per-IP rate limit** — 20 attempts/min/IP (fixed). Blunts a noisy
+  single source.
+- **Per-account lockout** — after `OMCP_AUTH_LOCKOUT_MAX_FAILURES`
+  failed attempts on one username inside the sliding window, that
+  account is temporarily locked regardless of source IP, so a slow or
+  distributed grind on a single account is bounded too. Each subsequent
+  lock lasts twice as long (`BASE`, `2·BASE`, `4·BASE`, … capped at
+  `MAX`). A successful login clears the streak immediately.
+
+A locked login returns `429` with a `Retry-After` header; the response
+is identical whether or not the username exists, so it can't be used as
+a user-enumeration oracle, and the lock is checked **before** the scrypt
+verify so a locked account can't be used to burn CPU. Lock events are
+written to the audit log (`actor=<username>`, `status=429`).
+
+State lives in the shared session store — set `OMCP_REDIS_URL` and the
+lockout is enforced consistently across replicas (and self-expires via
+TTL); without it the lockout is per-process and resets on restart.
+
+A lockout is a temporary, automatic throttle — to permanently disable an
+account, remove it from `OMCP_USERS_FILE` (and revoke its live sessions,
+see [access-control.md](access-control.md#session-revocation)).
 
 ## What's gated, what isn't
 
