@@ -6,10 +6,12 @@
 // summaries, and recomputes a global p50/p95 over the merged set
 // (rather than blindly averaging per-source summaries).
 //
-// Backend support today: a Tempo connector + a Jaeger shim ship as
-// filesystem plugins. Any connector that implements queryTraces
-// participates automatically — no changes needed in the tool layer
-// when a new backend lands.
+// Backend support: no traces backend is bundled by default. The Tempo
+// connector ships in the connector hub (install it to enable traces);
+// there is no Jaeger connector today. Any connector that implements the
+// optional queryTraces capability participates automatically — so on a
+// stack without one the tool returns a clean "No trace backends
+// configured" result rather than failing.
 
 import type { ConnectorRegistry } from "../connectors/registry.js";
 import { defaultContext, type RequestContext } from "../context.js";
@@ -22,7 +24,7 @@ export const queryTracesDefinition = {
     "Query distributed traces for a service over a given timeframe.",
     "Returns ranked trace summaries with duration, error status, and span count, plus a p50/p95 duration aggregate across the returned set.",
     "When to use: investigating tail-latency outliers, walking call chains across services for a known time window, or pulling related traces for an anomaly the metric/log tools surfaced first.",
-    "Behavior: read-only; results may be capped via `limit` (default 50). `filter` accepts the backend's native query language (TraceQL on Tempo, tag query on Jaeger). When `errorsOnly=true`, only traces with at least one error span are returned.",
+    "Behavior: read-only; results may be capped via `limit` (default 50). `filter` accepts the backend's native query language (e.g. TraceQL on Tempo). When `errorsOnly=true`, only traces with at least one error span are returned.",
     "Related: `query_metrics` for the per-service latency series; `get_blast_radius` for the topology a trace traverses.",
   ].join(" "),
   inputSchema: {

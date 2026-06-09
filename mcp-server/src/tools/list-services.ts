@@ -35,19 +35,27 @@ export async function listServicesHandler(
     }
   }
 
-  // Deduplicate by name, merge signal types
-  const merged = new Map<string, { name: string; sources: string[]; signalTypes: string[] }>();
+  // Deduplicate by name, merge signal types. Carry per-service `labels`
+  // (e.g. the Loki connector's `discoveredVia`, documented in docs/loki.md)
+  // through the merge so discovery metadata actually surfaces in the tool
+  // output; first source to set a given label key wins.
+  const merged = new Map<
+    string,
+    { name: string; sources: string[]; signalTypes: string[]; labels?: Record<string, string> }
+  >();
   for (const svc of allServices) {
     const existing = merged.get(svc.name);
     if (existing) {
       if (!existing.sources.includes(svc.source)) existing.sources.push(svc.source);
       if (!existing.signalTypes.includes(svc.signalType))
         existing.signalTypes.push(svc.signalType);
+      if (svc.labels) existing.labels = { ...svc.labels, ...(existing.labels ?? {}) };
     } else {
       merged.set(svc.name, {
         name: svc.name,
         sources: [svc.source],
         signalTypes: [svc.signalType],
+        labels: svc.labels ? { ...svc.labels } : undefined,
       });
     }
   }

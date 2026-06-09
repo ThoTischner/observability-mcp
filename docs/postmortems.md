@@ -98,11 +98,22 @@ into the Product(s) you want to expose. See
 
 ## Persistence
 
-P6 of the production-readiness sprint will add
-`POST /api/postmortems` storage so a generated report survives
-the agent session. Until then the markdown is returned only to the
-caller — paste it into your ticket / wiki / Slack at the call
-site.
+Generated reports can be persisted on the management plane (the
+`generate_postmortem` MCP tool itself is stateless and still returns the
+markdown to the caller). The endpoints:
+
+| Method | Path | Behaviour |
+|---|---|---|
+| `POST` | `/api/postmortems` | `{service, duration}` — regenerates (forces `format=json`), stores, and returns the saved entry. |
+| `GET` | `/api/postmortems` | List stored reports, tenant-scoped, newest first. |
+| `GET` | `/api/postmortems/:id` | Fetch one stored report. |
+| `DELETE` | `/api/postmortems/:id` | Delete one (admin-gated). |
+
+Storage is an append-only JSONL file at `OMCP_POSTMORTEMS_FILE`
+(default `/tmp/postmortems.jsonl`); entries are tenant-scoped. The
+Postmortems UI tab lists and opens stored reports. If you only need the
+report at the call site, ignore the API and use the markdown the tool
+returns.
 
 ## Failure modes the tool handles
 

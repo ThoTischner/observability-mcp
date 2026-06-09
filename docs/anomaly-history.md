@@ -74,12 +74,12 @@ works without code changes.
 
 ## Operational notes
 
-- **Detector hook ships in F15b.** The `AnomalyHistory` writer is
-  alive in v2.x and reachable via `get_anomaly_history`; the
-  detector-side `record()` hook that fills it from the live
-  `detect_anomalies` path lands in the follow-up. Externally-written
-  `omcp_anomaly_score` metrics (e.g. from a sibling tool that
-  produces them) are already queryable.
+- **Detector hook is wired.** The `AnomalyHistory` writer is fed from
+  the live `detect_anomalies` path — every scan records its scores via
+  the `record()` hook (`detect-anomalies.ts`, wired in `index.ts`), and
+  they are queryable through `get_anomaly_history`. Externally-written
+  `omcp_anomaly_score` metrics (e.g. from a sibling tool that produces
+  them) are queryable too.
 - **Retention** is the TSDB's job. The gateway never deletes —
   configure the receiver's retention to match your post-mortem
   window (e.g. 30 days).

@@ -500,7 +500,7 @@ async function main() {
     [
       "List the configured observability backends (Prometheus, Loki, and any connector) and whether each is currently reachable.",
       "When to use: call this first to learn which source names exist and are healthy before passing `source` to other tools, or to debug why a query returns no data.",
-      "Behavior: read-only, no side effects. Returns one entry per source with its name, type, configured URL, signal types (metrics/logs), and a live up/down status. Never throws for an unreachable backend — the backend is reported as down instead.",
+      "Behavior: read-only, no side effects. Returns one entry per source with its name, type, signal types (metrics/logs), and a live up/down status (the backend URL is intentionally not exposed — it may carry embedded credentials). Never throws for an unreachable backend — the backend is reported as down instead.",
       "Related: use `list_services` to see what is monitored within these sources.",
     ].join(" "),
     {},
@@ -767,8 +767,8 @@ async function main() {
       "Query distributed traces for a service over a given timeframe.",
       "Returns ranked trace summaries (duration, span count, error status) with a p50/p95 aggregate across the returned set.",
       "When to use: investigate tail-latency outliers, walk call chains across services for a specific time window, or pull traces related to an anomaly that the metric/log tools surfaced first.",
-      "Prerequisites: get the exact service name from `list_services`. A Tempo / Jaeger / OTLP connector must be configured.",
-      "Behavior: read-only. `filter` accepts the backend's native query language (TraceQL on Tempo, tag query on Jaeger). When `errorsOnly=true`, only traces with at least one error span are returned. Default limit is 50.",
+      "Prerequisites: get the exact service name from `list_services`. A traces connector (e.g. Tempo, installable from the connector hub) must be configured — none is bundled by default, so without one this returns a clean 'No trace backends configured' result.",
+      "Behavior: read-only. `filter` accepts the backend's native query language (e.g. TraceQL on Tempo). When `errorsOnly=true`, only traces with at least one error span are returned. Default limit is 50.",
     ].join(" "),
     {
       service: z.string().describe("Service name (e.g. 'payment-service')."),
@@ -1377,11 +1377,11 @@ async function main() {
   // get_anomaly_history queries them back via any Prometheus source
   // pointed at the same TSDB.
   //
-  // The detector-side hook that actually records per-anomaly scores
-  // is plumbed in F15b (it requires passing this instance into the
-  // detectAnomaliesHandler — minor surgery deferred). The
-  // infrastructure ships now so externally-written omcp_anomaly_score
-  // metrics are already queryable end-to-end.
+  // The detector-side hook that records per-anomaly scores is wired:
+  // this instance is passed into detectAnomaliesHandler at the
+  // detect_anomalies tool registration below, so every scan records its
+  // scores. Externally-written omcp_anomaly_score metrics are queryable
+  // end-to-end too.
   const anomalyHistory = new AnomalyHistory(anomalyHistoryFromEnv());
   anomalyHistory.start();
   if (anomalyHistory.isEnabled()) {
