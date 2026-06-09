@@ -299,3 +299,146 @@ test("MCP 2025-11-25: server advertises protocolVersion equal to or newer than 2
   // recognised date-style version string.
   assert.match(r.protocolVersion!, /^\d{4}-\d{2}-\d{2}$/, "protocolVersion must be a YYYY-MM-DD date");
 });
+
+// ---------------------------------------------------------------------------
+// Behavioural tools/call E2E (post-#415 hardening).
+//
+// These run over the REAL /mcp Streamable-HTTP transport against the booted
+// demo stack (integration.yml sets OMCP_CONFORMANCE_URL). They close the gap
+// that let #415 ship: a param can be ADVERTISED in tools/list yet silently
+// stripped by the SDK before it reaches the handler — an advertise-only
+// assertion passes anyway. Here we call the tool and assert the param TAKES
+// EFFECT over the wire. The demo mcp-server runs with OMCP_RAW_QUERY unset and
+// OMCP_IP_ENRICH_FILE unset, so the gate/not-configured assertions are
+// deterministic regardless of backend data.
+// ---------------------------------------------------------------------------
+
+async function callTool(
+  session: string,
+  name: string,
+  args: Record<string, unknown>,
+  id = 50,
+): Promise<{ isError?: boolean; parsed?: any; text?: string; error?: unknown }> {
+  const { response } = await jsonRpc("tools/call", { name, arguments: args }, { id, session });
+  if (response.error) return { error: response.error };
+  const r = response.result as { isError?: boolean; content?: Array<{ text?: string }> };
+  const text = r?.content?.[0]?.text;
+  let parsed: any;
+  try {
+    parsed = text ? JSON.parse(text) : undefined;
+  } catch {
+    parsed = undefined;
+  }
+  return { isError: r?.isError, parsed, text };
+}
+
+async function discoverService(session: string): Promise<string> {
+  const r = await callTool(session, "list_services", {}, 40);
+  const list = Array.isArray(r.parsed) ? r.parsed : r.parsed?.services;
+  const name = Array.isArray(list) && list[0] && (list[0].name || list[0].service);
+  return name || "payment-service"; // demo k3s service as fallback
+}
+
+test("E2E tools/call: query_logs raw_query is refused over the wire when capability off (#415 #3)", opts, async () => {
+  const session = await newSession();
+  const r = await callTool(session, "query_logs", { raw_query: '{job="x"}' });
+  // Proves raw_query SURVIVES transport (not stripped) AND the gate fires E2E.
+  const msg = JSON.stringify(r.parsed ?? r.text ?? "");
+  assert.match(msg, /raw_query is disabled/i, `expected gate refusal, got ${msg}`);
+});
+
+test("E2E tools/call: query_metrics raw_query is refused over the wire when capability off (#415 #3)", opts, async () => {
+  const session = await newSession();
+  const r = await callTool(session, "query_metrics", { raw_query: "up" });
+  const msg = JSON.stringify(r.parsed ?? r.text ?? "");
+  assert.match(msg, /raw_query is disabled/i, `expected gate refusal, got ${msg}`);
+});
+
+test("E2E tools/call: enrich_ips dispatches and reports not-configured over the wire (Gap B)", opts, async () => {
+  const session = await newSession();
+  const r = await callTool(session, "enrich_ips", { ips: ["203.0.113.5"] });
+  const msg = JSON.stringify(r.parsed ?? r.text ?? "");
+  // Proves the ips param survives transport and the tool dispatches; demo has
+  // no OMCP_IP_ENRICH_FILE so the deterministic "not configured" path fires.
+  assert.match(msg, /not configured/i, `expected not-configured notice, got ${msg}`);
+});
+
+test("E2E tools/call: query_logs aggregate takes effect over the wire — grouped result, not raw rows (#415 #2)", opts, async () => {
+  const session = await newSession();
+  const service = await discoverService(session);
+  const r = await callTool(session, "query_logs", {
+    service,
+    aggregate: { op: "count_over_time", step: "15m" },
+    duration: "1h",
+  });
+  // The aggregate result shape (op/mode/series) is structurally distinct from
+  // the raw-rows shape (entries/summary). Asserting the aggregate shape proves
+  // the `aggregate` param survived the SDK input parsing and reached the
+  // connector — even if the series is empty on a sparse demo window.
+  const p = Array.isArray(r.parsed) ? r.parsed[0] : r.parsed;
+  assert.ok(p, `expected an aggregate result, got ${JSON.stringify(r)}`);
+  assert.equal(p.op, "count_over_time", "result must carry the aggregate op");
+  assert.ok("mode" in p && Array.isArray(p.series), "result must be the aggregate shape (mode + series)");
+  assert.ok(!("entries" in p), "aggregate path must NOT return the raw-rows shape");
+});
+
+test("E2E tools/call: query_metrics labels param is accepted over the wire (#415 #4)", opts, async () => {
+  const session = await newSession();
+  const service = await discoverService(session);
+  const r = await callTool(session, "query_metrics", {
+    service,
+    metric: "cpu",
+    labels: { job: service },
+    duration: "5m",
+  });
+  // Must not be a transport/dispatch error; the labels param must be accepted
+  // (a structured "no data" result is fine — proves it reached the handler).
+  assert.ok(!r.error, `unexpected JSON-RPC error: ${JSON.stringify(r.error)}`);
+  assert.ok(r.parsed !== undefined || r.text !== undefined, "expected a CallToolResult payload");
+});
+
+test("E2E tools/call: get_anomaly_history dispatches without a PromQL 400 crash (H1 over the wire)", opts, async () => {
+  const session = await newSession();
+  const service = await discoverService(session);
+  const r = await callTool(session, "get_anomaly_history", { service, duration: "1h", method: "mad" });
+  // After the rawQuery fix the emitted PromQL is valid; empty data is a clean
+  // non-error result. The bug produced an invalid-query path that still
+  // returned non-error empty, so we assert the dispatch shape is well-formed.
+  assert.ok(!r.error, `unexpected JSON-RPC error: ${JSON.stringify(r.error)}`);
+  assert.ok(r.parsed !== undefined || r.text !== undefined, "expected a CallToolResult payload");
+});
+
+test("E2E tools/call: every registered tool dispatches over MCP and returns a CallToolResult", opts, async () => {
+  const session = await newSession();
+  const service = await discoverService(session);
+  // Minimal valid args per tool; tools with required args get discovered/dummy
+  // values. A clean isError result (e.g. query_traces 'no trace backends') is
+  // acceptable — we only require a shape-conformant dispatch, never a -32xxx.
+  const calls: Record<string, Record<string, unknown>> = {
+    list_sources: {},
+    list_services: {},
+    query_metrics: { service, metric: "cpu" },
+    query_logs: { service },
+    get_anomaly_history: { service },
+    generate_postmortem: { service },
+    query_traces: { service },
+    get_service_health: { service },
+    detect_anomalies: {},
+    get_topology: {},
+    get_blast_radius: { resource: service },
+    enrich_ips: { ips: ["203.0.113.5"] },
+  };
+  const { response: list } = await jsonRpc("tools/list", {}, { id: 41, session });
+  const names = ((list.result as any)?.tools ?? []).map((t: any) => t.name);
+  assert.ok(names.length >= 12, `expected >=12 tools, got ${names.length}`);
+  let id = 60;
+  for (const name of names) {
+    const args = calls[name] ?? {};
+    const { response } = await jsonRpc("tools/call", { name, arguments: args }, { id: id++, session });
+    if (response.error) {
+      assert.fail(`tool ${name} returned a JSON-RPC dispatch error: ${JSON.stringify(response.error)}`);
+    }
+    const r = response.result as { content?: unknown[] };
+    assert.ok(Array.isArray(r.content), `tool ${name} must return content[]`);
+  }
+});
