@@ -4,6 +4,70 @@ entries:
   - annotations:
       artifacthub.io/category: monitoring-logging
       artifacthub.io/changes: |
+        - kind: changed
+          description: "appVersion → 3.2.0 (agent-usability release, issue #415); chart points at the 3.2.0 image"
+        - kind: added
+          description: "query_metrics labels equality filter (PromQL series scoping)"
+        - kind: added
+          description: "raw_query passthrough for query_metrics/query_logs — capability-gated, default off (OMCP_RAW_QUERY)"
+        - kind: added
+          description: "enrich_ips tool — offline geo/ASN/hosting lookup from a local dataset (OMCP_IP_ENRICH_FILE), air-gapped"
+        - kind: added
+          description: "anonymous-friendly per-call redaction bypass (OMCP_BYPASS_REDACTION_ANON)"
+        - kind: changed
+          description: "get_topology returns an explicit no-connector note instead of a bare empty graph"
+      artifacthub.io/containsSecurityUpdates: "false"
+      artifacthub.io/images: |
+        - name: observability-mcp
+          image: ghcr.io/thotischner/observability-mcp:3.2.0
+          platforms:
+            - linux/amd64
+            - linux/arm64
+      artifacthub.io/license: Apache-2.0
+      artifacthub.io/links: |
+        - name: Source
+          url: https://github.com/ThoTischner/observability-mcp
+        - name: Container image
+          url: https://github.com/ThoTischner/observability-mcp/pkgs/container/observability-mcp
+        - name: npm
+          url: https://www.npmjs.com/package/@thotischner/observability-mcp
+        - name: Connector Hub
+          url: https://thotischner.github.io/observability-mcp/hub/
+      artifacthub.io/operator: "false"
+      artifacthub.io/prerelease: "false"
+      artifacthub.io/signKey: |
+        fingerprint: C240A58EC3B9D596C685FB0079826B0CB9A6329F
+        url: https://raw.githubusercontent.com/ThoTischner/observability-mcp/main/docs/helm-signing.pub.asc
+    apiVersion: v2
+    appVersion: 3.2.0
+    created: "2026-06-09T19:30:26.933854845Z"
+    description: Unified observability gateway for AI agents — one MCP server for
+      Prometheus, Loki, and any backend
+    digest: 6622e80366cb730ad26d8077fa1bdf7d874bd5d999d3335c78994e978140b126
+    home: https://github.com/ThoTischner/observability-mcp
+    icon: https://raw.githubusercontent.com/ThoTischner/observability-mcp/main/docs/logo.svg
+    keywords:
+    - mcp
+    - model-context-protocol
+    - observability
+    - prometheus
+    - loki
+    - sre
+    - monitoring
+    - ai-agents
+    maintainers:
+    - name: ThoTischner
+      url: https://github.com/ThoTischner
+    name: observability-mcp
+    sources:
+    - https://github.com/ThoTischner/observability-mcp
+    type: application
+    urls:
+    - https://github.com/ThoTischner/observability-mcp/releases/download/observability-mcp-2.2.0/observability-mcp-2.2.0.tgz
+    version: 2.2.0
+  - annotations:
+      artifacthub.io/category: monitoring-logging
+      artifacthub.io/changes: |
         - kind: fixed
           description: "query_logs labels/aggregate params are now advertised over MCP and reach the handler (3.1.0 ship gap, issue #415); chart points at the 3.1.1 image"
       artifacthub.io/containsSecurityUpdates: "false"
@@ -1648,4 +1712,4 @@ entries:
     urls:
     - https://github.com/ThoTischner/observability-mcp/releases/download/observability-mcp-0.3.0/observability-mcp-0.3.0.tgz
     version: 0.3.0
-generated: "2026-06-09T17:39:14.533986352Z"
+generated: "2026-06-09T19:30:26.934022423Z"
