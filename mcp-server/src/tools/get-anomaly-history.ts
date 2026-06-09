@@ -77,12 +77,19 @@ export async function getAnomalyHistoryHandler(
   const metric = `omcp_anomaly_score{${labelFilters.join(",")}}`;
 
   // Fan out across every metrics connector; first non-empty answer wins.
+  // CRITICAL: pass the hand-built selector via `rawQuery`, NOT `metric`.
+  // The connector's curated path wraps a bare `metric` in `{ {{selector}} }`,
+  // which for our already-complete selector produces invalid double-brace
+  // PromQL (`omcp_anomaly_score{service="x"}{ job="x" }`) → 400 → the catch
+  // below swallowed it and the tool always reported "no history". rawQuery is
+  // sent verbatim to /api/v1/query_range (the R4 passthrough).
   for (const c of candidates) {
     if (!c.queryMetrics) continue;
     try {
       const r = await c.queryMetrics({
         service: args.service,
-        metric,
+        metric: "omcp_anomaly_score",
+        rawQuery: metric,
         duration,
       });
       if (r && Array.isArray(r.values) && r.values.length > 0) {
