@@ -179,6 +179,17 @@ test("MCP 2025-11-25: query_metrics + query_logs advertise raw_query (issue #415
   }
 });
 
+test("MCP 2025-11-25: enrich_ips tool is advertised (issue #415 Gap B)", opts, async () => {
+  const session = await newSession();
+  const { response } = await jsonRpc("tools/list", {}, { id: 2, session });
+  const r = response.result as {
+    tools?: Array<{ name?: string; inputSchema?: { properties?: Record<string, unknown> } }>;
+  };
+  const tool = r.tools?.find((t) => t.name === "enrich_ips");
+  assert.ok(tool, "enrich_ips tool must be advertised");
+  assert.ok("ips" in (tool.inputSchema?.properties ?? {}), "enrich_ips must advertise an `ips` param");
+});
+
 test("MCP 2025-11-25: tools/call dispatches and returns CallToolResult", opts, async () => {
   const session = await newSession();
   const { response } = await jsonRpc(

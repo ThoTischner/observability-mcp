@@ -25,6 +25,7 @@ export const REGISTERED_TOOL_NAMES = [
   "generate_postmortem",
   "get_topology",
   "get_blast_radius",
+  "enrich_ips",
 ] as const;
 
 export type RegisteredToolName = typeof REGISTERED_TOOL_NAMES[number];
@@ -55,6 +56,7 @@ export const REGISTERED_TOOLS: readonly ToolRegistryEntry[] = [
   { name: "generate_postmortem",category: "diagnose",  summary: "One-shot markdown post-mortem stitching anomaly history + traces + blast-radius + logs for a service." },
   { name: "get_topology",       category: "topology",  summary: "Return the infrastructure topology graph (resources + edges)." },
   { name: "get_blast_radius",   category: "topology",  summary: "Given a resource, return the impact set if its host(s) fail." },
+  { name: "enrich_ips",         category: "query",     summary: "Resolve IPv4 addresses to geo/ASN/org/hosting-flag from a local offline dataset." },
 ] as const;
 
 /** Validate a candidate Product tools[] array. Returns the unknown
