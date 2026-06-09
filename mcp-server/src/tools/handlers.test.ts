@@ -101,6 +101,22 @@ describe("listServicesHandler", () => {
     assert.deepEqual(apiGw.signalTypes.sort(), ["logs", "metrics"]);
   });
 
+  it("carries per-service labels (e.g. discoveredVia) through the merge (audit: docs/loki.md)", async () => {
+    const reg = createRegistryWithMocks([
+      createMockConnector({
+        name: "loki1", type: "loki", signalType: "logs",
+        listServices: async () => [
+          { name: "payment-service", source: "loki1", signalType: "logs", labels: { discoveredVia: "service_name" } },
+        ],
+      }),
+    ]);
+    const result = await listServicesHandler(reg, {});
+    const data = JSON.parse(result.content[0].text);
+    const svc = data.services.find((s: any) => s.name === "payment-service");
+    assert.ok(svc, "service must be present");
+    assert.equal(svc.labels?.discoveredVia, "service_name", "discoveredVia must surface in the tool output");
+  });
+
   it("filters services case-insensitively", async () => {
     const reg = createRegistryWithMocks([
       createMockConnector({
