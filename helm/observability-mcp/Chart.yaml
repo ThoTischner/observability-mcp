@@ -4,11 +4,11 @@ description: Unified observability gateway for AI agents — one MCP server for 
 type: application
 
 # Chart version (this chart). Bumped on chart changes.
-version: 2.1.0
+version: 2.1.1
 
 # App version (the mcp-server image tag the chart defaults to).
 # Update with each release of the mcp-server image.
-appVersion: "3.1.0"
+appVersion: "3.1.1"
 
 home: https://github.com/ThoTischner/observability-mcp
 sources:
@@ -51,26 +51,10 @@ annotations:
     url: https://raw.githubusercontent.com/ThoTischner/observability-mcp/main/docs/helm-signing.pub.asc
   artifacthub.io/images: |
     - name: observability-mcp
-      image: ghcr.io/thotischner/observability-mcp:3.1.0
+      image: ghcr.io/thotischner/observability-mcp:3.1.1
       platforms:
         - linux/amd64
         - linux/arm64
   artifacthub.io/changes: |
-    - kind: changed
-      description: appVersion → 3.1.0 (Phase Q sprint); chart points at the 3.1.0 image
-    - kind: added
-      description: SCIM Redis-backed store (scim.backend=redis) for multi-replica provisioning
-    - kind: added
-      description: S3-compatible audit sink (audit.s3.*) — S3 / MinIO / R2 / B2
-    - kind: added
-      description: Session revocation blocklist, per-account login lockout, and basic-auth password policy
-    - kind: added
-      description: Content-Security-Policy on the Web UI (enforced + opt-in strict report-only)
-    - kind: added
-      description: Redis-backed transport session map — multi-replica gateways no longer need sticky ingress
-    - kind: added
-      description: Health-tab anomaly-score sparkline + in-product Playground tab
-    - kind: added
-      description: Federation upstream transports (stdio + WebSocket); manifest-driven plugin hook auto-registration
-    - kind: added
-      description: query_logs structured label filters + server-side aggregation (count/sum/topk) for agent log analytics (issue #415)
+    - kind: fixed
+      description: "query_logs labels/aggregate params are now advertised over MCP and reach the handler (3.1.0 ship gap, issue #415); chart points at the 3.1.1 image"

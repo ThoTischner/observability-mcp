@@ -6,6 +6,26 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.1.1] — 2026-06-09
+
+Patch release — fixes a ship gap in 3.1.0 reported from real-world use
+(issue #415).
+
+### Fixed
+
+- **`query_logs` `labels` and `aggregate` params are now reachable over
+  MCP.** In 3.1.0 the handler and connector code for structured label
+  filters (#1) and server-side aggregation (#2) shipped, but the inline
+  MCP input schema in the tool registration never advertised the two
+  params — so the MCP SDK stripped them from incoming calls before they
+  reached the handler. A `tools/list` handshake omitted them and passing
+  them was a silent no-op (raw, unfiltered rows returned). The
+  registration now declares both, so `labels` / `aggregate` work over
+  MCP exactly as documented in [loki.md](docs/loki.md). No API change —
+  this only makes the already-documented 3.1.0 surface actually
+  callable. A conformance assertion (live `tools/list`) plus a static
+  registration guard now prevent this class of regression.
+
 ## [3.1.0] — 2026-06-08
 
 Incremental release — the **Phase Q sprint** closes the

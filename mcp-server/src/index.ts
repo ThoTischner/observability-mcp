@@ -565,6 +565,12 @@ async function main() {
         .describe(
           "Optional. Filter expression matched against the log message; regular expressions are supported. Omit to return all entries in the window.",
         ),
+      labels: z
+        .record(z.string(), z.string())
+        .optional()
+        .describe(
+          "Optional. Exact-match filters on backend-extracted log fields (e.g. {\"method\":\"GET\",\"status\":\"200\",\"url\":\"/\",\"environment\":\"prod\"}). All AND'd together and compiled to LogQL label filters applied after `| json`, so structured JSON fields become first-class selectors — far more reliable than regex on the raw message. Combine with `aggregate` to filter then group. Backends without label extraction ignore it.",
+        ),
       duration: z
         .string()
         .optional()
@@ -577,13 +583,43 @@ async function main() {
         .describe(
           "Optional. Return only entries at this severity. Default: all levels.",
         ),
+      aggregate: z
+        .object({
+          op: z
+            .enum(["count_over_time", "sum", "topk"])
+            .describe(
+              "count_over_time = time series of counts per `step` bucket; sum = single total per group over the window; topk = the top `k` groups by total.",
+            ),
+          by: z
+            .array(z.string())
+            .optional()
+            .describe(
+              "Label names to group by, e.g. [\"url\"] or [\"status\"]. Required for topk.",
+            ),
+          k: z
+            .number()
+            .int()
+            .positive()
+            .optional()
+            .describe("For topk: how many top groups to return (1-1000)."),
+          step: z
+            .string()
+            .optional()
+            .describe(
+              "For count_over_time: bucket width as <number><unit> m|h|d (e.g. '15m'). Default auto-derived from duration.",
+            ),
+        })
+        .optional()
+        .describe(
+          "Optional. Server-side aggregation pushed down to LogQL metric queries — returns grouped counts, not raw rows, so you get a number instead of a haystack (and never hit `limit`). Honours `labels`/`query` filters. Example: {\"op\":\"topk\",\"by\":[\"url\"],\"k\":10} for the busiest paths; {\"op\":\"count_over_time\",\"step\":\"15m\"} for a request-count time series.",
+        ),
       limit: z
         .number()
         .int()
         .positive()
         .optional()
         .describe(
-          "Optional. Maximum number of log entries to return (most recent first). Default: 100.",
+          "Optional. Maximum number of log entries to return (most recent first). Default: 100. Ignored when `aggregate` is set.",
         ),
       bypass_redaction: z
         .boolean()
