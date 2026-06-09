@@ -137,6 +137,23 @@ test("MCP 2025-11-25: tools/list returns a Tool[] each with name + inputSchema",
   }
 });
 
+test("MCP 2025-11-25: query_logs advertises labels + aggregate params (issue #415)", opts, async () => {
+  // Regression guard for the v3.1.0 ship gap: the labels/aggregate handler
+  // code existed but the inline MCP schema in createMcpServer never declared
+  // them, so a live tools/list omitted them and the SDK stripped them from
+  // calls — a silent no-op. Assert the live server advertises both.
+  const session = await newSession();
+  const { response } = await jsonRpc("tools/list", {}, { id: 2, session });
+  const r = response.result as {
+    tools?: Array<{ name?: string; inputSchema?: { properties?: Record<string, unknown> } }>;
+  };
+  const queryLogs = r.tools?.find((t) => t.name === "query_logs");
+  assert.ok(queryLogs, "query_logs tool must be advertised");
+  const props = queryLogs.inputSchema?.properties ?? {};
+  assert.ok("labels" in props, "query_logs must advertise a `labels` param (issue #415 #1)");
+  assert.ok("aggregate" in props, "query_logs must advertise an `aggregate` param (issue #415 #2)");
+});
+
 test("MCP 2025-11-25: tools/call dispatches and returns CallToolResult", opts, async () => {
   const session = await newSession();
   const { response } = await jsonRpc(
