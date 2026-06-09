@@ -151,7 +151,7 @@ jobs:
         # ~/.docker/config.json, NOT helm's registry config — so the
         # helm-login above isn't enough on its own. Without this the
         # cosign sign step 401s on the signature blob upload.
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
