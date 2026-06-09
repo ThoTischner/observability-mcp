@@ -99,6 +99,23 @@ describe("Q-LOG1: queryLogs LogQL assembly", () => {
     const q = await captureQuery({});
     assert.equal(q, '{service_name="payment"} | json');
   });
+
+  it("R4: rawQuery is sent verbatim, bypassing the curated selector", async () => {
+    const q = await captureQuery({
+      rawQuery: '{app="x", env="prod"} | json | status>=`500`',
+    });
+    assert.equal(q, '{app="x", env="prod"} | json | status>=`500`');
+  });
+
+  it("R4: rawQuery ignores service/labels/level/query", async () => {
+    const q = await captureQuery({
+      rawQuery: '{job="raw"}',
+      labels: { method: "GET" },
+      level: "error",
+      query: "ignored",
+    });
+    assert.equal(q, '{job="raw"}');
+  });
 });
 
 describe("Q-LOG2: parseDurationSeconds / defaultBucketSeconds", () => {

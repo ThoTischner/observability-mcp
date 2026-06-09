@@ -344,6 +344,12 @@ async function main() {
   }
 
   const REDACTION_ENABLED = String(process.env.OMCP_REDACTION ?? "on").toLowerCase() !== "off";
+  // Raw PromQL/LogQL passthrough capability — default OFF. A raw query bypasses
+  // the curated metric/log surface (catalog, selector scoping), so it is an
+  // explicit operator opt-in. Enable with OMCP_RAW_QUERY=on (or true/1).
+  const RAW_QUERY_ENABLED = ["on", "true", "1"].includes(
+    String(process.env.OMCP_RAW_QUERY ?? "off").toLowerCase()
+  );
   function redactToolText<T extends { content: Array<{ text: string }> }>(
     result: T,
     opts: { bypass?: boolean } = {},
@@ -511,13 +517,15 @@ async function main() {
     {
       service: z
         .string()
+        .optional()
         .describe(
-          "Required. Exact, case-sensitive service name exactly as returned by `list_services` (e.g. 'api-gateway', 'payment-service').",
+          "Required (unless `raw_query` is set). Exact, case-sensitive service name exactly as returned by `list_services` (e.g. 'api-gateway', 'payment-service').",
         ),
       metric: z
         .string()
+        .optional()
         .describe(
-          `Required. Exact metric name to query. One of: ${uniqueNames.join(", ")}.`,
+          `Required (unless `+"`raw_query`"+` is set). Exact metric name to query. One of: ${uniqueNames.join(", ")}.`,
         ),
       duration: z
         .string()
@@ -543,10 +551,16 @@ async function main() {
         .describe(
           "Optional. Exact-match label filters (e.g. {\"status\":\"500\",\"route\":\"/checkout\"}) AND'd into the metric's series selector — the PromQL equivalent of the query_logs `labels` param. Use this to scope a curated metric to a subset of series (e.g. error_rate for one route/status) instead of the all-series aggregate. Combine with `groupBy` to filter then break down. Label names must be valid Prometheus identifiers.",
         ),
+      raw_query: z
+        .string()
+        .optional()
+        .describe(
+          "Optional escape hatch: a verbatim PromQL expression, run as-is over the range — for ad-hoc queries the curated `metric` catalog can't express (any series, any function, broken down by any label). When set, `metric`/`service`/`groupBy`/`labels` are ignored. DISABLED by default; the operator must enable the raw-query capability (OMCP_RAW_QUERY=on) or the call is refused. Still tenant-scoped and source-allow-listed.",
+        ),
     },
     async (args) => {
       await enforceEntitledAccess(ctx, { tool: "query_metrics", source: (args as any)?.source, service: (args as any)?.service });
-      const result = await withToolMetrics("query_metrics", () => queryMetricsHandler(registry, args, ctx));
+      const result = await withToolMetrics("query_metrics", () => queryMetricsHandler(registry, args, ctx, { allowRawQuery: RAW_QUERY_ENABLED }));
       return chargeTokenBudget(result, ctx, "query_metrics");
     }
   );
@@ -562,8 +576,9 @@ async function main() {
     {
       service: z
         .string()
+        .optional()
         .describe(
-          "Required. Exact, case-sensitive service name exactly as returned by `list_services` (e.g. 'payment-service').",
+          "Required (unless `raw_query` is set). Exact, case-sensitive service name exactly as returned by `list_services` (e.g. 'payment-service').",
         ),
       query: z
         .string()
@@ -633,10 +648,16 @@ async function main() {
         .describe(
           "Optional. When true, request that PII/secret redaction be skipped for this single call. The server only honours this when the calling credential was explicitly authorised via OMCP_KEY_BYPASS_REDACTION; otherwise the request still gets redacted output. Default: false.",
         ),
+      raw_query: z
+        .string()
+        .optional()
+        .describe(
+          "Optional escape hatch: a verbatim LogQL log query, run as-is — for selectors/pipelines the curated params can't express. When set, `service`/`labels`/`level`/`query` are ignored and it is mutually exclusive with `aggregate` (express aggregation in the LogQL itself). DISABLED by default; the operator must enable the raw-query capability (OMCP_RAW_QUERY=on) or the call is refused. Redaction still applies to the returned log lines.",
+        ),
     },
     async (args) => {
       await enforceEntitledAccess(ctx, { tool: "query_logs", source: (args as any)?.source, service: (args as any)?.service });
-      const result = await withToolMetrics("query_logs", () => queryLogsHandler(registry, args, ctx));
+      const result = await withToolMetrics("query_logs", () => queryLogsHandler(registry, args, ctx, { allowRawQuery: RAW_QUERY_ENABLED }));
       // Redact PII / secrets from the log payload before it crosses the
       // MCP boundary into the agent's context. Per-call bypass kicks in
       // only when BOTH (a) the credential is OMCP_KEY_BYPASS_REDACTION

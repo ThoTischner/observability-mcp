@@ -209,22 +209,30 @@ export class LokiConnector implements ObservabilityConnector {
     const { start, end } = this.parseTimeRange(params.duration);
     const limit = Math.min(Math.max(params.limit || 100, 1), 1000);
 
-    // Resolve label + actual selector value. For the 'container' label the
-    // value stored in Loki may be '/my-app-1' while the caller passes the
-    // sanitized 'my-app-1' — return the prefixed form so the LogQL selector
-    // matches the real stream.
-    const { label: matchedLabel, value: rawValue } = await this.resolveServiceSelector(params.service);
-    const service = this.escapeLogQLValue(rawValue);
-    let logql = `{${matchedLabel}="${service}"} | json`;
-    if (params.level) {
-      logql += ` | level="${this.escapeLogQLValue(params.level)}"`;
-    }
-    // Structured equality filters (method/status/url/environment/…) — run
-    // after `| json` so backend-extracted fields are selectable.
-    logql += logqlLabelFilters(params.labels);
-    if (params.query) {
-      const query = this.escapeLogQLRegex(params.query);
-      logql += ` |~ \`${query}\``;
+    let logql: string;
+    if (params.rawQuery) {
+      // Raw LogQL passthrough (capability-gated at the tool layer): the caller
+      // supplied a verbatim log-selector query. Skip the curated stream
+      // selector / | json / label-filter construction and run it as-is.
+      logql = params.rawQuery;
+    } else {
+      // Resolve label + actual selector value. For the 'container' label the
+      // value stored in Loki may be '/my-app-1' while the caller passes the
+      // sanitized 'my-app-1' — return the prefixed form so the LogQL selector
+      // matches the real stream.
+      const { label: matchedLabel, value: rawValue } = await this.resolveServiceSelector(params.service);
+      const service = this.escapeLogQLValue(rawValue);
+      logql = `{${matchedLabel}="${service}"} | json`;
+      if (params.level) {
+        logql += ` | level="${this.escapeLogQLValue(params.level)}"`;
+      }
+      // Structured equality filters (method/status/url/environment/…) — run
+      // after `| json` so backend-extracted fields are selectable.
+      logql += logqlLabelFilters(params.labels);
+      if (params.query) {
+        const query = this.escapeLogQLRegex(params.query);
+        logql += ` |~ \`${query}\``;
+      }
     }
 
     const url =

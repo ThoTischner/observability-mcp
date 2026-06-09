@@ -89,6 +89,22 @@ export function validateLogLabels(labels: unknown): string | null {
  */
 export const validateMetricLabels = validateLogLabels;
 
+/**
+ * Validate a raw PromQL/LogQL passthrough string. The capability gate (is raw
+ * query allowed at all) lives at the handler; this only bounds the shape:
+ * non-empty string, length-capped so a crafted query can't build a
+ * pathological request. The query is sent verbatim to the backend (that is the
+ * point of a passthrough), so there is no syntax check — an invalid query just
+ * yields the backend's own parse error.
+ */
+export function validateRawQuery(raw: unknown): string | null {
+  if (raw === undefined) return null;
+  if (typeof raw !== "string") return "raw_query must be a string.";
+  if (raw.trim().length === 0) return "raw_query must not be empty.";
+  if (raw.length > 8192) return "raw_query too long (max 8192 chars).";
+  return null;
+}
+
 const AGGREGATE_OPS = new Set(["count_over_time", "sum", "topk"]);
 
 /**

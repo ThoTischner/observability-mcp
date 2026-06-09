@@ -100,6 +100,10 @@ export interface MetricQuery {
   step?: string;
   groupBy?: string; // label to break the result down by (e.g. "instance", "pod")
   labels?: Record<string, string>; // exact-match label filters AND'd into the series selector
+  /** Raw PromQL, run verbatim over query_range — bypasses the curated metric
+   *  catalog/selector. When set, `metric`/`groupBy`/`labels`/`service` are
+   *  ignored. Gated by the OMCP_RAW_QUERY capability at the tool layer. */
+  rawQuery?: string;
 }
 
 export interface LogQuery {
@@ -114,6 +118,11 @@ export interface LogQuery {
    *  environment, …) become first-class selectors instead of brittle
    *  free-text regex. */
   labels?: Record<string, string>;
+  /** Raw LogQL log-selector query, run verbatim — bypasses the curated
+   *  stream-selector/pipeline construction. When set, `service`/`labels`/
+   *  `level`/`query` are ignored. Gated by the OMCP_RAW_QUERY capability at
+   *  the tool layer. For metric LogQL (count_over_time/…) use `aggregate`. */
+  rawQuery?: string;
 }
 
 /** Server-side log aggregation (Q-LOG2). Pushes count/group/topk down to

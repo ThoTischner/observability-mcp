@@ -166,6 +166,19 @@ test("MCP 2025-11-25: query_metrics advertises labels param (issue #415 #4)", op
   assert.ok("labels" in props, "query_metrics must advertise a `labels` param (issue #415 #4)");
 });
 
+test("MCP 2025-11-25: query_metrics + query_logs advertise raw_query (issue #415 #3)", opts, async () => {
+  const session = await newSession();
+  const { response } = await jsonRpc("tools/list", {}, { id: 2, session });
+  const r = response.result as {
+    tools?: Array<{ name?: string; inputSchema?: { properties?: Record<string, unknown> } }>;
+  };
+  for (const name of ["query_metrics", "query_logs"]) {
+    const tool = r.tools?.find((t) => t.name === name);
+    assert.ok(tool, `${name} tool must be advertised`);
+    assert.ok("raw_query" in (tool.inputSchema?.properties ?? {}), `${name} must advertise a raw_query param`);
+  }
+});
+
 test("MCP 2025-11-25: tools/call dispatches and returns CallToolResult", opts, async () => {
   const session = await newSession();
   const { response } = await jsonRpc(
