@@ -1,7 +1,7 @@
 import type { ConnectorRegistry } from "../connectors/registry.js";
 import { defaultContext, type RequestContext } from "../context.js";
 import type { MetricResult } from "../types.js";
-import { validateDuration, validateMetricName, validateServiceName, errorResponse } from "./validation.js";
+import { validateDuration, validateMetricName, validateServiceName, validateMetricLabels, errorResponse } from "./validation.js";
 
 export const queryMetricsDefinition = {
   name: "query_metrics" as const,
@@ -39,7 +39,7 @@ export const queryMetricsDefinition = {
 
 export async function queryMetricsHandler(
   registry: ConnectorRegistry,
-  args: { service: string; metric: string; duration?: string; source?: string; groupBy?: string },
+  args: { service: string; metric: string; duration?: string; source?: string; groupBy?: string; labels?: Record<string, string> },
   ctx: RequestContext = defaultContext()
 ) {
   // Coarse single-tenant source scoping: if the principal is restricted to a
@@ -65,6 +65,8 @@ export async function queryMetricsHandler(
       `Invalid groupBy "${args.groupBy}". Must be a valid Prometheus label name (alphanumeric + underscore, starting with letter/underscore).`
     );
   }
+  const labelsErr = validateMetricLabels(args.labels);
+  if (labelsErr) return errorResponse(labelsErr);
 
   // Tenant-scoped resolution: an explicit `source` from the agent
   // must belong to the caller's tenant (or be a global / untagged
@@ -100,6 +102,7 @@ export async function queryMetricsHandler(
         metric: args.metric,
         duration,
         groupBy: args.groupBy,
+        labels: args.labels,
       });
       results.push(result);
     } catch (err) {

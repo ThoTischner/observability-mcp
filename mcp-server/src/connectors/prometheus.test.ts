@@ -136,5 +136,62 @@ describe("PrometheusConnector", () => {
       const { promql } = await proto.buildQuery.call(connector, "api", "custom");
       assert.equal(promql, 'my_custom_metric{svc="api"}');
     });
+
+    it("AND's labels into the {{selector}} (issue #415 #4)", async () => {
+      const connector = new PrometheusConnector();
+      await connector.connect({
+        ...fakeSource,
+        metrics: [{ name: "reqs", query: "http_requests_total{ {{selector}} }", unit: "", description: "" }],
+      });
+      // Stub the network label-resolver so the test is hermetic.
+      (connector as unknown as { resolveServiceLabel: () => Promise<string> }).resolveServiceLabel =
+        async () => "job";
+      const { promql } = await proto.buildQuery.call(connector, "api", "reqs", undefined, {
+        status: "500",
+        route: "/checkout",
+      });
+      // Insertion order preserved: status then route, after the service matcher.
+      assert.equal(promql, 'http_requests_total{ job="api", status="500", route="/checkout" }');
+    });
+
+    it("escapes quotes/backslashes in label values (PromQL injection guard)", async () => {
+      const connector = new PrometheusConnector();
+      await connector.connect({
+        ...fakeSource,
+        metrics: [{ name: "reqs", query: "http_requests_total{ {{selector}} }", unit: "", description: "" }],
+      });
+      (connector as unknown as { resolveServiceLabel: () => Promise<string> }).resolveServiceLabel =
+        async () => "job";
+      const { promql } = await proto.buildQuery.call(connector, "api", "reqs", undefined, {
+        path: 'a"b\\c',
+      });
+      assert.equal(promql, 'http_requests_total{ job="api", path="a\\"b\\\\c" }');
+    });
+
+    it("escapes newlines/control chars in label values (Loki parity)", async () => {
+      const connector = new PrometheusConnector();
+      await connector.connect({
+        ...fakeSource,
+        metrics: [{ name: "reqs", query: "http_requests_total{ {{selector}} }", unit: "", description: "" }],
+      });
+      (connector as unknown as { resolveServiceLabel: () => Promise<string> }).resolveServiceLabel =
+        async () => "job";
+      const { promql } = await proto.buildQuery.call(connector, "api", "reqs", undefined, {
+        note: "a\nb\tc",
+      });
+      assert.equal(promql, 'http_requests_total{ job="api", note="a\\nb\\tc" }');
+    });
+
+    it("ignores labels when the template has no {{selector}}", async () => {
+      const connector = new PrometheusConnector();
+      await connector.connect({
+        ...fakeSource,
+        metrics: [{ name: "explicit", query: 'm{job="{{service}}"}', unit: "", description: "" }],
+      });
+      const { promql } = await proto.buildQuery.call(connector, "svc", "explicit", undefined, {
+        status: "500",
+      });
+      assert.equal(promql, 'm{job="svc"}');
+    });
   });
 });

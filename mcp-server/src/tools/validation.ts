@@ -80,6 +80,15 @@ export function validateLogLabels(labels: unknown): string | null {
   return null;
 }
 
+/**
+ * Validate a structured `labels` filter map for query_metrics. The rules are
+ * identical to the log-label validator (valid Prometheus label names, bounded
+ * map size + value length, fail-closed) — metric labels compile to PromQL
+ * label-equality matchers and the values are escaped for PromQL at injection
+ * time, exactly as the log path escapes for LogQL.
+ */
+export const validateMetricLabels = validateLogLabels;
+
 const AGGREGATE_OPS = new Set(["count_over_time", "sum", "topk"]);
 
 /**
