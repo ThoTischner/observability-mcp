@@ -26,8 +26,15 @@ export const manifestSchema = z.object({
     .object({
       queryMetrics: z.boolean().optional(),
       queryLogs: z.boolean().optional(),
+      queryLogAggregate: z.boolean().optional(),
+      queryTraces: z.boolean().optional(),
       listServices: z.boolean().optional(),
       listAvailableMetrics: z.boolean().optional(),
+      // Topology-provider capabilities (e.g. the Kubernetes connector).
+      listResources: z.boolean().optional(),
+      listEdges: z.boolean().optional(),
+      getTopologySnapshot: z.boolean().optional(),
+      watchTopology: z.boolean().optional(),
     })
     .optional(),
   compat: z

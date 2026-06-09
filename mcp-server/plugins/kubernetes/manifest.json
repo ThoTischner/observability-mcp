@@ -6,7 +6,13 @@
   "description": "Watches a Kubernetes cluster (in-cluster or via kubeconfig) and exposes pods, nodes, deployments, replicasets and namespaces as an infrastructure topology graph. Edges: RUNS_ON (pod→node), OWNED_BY (pod→rs→deployment), IN_NAMESPACE.",
   "signalTypes": ["topology"],
   "license": "Apache-2.0",
-  "capabilities": {},
+  "capabilities": {
+    "listServices": true,
+    "listResources": true,
+    "listEdges": true,
+    "getTopologySnapshot": true,
+    "watchTopology": true
+  },
   "compat": {
     "serverVersion": ">=1.7.0"
   }
