@@ -6,6 +6,58 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.2.0] — 2026-06-09
+
+Agent-usability release — closes the remaining points from the
+real-world feedback in issue #415 (the log-side #1/#2 shipped in 3.1.x).
+Every addition is opt-in or additive; migrating from 3.1 is
+non-breaking. See [`docs/migrations/3.1-to-3.2.md`](docs/migrations/3.1-to-3.2.md).
+
+### Added
+
+- **`query_metrics` `labels` filter** (issue #415 #4) — an optional
+  exact-match label map AND'd into the metric's PromQL series selector,
+  the metrics-side equivalent of the `query_logs` `labels` param. Scope
+  a curated metric to a subset of series (e.g. `error_rate` for one
+  `route`/`status`) instead of the all-series aggregate; combine with
+  `groupBy` to filter-then-break-down. Label names re-validated and
+  values escaped for PromQL (backslash/quote/`\n\r\t`).
+- **`raw_query` passthrough** (issue #415 #3) — an escape hatch for
+  verbatim PromQL (`query_metrics`) and LogQL (`query_logs`) when the
+  curated catalog can't express a query. **Capability-gated, OFF by
+  default**: enable with `OMCP_RAW_QUERY=on`. Still tenant-scoped,
+  source-allow-listed, and (for logs) redacted; mutually exclusive with
+  `aggregate`. The param is advertised even when disabled so an agent
+  can discover and explain the requirement. See
+  [raw-query.md](docs/raw-query.md).
+- **`enrich_ips` tool** (issue #415 Gap B) — resolves a batch of IPv4
+  addresses to geo (country/city), ASN/org, and a hosting/proxy flag
+  from a **local offline dataset** (`OMCP_IP_ENRICH_FILE`, a CSV). No
+  per-IP external API call, so it preserves the air-gapped guarantee;
+  returns a clear "not configured" notice until a dataset is set. See
+  [ip-enrichment.md](docs/ip-enrichment.md).
+- **Anonymous-friendly redaction bypass** (issue #415 Gap A) —
+  `OMCP_BYPASS_REDACTION_ANON=true` opts the anonymous/stdio identity
+  into the per-call `bypass_redaction` arg. In an anonymous deployment
+  there is no named credential to add to `OMCP_KEY_BYPASS_REDACTION`, so
+  this is the only way a single-user self-hosted agent can see raw
+  values on its own logs without the blunt global `OMCP_REDACTION=off`.
+  Default OFF; redaction stays on for every call that doesn't ask, and
+  bypasses are audited. See [redaction.md](docs/redaction.md#opt-out).
+
+### Changed
+
+- **`get_topology`** now returns an explicit `note` when no
+  topology-capable connector is configured, instead of a bare empty
+  graph — signal vs. silence for agents on a Prometheus/Loki-only stack
+  (issue #415). Existing fields are unchanged.
+
+### Notes
+
+- The SDK (`@thotischner/observability-mcp-sdk`) is unchanged in 3.2.0
+  and stays at 3.1.0 — these are all gateway tool-surface changes; the
+  plugin contract / manifest `schemaVersion` did not move.
+
 ## [3.1.1] — 2026-06-09
 
 Patch release — fixes a ship gap in 3.1.0 reported from real-world use
