@@ -1,7 +1,7 @@
 import type { ConnectorRegistry } from "../connectors/registry.js";
 import { defaultContext, type RequestContext } from "../context.js";
 import type { MetricResult } from "../types.js";
-import { validateDuration, validateMetricName, validateServiceName, validateMetricLabels, errorResponse } from "./validation.js";
+import { validateDuration, validateMetricName, validateServiceName, validateMetricLabels, validateRawQuery, errorResponse } from "./validation.js";
 
 export const queryMetricsDefinition = {
   name: "query_metrics" as const,
@@ -39,8 +39,9 @@ export const queryMetricsDefinition = {
 
 export async function queryMetricsHandler(
   registry: ConnectorRegistry,
-  args: { service: string; metric: string; duration?: string; source?: string; groupBy?: string; labels?: Record<string, string> },
-  ctx: RequestContext = defaultContext()
+  args: { service?: string; metric?: string; duration?: string; source?: string; groupBy?: string; labels?: Record<string, string>; raw_query?: string },
+  ctx: RequestContext = defaultContext(),
+  opts: { allowRawQuery?: boolean } = {}
 ) {
   // Coarse single-tenant source scoping: if the principal is restricted to a
   // source allow-list, deny an explicit out-of-scope source.
@@ -53,20 +54,37 @@ export async function queryMetricsHandler(
       `forbidden: source "${args.source}" is not in your allowed sources`
     );
   }
-  const svcErr = validateServiceName(args.service);
-  if (svcErr) return errorResponse(svcErr);
   const duration = args.duration || "5m";
   const durationErr = validateDuration(duration);
   if (durationErr) return errorResponse(durationErr);
-  const metricErr = validateMetricName(args.metric, registry);
-  if (metricErr) return errorResponse(metricErr);
-  if (args.groupBy && !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(args.groupBy)) {
+
+  // Raw PromQL passthrough — capability-gated, default off. Bypasses the
+  // curated metric catalog/selector, so service/metric/groupBy/labels are not
+  // required and are ignored. Still tenant-scoped + source-allow-listed below.
+  const rawErr = validateRawQuery(args.raw_query);
+  if (rawErr) return errorResponse(rawErr);
+  const isRaw = !!args.raw_query;
+  if (isRaw && !opts.allowRawQuery) {
     return errorResponse(
-      `Invalid groupBy "${args.groupBy}". Must be a valid Prometheus label name (alphanumeric + underscore, starting with letter/underscore).`
+      "raw_query is disabled. The operator must enable the raw-query capability (OMCP_RAW_QUERY=on) to run verbatim PromQL — it bypasses the curated metric surface, so it is off by default."
     );
   }
-  const labelsErr = validateMetricLabels(args.labels);
-  if (labelsErr) return errorResponse(labelsErr);
+
+  if (!isRaw) {
+    if (!args.service) return errorResponse("service is required (or set raw_query).");
+    const svcErr = validateServiceName(args.service);
+    if (svcErr) return errorResponse(svcErr);
+    if (!args.metric) return errorResponse("metric is required (or set raw_query).");
+    const metricErr = validateMetricName(args.metric, registry);
+    if (metricErr) return errorResponse(metricErr);
+    if (args.groupBy && !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(args.groupBy)) {
+      return errorResponse(
+        `Invalid groupBy "${args.groupBy}". Must be a valid Prometheus label name (alphanumeric + underscore, starting with letter/underscore).`
+      );
+    }
+    const labelsErr = validateMetricLabels(args.labels);
+    if (labelsErr) return errorResponse(labelsErr);
+  }
 
   // Tenant-scoped resolution: an explicit `source` from the agent
   // must belong to the caller's tenant (or be a global / untagged
@@ -98,11 +116,12 @@ export async function queryMetricsHandler(
     if (!connector?.queryMetrics) continue;
     try {
       const result = await connector.queryMetrics({
-        service: args.service,
-        metric: args.metric,
+        service: args.service ?? "",
+        metric: args.metric ?? "",
         duration,
         groupBy: args.groupBy,
         labels: args.labels,
+        rawQuery: args.raw_query,
       });
       results.push(result);
     } catch (err) {

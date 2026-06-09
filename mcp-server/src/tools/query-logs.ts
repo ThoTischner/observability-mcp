@@ -1,7 +1,7 @@
 import type { ConnectorRegistry } from "../connectors/registry.js";
 import { defaultContext, type RequestContext } from "../context.js";
 import type { LogResult, LogAggregateResult, LogAggregateQuery } from "../types.js";
-import { validateDuration, validateServiceName, validateLogLabels, validateLogAggregate, errorResponse } from "./validation.js";
+import { validateDuration, validateServiceName, validateLogLabels, validateLogAggregate, validateRawQuery, errorResponse } from "./validation.js";
 
 export const queryLogsDefinition = {
   name: "query_logs" as const,
@@ -56,25 +56,46 @@ export const queryLogsDefinition = {
 export async function queryLogsHandler(
   registry: ConnectorRegistry,
   args: {
-    service: string;
+    service?: string;
     query?: string;
     duration?: string;
     level?: string;
     limit?: number;
     labels?: Record<string, string>;
     aggregate?: { op: "count_over_time" | "sum" | "topk"; by?: string[]; k?: number; step?: string };
+    raw_query?: string;
   },
-  ctx: RequestContext = defaultContext()
+  ctx: RequestContext = defaultContext(),
+  opts: { allowRawQuery?: boolean } = {}
 ) {
-  const svcErr = validateServiceName(args.service);
-  if (svcErr) return errorResponse(svcErr);
   const duration = args.duration || "5m";
   const durationErr = validateDuration(duration);
   if (durationErr) return errorResponse(durationErr);
-  const labelsErr = validateLogLabels(args.labels);
-  if (labelsErr) return errorResponse(labelsErr);
-  const aggErr = validateLogAggregate(args.aggregate);
-  if (aggErr) return errorResponse(aggErr);
+
+  // Raw LogQL passthrough — capability-gated, default off. Bypasses the curated
+  // stream-selector construction, so `service` is not required and is ignored.
+  // Mutually exclusive with `aggregate` (for metric LogQL use `aggregate`).
+  const rawErr = validateRawQuery(args.raw_query);
+  if (rawErr) return errorResponse(rawErr);
+  const isRaw = !!args.raw_query;
+  if (isRaw && !opts.allowRawQuery) {
+    return errorResponse(
+      "raw_query is disabled. The operator must enable the raw-query capability (OMCP_RAW_QUERY=on) to run verbatim LogQL — it bypasses the curated log surface, so it is off by default."
+    );
+  }
+  if (isRaw && args.aggregate) {
+    return errorResponse("raw_query and aggregate are mutually exclusive — a raw LogQL query expresses its own aggregation.");
+  }
+
+  if (!isRaw) {
+    if (!args.service) return errorResponse("service is required (or set raw_query).");
+    const svcErr = validateServiceName(args.service);
+    if (svcErr) return errorResponse(svcErr);
+    const labelsErr = validateLogLabels(args.labels);
+    if (labelsErr) return errorResponse(labelsErr);
+    const aggErr = validateLogAggregate(args.aggregate);
+    if (aggErr) return errorResponse(aggErr);
+  }
   const connectors = registry.getByTenant(ctx.tenant).filter((c) => c.signalType === "logs");
 
   if (connectors.length === 0) {
@@ -96,7 +117,7 @@ export async function queryLogsHandler(
       capable++;
       try {
         const q: LogAggregateQuery = {
-          service: args.service,
+          service: args.service ?? "",
           duration,
           labels: args.labels,
           query: args.query,
@@ -134,12 +155,13 @@ export async function queryLogsHandler(
     if (!connector.queryLogs) continue;
     try {
       const result = await connector.queryLogs({
-        service: args.service,
+        service: args.service ?? "",
         query: args.query,
         duration,
         level: args.level,
         limit: args.limit,
         labels: args.labels,
+        rawQuery: args.raw_query,
       });
       results.push(result);
     } catch (err) {

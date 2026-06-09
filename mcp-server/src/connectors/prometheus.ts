@@ -250,6 +250,12 @@ export class PrometheusConnector implements ObservabilityConnector {
   }
 
   async queryMetrics(params: MetricQuery): Promise<MetricResult> {
+    // Raw passthrough: the caller supplied verbatim PromQL (capability-gated
+    // at the tool layer). Skip the curated catalog/selector machinery and the
+    // breakdown-hint probe; run the query as-is over query_range.
+    if (params.rawQuery) {
+      return this.queryRaw(params.rawQuery, params.duration, params.step);
+    }
     const { promql, label, candidate } = await this.buildQuery(params.service, params.metric, params.groupBy, params.labels);
     const { start, end, step } = this.parseTimeRange(params.duration, params.step);
 
@@ -318,6 +324,48 @@ export class PrometheusConnector implements ObservabilityConnector {
       }
     }
 
+    return result;
+  }
+
+  // Raw PromQL passthrough — used by queryMetrics when params.rawQuery is set.
+  // Returns the same MetricResult shape: one group per returned series, the
+  // top-level values/summary mirroring the first series. service/metric are
+  // reported as "(raw)" since the curated catalog doesn't apply.
+  private async queryRaw(rawQuery: string, duration: string, step?: string): Promise<MetricResult> {
+    const { start, end, step: resolvedStep } = this.parseTimeRange(duration, step);
+    const data = await this.apiGet<{ data: PromQueryRangeResult }>(
+      `/api/v1/query_range?query=${encodeURIComponent(rawQuery)}&start=${start}&end=${end}&step=${resolvedStep}`
+    );
+    const seriesList = data?.data?.result || [];
+    const groups: MetricGroup[] = [];
+    for (const series of seriesList) {
+      const seriesValues: DataPoint[] = [];
+      const rawValues: number[] = [];
+      for (const [ts, val] of series.values || []) {
+        const numVal = parseFloat(val as string);
+        if (!isNaN(numVal)) {
+          seriesValues.push({ timestamp: new Date(ts * 1000).toISOString(), value: numVal });
+          rawValues.push(numVal);
+        }
+      }
+      groups.push({
+        key: this.groupKey(series.metric || {}),
+        values: seriesValues,
+        summary: this.computeSummary(rawValues),
+      });
+    }
+    const top = groups[0] || { values: [], summary: this.computeSummary([]) };
+    const result: MetricResult = {
+      source: this.name,
+      service: "(raw)",
+      metric: "(raw)",
+      unit: "",
+      values: top.values,
+      summary: top.summary,
+      resolvedSeries: rawQuery,
+      resolvedLabel: "",
+    };
+    if (groups.length > 1) result.groups = groups;
     return result;
   }
 

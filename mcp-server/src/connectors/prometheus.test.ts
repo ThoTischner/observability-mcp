@@ -194,4 +194,33 @@ describe("PrometheusConnector", () => {
       assert.equal(promql, 'm{job="svc"}');
     });
   });
+
+  describe("queryMetrics rawQuery passthrough (R4, issue #415 #3)", () => {
+    const fakeSource = { name: "test", type: "prometheus" as const, url: "http://localhost:9090", enabled: true };
+
+    it("sends raw PromQL verbatim to query_range, bypassing the catalog", async () => {
+      const connector = new PrometheusConnector();
+      await connector.connect({ ...fakeSource });
+      let captured = "";
+      const orig = globalThis.fetch;
+      globalThis.fetch = (async (url: any) => {
+        captured = decodeURIComponent((String(url).match(/query=([^&]+)/) || [])[1] || "");
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ data: { result: [{ metric: { foo: "bar" }, values: [[1700000000, "42"]] }] } }),
+        } as any;
+      }) as any;
+      try {
+        const raw = "topk(5, sum by(route) (rate(http_requests_total[5m])))";
+        const result = await connector.queryMetrics({ service: "", metric: "", duration: "15m", rawQuery: raw });
+        assert.equal(captured, raw);
+        assert.equal(result.resolvedSeries, raw);
+        assert.equal(result.metric, "(raw)");
+        assert.equal(result.values[0].value, 42);
+      } finally {
+        globalThis.fetch = orig;
+      }
+    });
+  });
 });

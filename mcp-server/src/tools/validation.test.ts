@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { validateDuration, validateServiceName, sanitizeLabelValue, validateLogLabels, validateLogAggregate, validateMetricLabels, errorResponse } from "./validation.js";
+import { validateDuration, validateServiceName, sanitizeLabelValue, validateLogLabels, validateLogAggregate, validateMetricLabels, validateRawQuery, errorResponse } from "./validation.js";
 
 describe("validateLogAggregate (Q-LOG2)", () => {
   it("accepts undefined and valid specs", () => {
@@ -53,6 +53,19 @@ describe("validateLogLabels (Q-LOG1)", () => {
     const many: Record<string, string> = {};
     for (let i = 0; i < 21; i++) many[`k${i}`] = "v";
     assert.ok(validateLogLabels(many));
+  });
+});
+
+describe("validateRawQuery (R4, issue #415 #3)", () => {
+  it("accepts undefined (not requested) and a normal query", () => {
+    assert.equal(validateRawQuery(undefined), null);
+    assert.equal(validateRawQuery('sum(rate(http_requests_total[5m]))'), null);
+  });
+  it("rejects non-strings, empty/whitespace, and over-long", () => {
+    assert.ok(validateRawQuery(42));
+    assert.ok(validateRawQuery(""));
+    assert.ok(validateRawQuery("   "));
+    assert.ok(validateRawQuery("x".repeat(8193)));
   });
 });
 
