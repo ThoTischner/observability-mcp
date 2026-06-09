@@ -537,6 +537,12 @@ async function main() {
         .describe(
           "Optional. Metric label to break the result down by, e.g. 'instance', 'pod', 'node'. When set, the response contains one series per distinct label value under `groups`. Default: a single aggregated series.",
         ),
+      labels: z
+        .record(z.string(), z.string())
+        .optional()
+        .describe(
+          "Optional. Exact-match label filters (e.g. {\"status\":\"500\",\"route\":\"/checkout\"}) AND'd into the metric's series selector — the PromQL equivalent of the query_logs `labels` param. Use this to scope a curated metric to a subset of series (e.g. error_rate for one route/status) instead of the all-series aggregate. Combine with `groupBy` to filter then break down. Label names must be valid Prometheus identifiers.",
+        ),
     },
     async (args) => {
       await enforceEntitledAccess(ctx, { tool: "query_metrics", source: (args as any)?.source, service: (args as any)?.service });

@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { validateDuration, validateServiceName, sanitizeLabelValue, validateLogLabels, validateLogAggregate, errorResponse } from "./validation.js";
+import { validateDuration, validateServiceName, sanitizeLabelValue, validateLogLabels, validateLogAggregate, validateMetricLabels, errorResponse } from "./validation.js";
 
 describe("validateLogAggregate (Q-LOG2)", () => {
   it("accepts undefined and valid specs", () => {
@@ -53,6 +53,18 @@ describe("validateLogLabels (Q-LOG1)", () => {
     const many: Record<string, string> = {};
     for (let i = 0; i < 21; i++) many[`k${i}`] = "v";
     assert.ok(validateLogLabels(many));
+  });
+});
+
+describe("validateMetricLabels (R3, issue #415 #4)", () => {
+  it("accepts undefined and a valid map (same rules as log labels)", () => {
+    assert.equal(validateMetricLabels(undefined), null);
+    assert.equal(validateMetricLabels({ status: "500", route: "/checkout" }), null);
+  });
+  it("rejects invalid label names and bad values, fail-closed", () => {
+    assert.ok(validateMetricLabels({ "a-b": "x" }));
+    assert.ok(validateMetricLabels({ status: 500 as unknown as string }));
+    assert.ok(validateMetricLabels("nope"));
   });
 });
 

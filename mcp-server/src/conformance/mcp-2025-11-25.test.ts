@@ -154,6 +154,18 @@ test("MCP 2025-11-25: query_logs advertises labels + aggregate params (issue #41
   assert.ok("aggregate" in props, "query_logs must advertise an `aggregate` param (issue #415 #2)");
 });
 
+test("MCP 2025-11-25: query_metrics advertises labels param (issue #415 #4)", opts, async () => {
+  const session = await newSession();
+  const { response } = await jsonRpc("tools/list", {}, { id: 2, session });
+  const r = response.result as {
+    tools?: Array<{ name?: string; inputSchema?: { properties?: Record<string, unknown> } }>;
+  };
+  const queryMetrics = r.tools?.find((t) => t.name === "query_metrics");
+  assert.ok(queryMetrics, "query_metrics tool must be advertised");
+  const props = queryMetrics.inputSchema?.properties ?? {};
+  assert.ok("labels" in props, "query_metrics must advertise a `labels` param (issue #415 #4)");
+});
+
 test("MCP 2025-11-25: tools/call dispatches and returns CallToolResult", opts, async () => {
   const session = await newSession();
   const { response } = await jsonRpc(

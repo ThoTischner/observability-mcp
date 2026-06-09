@@ -250,7 +250,7 @@ export class PrometheusConnector implements ObservabilityConnector {
   }
 
   async queryMetrics(params: MetricQuery): Promise<MetricResult> {
-    const { promql, label, candidate } = await this.buildQuery(params.service, params.metric, params.groupBy);
+    const { promql, label, candidate } = await this.buildQuery(params.service, params.metric, params.groupBy, params.labels);
     const { start, end, step } = this.parseTimeRange(params.duration, params.step);
 
     const data = await this.apiGet<{ data: PromQueryRangeResult }>(
@@ -326,7 +326,8 @@ export class PrometheusConnector implements ObservabilityConnector {
   private async buildQuery(
     service: string,
     metric: string,
-    groupBy?: string
+    groupBy?: string,
+    labels?: Record<string, string>
   ): Promise<{ promql: string; label: string; candidate: MetricCandidate | null }> {
     // Resolve the service-filter label first. Candidate probing uses this
     // label to scope existence checks per-service rather than per-source.
@@ -346,13 +347,38 @@ export class PrometheusConnector implements ObservabilityConnector {
       template = def?.query || `${metric}{ {{selector}} }`;
     }
 
+    // Extra exact-match label filters (caller-supplied), AND'd into every
+    // {{selector}} occurrence. Label names are constrained to the safe
+    // Prometheus identifier set (the tool layer already validated them, but
+    // we re-constrain here so the connector is safe in isolation); values are
+    // escaped for the surrounding PromQL double-quoted string, same as the
+    // service value above.
+    let extraMatchers = "";
+    if (labels) {
+      const parts: string[] = [];
+      for (const [k, v] of Object.entries(labels)) {
+        if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(k)) continue;
+        // Escape backslash first, then quote, then control chars — matches
+        // the Loki escapeLogQLValue sibling so a value with a newline yields
+        // a valid PromQL string literal rather than a 400 parse error.
+        const ev = v
+          .replace(/\\/g, "\\\\")
+          .replace(/"/g, '\\"')
+          .replace(/\n/g, "\\n")
+          .replace(/\r/g, "\\r")
+          .replace(/\t/g, "\\t");
+        parts.push(`${k}="${ev}"`);
+      }
+      if (parts.length) extraMatchers = ", " + parts.join(", ");
+    }
+
     let promql = template;
     if (template.includes("{{selector}}")) {
       // Resolve label here for non-candidate paths that haven't done it yet.
       if (label === "job" && !PROMETHEUS_METRIC_CANDIDATES[metric]) {
         label = await this.resolveServiceLabel(service);
       }
-      const selector = `${label}="${escaped}"`;
+      const selector = `${label}="${escaped}"${extraMatchers}`;
       promql = promql.replace(/\{\{selector\}\}/g, selector);
     }
     if (groupBy && template.includes("{{groupBy}}")) {

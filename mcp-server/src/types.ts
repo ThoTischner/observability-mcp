@@ -99,6 +99,7 @@ export interface MetricQuery {
   duration: string; // "5m", "1h", "24h"
   step?: string;
   groupBy?: string; // label to break the result down by (e.g. "instance", "pod")
+  labels?: Record<string, string>; // exact-match label filters AND'd into the series selector
 }
 
 export interface LogQuery {
