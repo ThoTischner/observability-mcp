@@ -8,6 +8,7 @@
   "license": "MIT",
   "capabilities": {
     "queryLogs": true,
+    "queryLogAggregate": true,
     "listServices": true
   },
   "compat": {
