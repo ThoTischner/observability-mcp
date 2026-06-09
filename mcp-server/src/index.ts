@@ -350,6 +350,15 @@ async function main() {
   const RAW_QUERY_ENABLED = ["on", "true", "1"].includes(
     String(process.env.OMCP_RAW_QUERY ?? "off").toLowerCase()
   );
+  // Opt the anonymous/default identity into per-call redaction bypass. In an
+  // anonymous deployment (no OMCP_API_KEYS) there is no named credential to
+  // add to OMCP_KEY_BYPASS_REDACTION, so a per-call bypass_redaction can never
+  // succeed — the only lever was the blunt global OMCP_REDACTION=off. This
+  // flag lets a single-user self-hosted agent see raw values on its own logs
+  // via the per-call arg, while redaction stays the default. Default OFF.
+  const BYPASS_REDACTION_ANON = ["on", "true", "1"].includes(
+    String(process.env.OMCP_BYPASS_REDACTION_ANON ?? "false").toLowerCase()
+  );
   function redactToolText<T extends { content: Array<{ text: string }> }>(
     result: T,
     opts: { bypass?: boolean } = {},
@@ -646,7 +655,7 @@ async function main() {
         .boolean()
         .optional()
         .describe(
-          "Optional. When true, request that PII/secret redaction be skipped for this single call. The server only honours this when the calling credential was explicitly authorised via OMCP_KEY_BYPASS_REDACTION; otherwise the request still gets redacted output. Default: false.",
+          "Optional. When true, request that PII/secret redaction be skipped for this single call. The server only honours this when the calling identity is authorised to bypass — a credential listed in OMCP_KEY_BYPASS_REDACTION, or the anonymous identity when the operator set OMCP_BYPASS_REDACTION_ANON=true; otherwise the request still gets redacted output. Default: false.",
         ),
       raw_query: z
         .string()
@@ -3319,8 +3328,10 @@ async function main() {
   });
 
   // Stdio transport: one server over stdin/stdout, no HTTP listener.
+  // Stdio is inherently a local single-user channel, so the anonymous
+  // redaction-bypass opt-in applies here too.
   if (STDIO) {
-    const { mcpServer: server } = createMcpServer(defaultContext());
+    const { mcpServer: server } = createMcpServer(defaultContext({ allowBypassRedaction: BYPASS_REDACTION_ANON }));
     await server.connect(new StdioServerTransport());
     console.error(
       `observability-mcp running on stdio transport · connectors: ${registry
@@ -3425,7 +3436,7 @@ async function main() {
     req: import("express").Request,
     res: import("express").Response
   ): Promise<RequestContext | null> {
-    if (!credentialsConfigured()) return defaultContext();
+    if (!credentialsConfigured()) return defaultContext({ allowBypassRedaction: BYPASS_REDACTION_ANON });
     const cred = resolveToken(
       extractToken(req.headers as Record<string, unknown>),
       loadCredentials()

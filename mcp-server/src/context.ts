@@ -41,12 +41,20 @@ export interface RequestContext {
   correlationId: string;
 }
 
-/** Default all-access anonymous context — preserves current behaviour. */
-export function defaultContext(): RequestContext {
+/** Default all-access anonymous context — preserves current behaviour.
+ *  `opts.allowBypassRedaction` lets an operator opt the anonymous identity
+ *  into per-call redaction bypass (OMCP_BYPASS_REDACTION_ANON) — in an
+ *  anonymous deployment there is no named credential to add to
+ *  OMCP_KEY_BYPASS_REDACTION, so this is the only way a single-user
+ *  self-hosted agent can see raw IPs on its own logs without the blunt
+ *  global OMCP_REDACTION=off. Defaults off; all existing call sites that
+ *  omit opts are unchanged. */
+export function defaultContext(opts: { allowBypassRedaction?: boolean } = {}): RequestContext {
   return {
     principalId: "anonymous",
     auth: "anonymous",
     tenant: DEFAULT_TENANT,
+    allowBypassRedaction: opts.allowBypassRedaction || undefined,
     correlationId: randomUUID(),
   };
 }
