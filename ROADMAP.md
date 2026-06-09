@@ -20,15 +20,29 @@ per-capability detail and
 - ✅ Security hardening: session revocation, per-account lockout, password policy, Content-Security-Policy
 - ✅ Agent log analytics (issue #415): `query_logs` structured label filters + server-side aggregation (count/sum/topk)
 
-### v3.2 — candidates
+## v3.2 — shipped 2026-06-09
 
-The remaining 3.0 deferred items, still open after 3.1 (vote via
-Discussions):
+The **agent-usability** release — closes the remaining points from the
+real-world feedback in issue #415. All additive / opt-in. See
+[CHANGELOG.md](CHANGELOG.md) and
+[`docs/migrations/3.1-to-3.2.md`](docs/migrations/3.1-to-3.2.md).
+
+- ✅ `query_metrics` `labels` equality filter (issue #415 #4) — PromQL series scoping, metrics-side of the `query_logs` `labels` param
+- ✅ `raw_query` passthrough for `query_metrics`/`query_logs` (issue #415 #3) — capability-gated, default off (`OMCP_RAW_QUERY`)
+- ✅ `enrich_ips` tool (issue #415 Gap B) — offline geo/ASN/hosting lookup from a local dataset, air-gapped
+- ✅ Anonymous-friendly per-call redaction bypass (issue #415 Gap A) — `OMCP_BYPASS_REDACTION_ANON`
+- ✅ `get_topology` explicit no-connector note (issue #415, signal vs. silence)
+- ✅ `query_logs` `labels`/`aggregate` made reachable over MCP (3.1.1 hotfix — 3.1.0 ship gap)
+
+### v3.3 — candidates
+
+Still open (vote via Discussions):
 
 - A custom postmortem template engine (persistence + the Postmortems UI tab already ship)
 - SCIM filter/search on the collection endpoints + a UI Provisioning sub-tab
 - Strict-mode MkDocs build (resolve the cross-repo link warnings)
-- Raw PromQL/LogQL passthrough for agent analytics (issue #415 item #3) — gated behind a `raw_query` capability (label-selectors + aggregation already shipped in 3.1)
+- IPv6 support + bundled-dataset tooling for `enrich_ips`
+- Per-credential / RBAC gating for `raw_query` (today it's a global capability flag)
 
 ## v3.0 — shipped 2026-06-06
 

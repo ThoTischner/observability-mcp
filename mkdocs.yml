@@ -116,6 +116,7 @@ nav:
       - 1.x → 2.0: migrations/1.x-to-2.0.md
       - 2.x → 3.0: migrations/2.x-to-3.0.md
       - 3.0 → 3.1: migrations/3.0-to-3.1.md
+      - 3.1 → 3.2: migrations/3.1-to-3.2.md
 
 extra:
   social:
