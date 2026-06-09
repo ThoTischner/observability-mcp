@@ -177,6 +177,23 @@ describe("get_topology tool", () => {
     assert.equal(out.truncated, true);
     assert.equal(out.total.resources, fixture().resources.length);
   });
+
+  it("does not attach the no-connector note when topology is present", async () => {
+    const reg = await makeRegistry();
+    const out = parseTool(await getTopologyHandler(reg, {}));
+    assert.equal(out.note, undefined);
+  });
+
+  it("returns an explicit note when no topology connector is configured (issue #415)", async () => {
+    // Empty registry — no topology-capable connector. The agent must get a
+    // clear signal, not a silent empty graph.
+    const reg = new ConnectorRegistry(new PluginLoader());
+    const out = parseTool(await getTopologyHandler(reg, {}));
+    assert.deepEqual(out.resources, []);
+    assert.deepEqual(out.edges, []);
+    assert.equal(out.sources.length, 0);
+    assert.match(out.note, /no topology-capable connector/i);
+  });
 });
 
 describe("get_blast_radius tool", () => {

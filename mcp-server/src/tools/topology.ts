@@ -162,13 +162,34 @@ export async function getTopologyHandler(
     edges = edges.filter((e) => keep2.has(e.from) && keep2.has(e.to));
   }
 
-  const payload = {
+  const payload: {
+    sources: AggregatedTopology["sources"];
+    resources: typeof resources;
+    edges: typeof edges;
+    total: { resources: number; edges: number };
+    truncated: boolean;
+    note?: string;
+  } = {
     sources: agg.sources,
     resources,
     edges,
     total: { resources: agg.resources.length, edges: agg.edges.length },
     truncated,
   };
+  // Signal vs. silence: when NO topology-capable connector contributed a
+  // snapshot, an empty {resources:[],edges:[]} is ambiguous to an agent —
+  // it can't tell "graph is genuinely empty" from "no topology backend is
+  // wired up". Mirror query_traces' explicit "no backend" message so the
+  // agent gets a clear signal instead of silence (issue #415).
+  if (agg.sources.length === 0) {
+    payload.note =
+      "No topology-capable connector is configured, so the graph is empty. " +
+      "Topology comes from connectors like the built-in `kubernetes` source " +
+      "or the aws/gcp/istio/linkerd/consul providers — add one (see the " +
+      "Sources tab or docs/plugin-architecture) to populate this graph. " +
+      "A deployment with only metrics/logs backends (e.g. Prometheus/Loki) " +
+      "has no topology to report here.";
+  }
   return {
     content: [{ type: "text" as const, text: JSON.stringify(payload, null, 2) }],
   };
