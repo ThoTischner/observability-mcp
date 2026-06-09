@@ -105,6 +105,7 @@ nav:
   - Observability Intelligence:
       - Anomaly history: anomaly-history.md
       - Raw query passthrough (raw_query): raw-query.md
+      - IP enrichment (enrich_ips): ip-enrichment.md
       - Distributed traces (query_traces): query-traces.md
       - Auto-postmortems (generate_postmortem): postmortems.md
       - Astronomy-shop benchmark: benchmark-astronomy-shop.md

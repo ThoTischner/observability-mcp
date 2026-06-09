@@ -118,6 +118,8 @@ import { listSourcesHandler } from "./tools/list-sources.js";
 import { listServicesHandler } from "./tools/list-services.js";
 import { queryMetricsHandler } from "./tools/query-metrics.js";
 import { queryLogsHandler } from "./tools/query-logs.js";
+import { enrichIpsHandler } from "./tools/enrich-ips.js";
+import { IpEnrichmentDataset } from "./enrich/ip-dataset.js";
 import { queryTracesHandler } from "./tools/query-traces.js";
 import { getAnomalyHistoryHandler } from "./tools/get-anomaly-history.js";
 import { generatePostmortemHandler } from "./tools/generate-postmortem.js";
@@ -359,6 +361,27 @@ async function main() {
   const BYPASS_REDACTION_ANON = ["on", "true", "1"].includes(
     String(process.env.OMCP_BYPASS_REDACTION_ANON ?? "false").toLowerCase()
   );
+  // Offline IP-enrichment dataset (issue #415 Gap B) — loaded once at boot from
+  // a local CSV (OMCP_IP_ENRICH_FILE). No external geo/ASN API is ever called,
+  // so it stays air-gapped. Unset / unreadable → enrich_ips returns a clear
+  // "not configured" notice rather than failing.
+  let ipEnrichment: IpEnrichmentDataset | null = null;
+  const ipEnrichFile = process.env.OMCP_IP_ENRICH_FILE;
+  if (ipEnrichFile) {
+    try {
+      ipEnrichment = IpEnrichmentDataset.fromCsv(readFileSync(ipEnrichFile, "utf8"));
+      console.log(
+        `[enrich] IP enrichment dataset loaded from ${ipEnrichFile}: ${ipEnrichment.size} ranges` +
+          (ipEnrichment.skipped ? ` (${ipEnrichment.skipped} rows skipped)` : ""),
+      );
+    } catch (err) {
+      console.error(
+        `[enrich] failed to load OMCP_IP_ENRICH_FILE (${ipEnrichFile}): ${
+          err instanceof Error ? err.message : String(err)
+        } — enrich_ips will report 'not configured'`,
+      );
+    }
+  }
   function redactToolText<T extends { content: Array<{ text: string }> }>(
     result: T,
     opts: { bypass?: boolean } = {},
@@ -881,6 +904,27 @@ async function main() {
     async (args) => {
       await enforceEntitledAccess(ctx, { tool: "get_blast_radius" });
       return withToolMetrics("get_blast_radius", () => getBlastRadiusHandler(registry, args, ctx));
+    }
+  );
+
+  registerTool(
+    "enrich_ips",
+    [
+      "Resolve a batch of IPv4 addresses to geo (country/city), ASN/org, and a hosting/proxy flag.",
+      "When to use: answering 'where are these visitors from?' or 'which of these IPs are bots / datacenter / VPN exit nodes?' over access logs, without an out-of-band geo-API call per IP.",
+      "Behavior: read-only. Looks each IP up in a LOCAL offline dataset the operator configured (OMCP_IP_ENRICH_FILE) — there is no external network call, so it is safe in air-gapped deployments. Returns one row per input IP with found=true/false plus any known fields. If no dataset is configured it returns a clear notice explaining how to enable it.",
+      "Related: pull the IPs from `query_logs` (use `labels`/`aggregate` to find the IPs of interest first).",
+    ].join(" "),
+    {
+      ips: z
+        .array(z.string())
+        .describe(
+          "Required. IPv4 address strings to enrich (e.g. ['203.0.113.5','198.51.100.9']). Max 1000 per call; invalid entries are returned with found=false rather than failing the batch.",
+        ),
+    },
+    async (args) => {
+      await enforceEntitledAccess(ctx, { tool: "enrich_ips" });
+      return withToolMetrics("enrich_ips", async () => enrichIpsHandler(ipEnrichment, args, ctx));
     }
   );
 
