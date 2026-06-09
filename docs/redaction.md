@@ -48,6 +48,8 @@ rather than confabulating around scrubbed text.
 
 ## Opt-out
 
+### Global
+
 Set `OMCP_REDACTION=off` at server startup to disable redaction
 process-wide. Sensible only when:
 
@@ -55,11 +57,27 @@ process-wide. Sensible only when:
 - The agent runs entirely on-prem with the same trust boundary as the
   raw logs.
 
-There is no per-request bypass today. A future iteration will introduce
-a `redaction:bypass` RBAC permission (admin role by default) + an
-opt-in credential allow-list (`OMCP_KEY_BYPASS_REDACTION`) so an
-interactive admin session can
-flip redaction off for one tool call without restarting the server.
+### Per-call bypass (preferred)
+
+A tool call can request `bypass_redaction: true` to skip redaction for
+that single `query_logs` response. The server honours it **only** when
+the calling identity is allowed to bypass — so the per-call arg alone
+never weakens redaction. Two ways to grant that:
+
+| Deployment | How to allow the per-call bypass |
+|---|---|
+| **Credentialed** (`OMCP_API_KEYS` set) | Add the credential's name to `OMCP_KEY_BYPASS_REDACTION` (comma-separated allow-list). |
+| **Anonymous** (no credentials) | Set `OMCP_BYPASS_REDACTION_ANON=true`. There is no named credential to allow-list, so this opts the anonymous/stdio identity in. |
+
+This is the right lever for the common single-user, self-hosted case:
+an agent investigating its *own* logs needs raw IPs (to geolocate,
+dedupe, or separate humans from bots) without the blunt
+`OMCP_REDACTION=off` sledgehammer. Redaction stays the default for
+every call that does **not** set `bypass_redaction: true`, and every
+bypass (engaged or denied) is recorded on the management-plane audit
+chain.
+
+Both levers default OFF — redaction is on out of the box.
 
 ## False-positive notes
 

@@ -42,6 +42,13 @@ test("defaultContext — no allowedTools (anonymous sees every tool, back-compat
   assert.equal(allowsTool(ctx.allowedTools, "any_tool"), true);
 });
 
+test("defaultContext — allowBypassRedaction is off by default, opt-in via opts (R5, issue #415 Gap A)", () => {
+  assert.equal(defaultContext().allowBypassRedaction, undefined);
+  assert.equal(defaultContext({}).allowBypassRedaction, undefined);
+  assert.equal(defaultContext({ allowBypassRedaction: false }).allowBypassRedaction, undefined);
+  assert.equal(defaultContext({ allowBypassRedaction: true }).allowBypassRedaction, true);
+});
+
 import { sessionContext } from "./context.js";
 
 test("sessionContext — undefined session → defaultContext shape (anonymous, default tenant)", () => {
