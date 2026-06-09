@@ -1,6 +1,6 @@
 {
   "name": "@thotischner/observability-mcp-sdk",
-  "version": "3.1.0",
+  "version": "3.2.1",
   "description": "Plugin SDK for observability-mcp — types + Zod schemas + lifecycle-hook helpers for authoring connectors and post-tool hooks.",
   "type": "module",
   "license": "Apache-2.0",

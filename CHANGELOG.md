@@ -6,6 +6,57 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.2.1] — 2026-06-10
+
+Hardening patch — a post-3.2.0 reachability / end-to-end audit (4 gap
+classes: MCP reachability, wired-but-dead, stale docs, real-E2E-vs-unit)
+turned up one real bug and a set of doc/coverage gaps. Every finding was
+adversarially verified before fixing.
+
+### Fixed
+
+- **`get_anomaly_history` returns data again.** The handler built a
+  complete PromQL selector (`omcp_anomaly_score{service=…,method=…}`)
+  but passed it as the `metric` arg; the curated path wrapped it into
+  invalid double-brace PromQL (`…{…}{ job=… }`) → Prometheus 400 → the
+  catch swallowed it and the tool **always** reported "no history". It
+  could never return data via a Prometheus source. Now routed verbatim
+  via `rawQuery`. Regression-tested.
+
+### Changed
+
+- **Builtin connector manifests now advertise their real capabilities**
+  (the Connectors UI renders these): Loki adds `queryLogAggregate`;
+  Kubernetes adds its topology-provider capabilities
+  (`listServices`/`listResources`/`listEdges`/`getTopologySnapshot`/
+  `watchTopology`). The manifest `capabilities` schema (and the
+  published SDK mirror) gained the corresponding optional keys.
+- **`list_services` now surfaces per-service `labels`** (e.g. the Loki
+  connector's `discoveredVia`) — the value was computed then dropped in
+  the dedup merge, so `docs/loki.md`'s documented field never appeared.
+- Documentation/description corrections found by the audit: `list_sources`
+  no longer promises a `url` field it never returned; `query_traces`
+  comments/description no longer imply a bundled Tempo/Jaeger plugin
+  (Tempo installs from the hub; no Jaeger connector exists);
+  `postmortems.md` documents the shipped persistence endpoints;
+  `anomaly-history.md` reflects that the detector→history hook is wired.
+
+### Testing (CI-persisted, post-#415)
+
+- **Real `tools/call` behavioural E2E over the live MCP transport**
+  (runs in `integration.yml`) — asserts curated params *take effect over
+  the wire* (raw_query gate, `query_logs` aggregate shape, `enrich_ips`,
+  per-tool dispatch for all 12), closing the class of gap that let the
+  3.1.0 `labels`/`aggregate` ship unreachable.
+- **Playwright coverage** for previously-uncovered tabs
+  (postmortems/audit/entitlement) and the Add-Source test-connection +
+  URL-validation flow (`ui-smoke`).
+
+### Notes
+
+- The SDK (`@thotischner/observability-mcp-sdk`) bumps to 3.2.1 — its
+  published `manifestSchema` gained the new optional capability keys.
+
 ## [3.2.0] — 2026-06-09
 
 Agent-usability release — closes the remaining points from the

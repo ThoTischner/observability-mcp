@@ -4,11 +4,11 @@ description: Unified observability gateway for AI agents — one MCP server for 
 type: application
 
 # Chart version (this chart). Bumped on chart changes.
-version: 2.2.0
+version: 2.2.1
 
 # App version (the mcp-server image tag the chart defaults to).
 # Update with each release of the mcp-server image.
-appVersion: "3.2.0"
+appVersion: "3.2.1"
 
 home: https://github.com/ThoTischner/observability-mcp
 sources:
@@ -51,20 +51,14 @@ annotations:
     url: https://raw.githubusercontent.com/ThoTischner/observability-mcp/main/docs/helm-signing.pub.asc
   artifacthub.io/images: |
     - name: observability-mcp
-      image: ghcr.io/thotischner/observability-mcp:3.2.0
+      image: ghcr.io/thotischner/observability-mcp:3.2.1
       platforms:
         - linux/amd64
         - linux/arm64
   artifacthub.io/changes: |
+    - kind: fixed
+      description: "get_anomaly_history returned data again — it built a complete PromQL selector but passed it as `metric`, producing invalid PromQL (silent empty); now routed via rawQuery"
     - kind: changed
-      description: "appVersion → 3.2.0 (agent-usability release, issue #415); chart points at the 3.2.0 image"
-    - kind: added
-      description: "query_metrics labels equality filter (PromQL series scoping)"
-    - kind: added
-      description: "raw_query passthrough for query_metrics/query_logs — capability-gated, default off (OMCP_RAW_QUERY)"
-    - kind: added
-      description: "enrich_ips tool — offline geo/ASN/hosting lookup from a local dataset (OMCP_IP_ENRICH_FILE), air-gapped"
-    - kind: added
-      description: "anonymous-friendly per-call redaction bypass (OMCP_BYPASS_REDACTION_ANON)"
+      description: "appVersion → 3.2.1; chart points at the 3.2.1 image"
     - kind: changed
-      description: "get_topology returns an explicit no-connector note instead of a bare empty graph"
+      description: "builtin connector manifests advertise their real capabilities (loki queryLogAggregate; kubernetes topology providers)"
