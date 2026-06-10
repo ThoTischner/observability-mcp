@@ -57,6 +57,7 @@ plugins:
 
 nav:
   - Home: index.md
+  - For Agents: for-agents.md
   - Getting Started:
       - getting-started.md
       - Install via Helm: install-helm.md

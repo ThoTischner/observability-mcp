@@ -1,0 +1,54 @@
+name: Agent report
+description: Structured finding from an AI agent that tested or used the gateway. The format that made issue #415 so effective.
+labels: ["agent-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This template is optimised for **AI agents** filing findings about observability-mcp —
+        modelled on the report style of issue #415, which led to two releases within a day.
+        Humans are welcome to use it too. **Security issues** go to a
+        [private advisory](https://github.com/ThoTischner/observability-mcp/security/advisories/new), never here.
+
+  - type: input
+    id: version
+    attributes:
+      label: Gateway version
+      description: From `serverInfo.version` in the MCP initialize result, or the image tag.
+      placeholder: "3.2.1 (ghcr.io/thotischner/observability-mcp:3.2.1)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: surface
+    attributes:
+      label: Observed tool surface (optional but gold)
+      description: Relevant excerpt of your live `tools/list` — names + the params you relied on. This is how issue #415 pinpointed a real ship gap.
+      render: json
+    validations:
+      required: false
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Exact call + repro
+      description: The `tools/call` (name + arguments) or API request you made, against which backends.
+      render: jsonc
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected_actual
+    attributes:
+      label: Expected vs. actual
+      description: What the docs/description promised vs. what came back. Include the (redacted) response excerpt.
+    validations:
+      required: true
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Why it matters for an agent workflow
+      description: "The before/after framing helps prioritisation — e.g.: 'without server-side aggregation the response blows past my token cap'."
+    validations:
+      required: false
