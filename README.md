@@ -10,23 +10,46 @@ normalizes the data, adds robust anomaly analysis, and provides a web UI for con
 *One MCP endpoint, every backend — so an agent triaging an incident asks one normalized
 question instead of juggling N vendor servers and their query languages.*
 
+**0/10 → 10/10:** the same 8B local model goes from hallucinating blast-radius answers
+to exactly correct ones once it gets this gateway's topology tools —
+[measured, not asserted](docs/benchmark-astronomy-shop.md).
+
+</div>
+
+```bash
+npx @thotischner/observability-mcp                                    # start (UI on :3000)
+claude mcp add observability --transport http http://localhost:3000/mcp   # wire into Claude
+```
+
+Twelve read-only tools (`readOnlyHint: true` on every one) · server-side filter/aggregate
+so agents get **numbers, not haystacks** · [For-Agents guide](https://thotischner.github.io/observability-mcp/for-agents/)
+
+<div align="center">
+
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![npm](https://img.shields.io/npm/v/@thotischner/observability-mcp?logo=npm)](https://www.npmjs.com/package/@thotischner/observability-mcp)
 [![npm downloads](https://img.shields.io/npm/dm/@thotischner/observability-mcp?logo=npm&label=downloads)](https://www.npmjs.com/package/@thotischner/observability-mcp)
 [![GHCR](https://img.shields.io/badge/ghcr.io-observability--mcp-2496ED?logo=docker&logoColor=white)](https://github.com/ThoTischner/observability-mcp/pkgs/container/observability-mcp)
 [![Smoke test](https://github.com/ThoTischner/observability-mcp/actions/workflows/integration.yml/badge.svg?branch=main)](https://github.com/ThoTischner/observability-mcp/actions/workflows/integration.yml)
-[![Helm IT](https://github.com/ThoTischner/observability-mcp/actions/workflows/helm-integration.yml/badge.svg?branch=main)](https://github.com/ThoTischner/observability-mcp/actions/workflows/helm-integration.yml)
 [![GitHub stars](https://img.shields.io/github/stars/ThoTischner/observability-mcp?style=flat&logo=github)](https://github.com/ThoTischner/observability-mcp/stargazers)
-[![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![MCP SDK](https://img.shields.io/badge/MCP_SDK-1.29-orange)](https://modelcontextprotocol.io)
-[![Helm chart](https://img.shields.io/badge/helm-observability--mcp-0F1689?logo=helm&logoColor=white)](./helm/observability-mcp)
 [![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/observability-mcp)](https://artifacthub.io/packages/search?repo=observability-mcp)
+
+<details>
+<summary>All badges — CI, Helm, supply chain (cosign / SBOM / SLSA / provenance)</summary>
+<br>
+
+[![Helm IT](https://github.com/ThoTischner/observability-mcp/actions/workflows/helm-integration.yml/badge.svg?branch=main)](https://github.com/ThoTischner/observability-mcp/actions/workflows/helm-integration.yml)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Helm chart](https://img.shields.io/badge/helm-observability--mcp-0F1689?logo=helm&logoColor=white)](./helm/observability-mcp)
 [![Provenance](https://img.shields.io/badge/npm-provenance-success?logo=npm)](https://docs.npmjs.com/generating-provenance-statements)
 [![Cosign signed](https://img.shields.io/badge/image-cosign_signed-2E7D32?logo=sigstore&logoColor=white)](SECURITY.md#container-image--ghcr--scanned--cosign-signed--syft-sbom)
 [![SBOM CycloneDX](https://img.shields.io/badge/SBOM-CycloneDX-AB47BC?logo=cyclonedx&logoColor=white)](SECURITY.md#container-image--ghcr--scanned--cosign-signed--syft-sbom)
 [![SBOM SPDX](https://img.shields.io/badge/SBOM-SPDX-1976D2?logo=spdx&logoColor=white)](SECURITY.md#container-image--ghcr--scanned--cosign-signed--syft-sbom)
 [![SLSA provenance](https://img.shields.io/badge/SLSA-build_provenance-455A64?logo=slsa&logoColor=white)](SECURITY.md#container-image--ghcr--scanned--cosign-signed--syft-sbom)
 [![Connector Hub](https://img.shields.io/badge/connector-hub-38bdf8?logo=googlechrome&logoColor=white)](https://thotischner.github.io/observability-mcp/hub/)
+
+</details>
 
 ![observability-mcp — guided tour of the web UI](docs/demo.gif)
 
