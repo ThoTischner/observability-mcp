@@ -1,0 +1,93 @@
+# Publish the server's metadata to the official MCP Registry
+# (registry.modelcontextprotocol.io) whenever a release tag lands.
+#
+# The registry hosts METADATA only — it validates that the referenced npm
+# package exists and carries a matching `mcpName` field. The npm package is
+# published by npm-publish.yml on the same tag, so this workflow WAITS for
+# the version to appear on npm before publishing (otherwise validation
+# races and fails).
+#
+# Auth is GitHub OIDC (no secret needed): the registry namespace
+# io.github.thotischner/* is owned by this repo's owner.
+#
+# The npm package already carries the matching `mcpName`
+# (io.github.ThoTischner/observability-mcp) since well before 3.2.1, so
+# any existing version can be published via workflow_dispatch too.
+
+name: Publish to MCP Registry
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish (e.g. 3.3.0) — must already be on npm"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      id-token: write # OIDC auth against the MCP registry
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Resolve version
+        id: ver
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            v="$INPUT_VERSION"
+          else
+            v="${GITHUB_REF#refs/tags/v}"
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "publishing registry metadata for $v"
+
+      - name: Wait for the npm package to be live (published by npm-publish.yml on the same tag)
+        run: |
+          set -euo pipefail
+          v="${{ steps.ver.outputs.version }}"
+          for i in $(seq 1 30); do
+            if npm view "@thotischner/observability-mcp@$v" version >/dev/null 2>&1; then
+              echo "npm has $v"
+              exit 0
+            fi
+            echo "npm does not have $v yet — retry $i/30"
+            sleep 20
+          done
+          echo "npm never showed $v — aborting registry publish"
+          exit 1
+
+      - name: Sync server.json version to the tag
+        run: |
+          set -euo pipefail
+          v="${{ steps.ver.outputs.version }}"
+          jq --arg v "$v" '.version = $v | .packages[].version = $v' server.json > server.tmp
+          mv server.tmp server.json
+          cat server.json
+
+      - name: Install mcp-publisher
+        run: |
+          set -euo pipefail
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/download/v1.7.9/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+
+      - name: Authenticate to MCP Registry (GitHub OIDC)
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish server metadata
+        run: ./mcp-publisher publish
+
+      - name: Verify listing
+        run: |
+          set -euo pipefail
+          sleep 5
+          curl -fsS "https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.ThoTischner/observability-mcp" | head -c 600

@@ -1,0 +1,43 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.ThoTischner/observability-mcp",
+  "description": "Unified observability gateway for AI agents — Prometheus, Loki & more, with anomaly detection.",
+  "repository": {
+    "url": "https://github.com/ThoTischner/observability-mcp",
+    "source": "github"
+  },
+  "version": "3.2.1",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@thotischner/observability-mcp",
+      "version": "3.2.1",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "MCP_TRANSPORT",
+          "description": "Set to 'stdio' when an MCP client spawns the package directly (the npx default starts the HTTP gateway + Web UI on :3000 instead).",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "PROMETHEUS_URL",
+          "description": "Prometheus base URL to connect as a metrics source (optional; sources are also configurable via the Web UI / sources.yaml).",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "LOKI_URL",
+          "description": "Loki base URL to connect as a logs source (optional).",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}
