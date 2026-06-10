@@ -466,3 +466,34 @@ test("E2E tools/list: every builtin tool advertises ToolAnnotations (readOnlyHin
     assert.ok(t.annotations?.title, `tool ${t.name} must advertise annotations.title`);
   }
 });
+
+test("E2E: builtin resource agent-usage-guide is listed and readable", opts, async () => {
+  // AX: the agent usage guide ships as an MCP resource so clients can pull
+  // it into context without a web fetch. Assert list + read over the wire.
+  const session = await newSession();
+  const list = await jsonRpc("resources/list", {}, { id: 10, session });
+  const resources = (list.response.result as { resources?: Array<{ uri?: string }> })?.resources ?? [];
+  assert.ok(
+    resources.some((r) => r.uri === "omcp://guide/agent-usage"),
+    `agent-usage-guide resource must be listed, got ${JSON.stringify(resources.map((r) => r.uri))}`,
+  );
+  const read = await jsonRpc("resources/read", { uri: "omcp://guide/agent-usage" }, { id: 11, session });
+  const contents = (read.response.result as { contents?: Array<{ text?: string }> })?.contents ?? [];
+  assert.ok((contents[0]?.text ?? "").includes("Triage recipe"), "guide text must round-trip");
+});
+
+test("E2E: builtin prompts triage-incident + write-postmortem are listed and resolvable", opts, async () => {
+  const session = await newSession();
+  const list = await jsonRpc("prompts/list", {}, { id: 12, session });
+  const prompts = (list.response.result as { prompts?: Array<{ name?: string }> })?.prompts ?? [];
+  for (const name of ["triage-incident", "write-postmortem"]) {
+    assert.ok(prompts.some((p) => p.name === name), `prompt ${name} must be listed`);
+  }
+  const got = await jsonRpc(
+    "prompts/get",
+    { name: "triage-incident", arguments: { service: "ci-probe" } },
+    { id: 13, session },
+  );
+  const msgs = (got.response.result as { messages?: Array<{ content?: { text?: string } }> })?.messages ?? [];
+  assert.ok((msgs[0]?.content?.text ?? "").includes('"ci-probe"'), "prompt must interpolate the service arg");
+});
