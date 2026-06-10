@@ -74,16 +74,34 @@ export async function detectAnomaliesHandler(
   const metricsConnectors = tenantConnectors.filter((c) => c.signalType === "metrics");
   const logConnectors = tenantConnectors.filter((c) => c.signalType === "logs");
 
-  let serviceNames: string[] = [];
+  // Discover services from BOTH metrics and log connectors, tracking which
+  // signal each service exposes. Previously the fleet scan only enumerated
+  // metrics connectors, so a log-only service was silently dropped from the
+  // scan — and the "all healthy" all-clear never said so (issue #453B). Now
+  // log-only services are scanned (via their log error-rate, as the
+  // description promises) and the per-service coverage is reported.
+  const coverage = new Map<string, { metrics: boolean; logs: boolean }>();
+  const mark = (name: string, key: "metrics" | "logs") => {
+    const e = coverage.get(name) ?? { metrics: false, logs: false };
+    e[key] = true;
+    coverage.set(name, e);
+  };
+  for (const connector of metricsConnectors) {
+    try { for (const s of await connector.listServices()) mark(s.name, "metrics"); } catch { /* connector down — skip */ }
+  }
+  for (const connector of logConnectors) {
+    try { for (const s of await connector.listServices()) mark(s.name, "logs"); } catch { /* connector down — skip */ }
+  }
+
+  let serviceNames: string[];
   if (args.service) {
     serviceNames = [args.service];
-  } else {
-    for (const connector of metricsConnectors) {
-      const services = await connector.listServices();
-      for (const s of services) {
-        if (!serviceNames.includes(s.name)) serviceNames.push(s.name);
-      }
+    if (!coverage.has(args.service)) {
+      // Unknown to listServices — still attempt both signal paths.
+      coverage.set(args.service, { metrics: metricsConnectors.length > 0, logs: logConnectors.length > 0 });
     }
+  } else {
+    serviceNames = [...coverage.keys()];
   }
 
   const allAnomalies: AnomalyReport[] = [];
@@ -226,15 +244,27 @@ export async function detectAnomaliesHandler(
         )
       : { ranked: [], summary: "" };
 
+  // Per-service coverage so an "all healthy" all-clear is verifiable rather
+  // than silently partial: the caller sees exactly which services were
+  // scanned and on which signals (issue #453B).
+  const scanned = serviceNames.map((name) => {
+    const cov = coverage.get(name) ?? { metrics: false, logs: false };
+    const signals = [cov.metrics ? "metrics" : null, cov.logs ? "logs" : null].filter(Boolean) as string[];
+    return { service: name, signals };
+  });
+  const metricsCount = scanned.filter((s) => s.signals.includes("metrics")).length;
+  const logsCount = scanned.filter((s) => s.signals.includes("logs")).length;
+
   const result = {
     scannedServices: serviceNames.length,
+    coverage: { scanned },
     anomalies: allAnomalies,
     correlations: allCorrelations,
     rootCause,
     summary:
       allAnomalies.length === 0
-        ? "All services healthy — no anomalies detected."
-        : `${allAnomalies.length} anomal${allAnomalies.length === 1 ? "y" : "ies"} detected across ${[...new Set(allAnomalies.map((a) => a.service))].length} service(s).`,
+        ? `No anomalies across ${serviceNames.length} scanned service(s) (${metricsCount} with metrics, ${logsCount} with logs).`
+        : `${allAnomalies.length} anomal${allAnomalies.length === 1 ? "y" : "ies"} detected across ${[...new Set(allAnomalies.map((a) => a.service))].length} of ${serviceNames.length} scanned service(s).`,
   };
 
   return {

@@ -168,6 +168,39 @@ describe("listServicesHandler", () => {
   });
 });
 
+describe("detectAnomaliesHandler — fleet coverage (issue #453B)", () => {
+  it("fleet scan includes log-only services and reports per-service coverage", async () => {
+    const reg = createRegistryWithMocks([
+      createMockConnector({
+        name: "prom1", type: "prometheus", signalType: "metrics",
+        listServices: async () => [{ name: "metric-svc", source: "prom1", signalType: "metrics" }],
+        queryMetrics: async () => ({
+          source: "prom1", service: "metric-svc", metric: "x", unit: "",
+          values: Array.from({ length: 30 }, (_, i) => ({ timestamp: new Date(Date.now() - (30 - i) * 9000).toISOString(), value: 20 })),
+          summary: { current: 20, average: 20, min: 20, max: 20, trend: "stable" as const },
+        }),
+      }),
+      createMockConnector({
+        name: "loki1", type: "loki", signalType: "logs",
+        listServices: async () => [{ name: "log-only-svc", source: "loki1", signalType: "logs" }],
+        queryLogs: async () => ({
+          source: "loki1", service: "log-only-svc", entries: [],
+          summary: { total: 10, errorCount: 0, warnCount: 0, topPatterns: [] },
+        }),
+      }),
+    ]);
+    const data = JSON.parse((await detectAnomaliesHandler(reg, {})).content[0].text);
+    // Both services scanned — the log-only one is NOT silently dropped.
+    assert.equal(data.scannedServices, 2);
+    const names = data.coverage.scanned.map((s: any) => s.service).sort();
+    assert.deepEqual(names, ["log-only-svc", "metric-svc"]);
+    const logOnly = data.coverage.scanned.find((s: any) => s.service === "log-only-svc");
+    assert.deepEqual(logOnly.signals, ["logs"], "log-only service must be scanned via its logs signal");
+    // All-clear is no longer silently partial — it states the coverage.
+    assert.match(data.summary, /2 scanned service\(s\)/);
+  });
+});
+
 describe("detectAnomaliesHandler — A5 memory/OOM coverage", () => {
   const flatMemory = () => ({
     source: "prom1", service: "payment-service", metric: "memory", unit: "bytes",
