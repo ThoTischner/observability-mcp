@@ -512,3 +512,15 @@ test("E2E: /llms.txt is served and reflects the canonical tool registry", opts, 
   }
   assert.ok(text.includes("for-agents"), "must link the for-agents guide");
 });
+
+test("E2E: initialize advertises non-empty instructions pointing at the usage guide (issue #455)", opts, async () => {
+  const { response } = await jsonRpc("initialize", {
+    protocolVersion: PROTOCOL_VERSION,
+    capabilities: {},
+    clientInfo: { name: "harness", version: "0" },
+  }, { id: 30 });
+  const r = response.result as { instructions?: string };
+  assert.ok(r.instructions && r.instructions.length > 0, "initialize.instructions must be populated");
+  assert.match(r.instructions!, /omcp:\/\/guide\/agent-usage/, "must point at the usage-guide resource");
+  assert.match(r.instructions!, /aggregate/i, "must carry the filter+aggregate golden rule");
+});

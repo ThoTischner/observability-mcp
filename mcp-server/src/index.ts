@@ -423,10 +423,25 @@ async function main() {
    * same wrapped handler the McpServer would dispatch over MCP.
    */
   function createMcpServer(ctx: RequestContext): { mcpServer: McpServer; toolHandlers: Map<string, (args: unknown, extra: unknown) => Promise<unknown>> } {
-    const mcpServer = new McpServer({
-      name: "observability-mcp",
-      version: SERVER_VERSION,
-    });
+    const mcpServer = new McpServer(
+      {
+        name: "observability-mcp",
+        version: SERVER_VERSION,
+      },
+      {
+        // `instructions` is the one channel the MCP spec auto-injects into the
+        // agent's context on connect (issue #455). Keep it tight: point at the
+        // full guide resource + the single rule that prevents the most common
+        // mistake (dumping raw rows), + the empty-state contract.
+        instructions:
+          "Read MCP resource `omcp://guide/agent-usage` before heavy use. " +
+          "Golden rule: filter + aggregate server-side — use `query_logs`/`query_metrics` " +
+          "`labels` and `query_logs` `aggregate` to ask for numbers, not haystacks (raw log " +
+          "dumps blow past context limits). All tools are read-only. When a result is empty " +
+          "or refused, the message names the operator flag that unlocks it (e.g. OMCP_RAW_QUERY) " +
+          "— relay it verbatim. Prompts `triage-incident` and `write-postmortem` compose the tools.",
+      },
+    );
     const toolHandlers = new Map<string, (args: unknown, extra: unknown) => Promise<unknown>>();
 
   // --- Register tools with Zod schemas ---
@@ -704,6 +719,7 @@ async function main() {
     [
       "Fetch recent log entries for ONE service over a look-back window, with a pre-computed summary (error/warning counts and the most frequent error patterns).",
       "When to use: to inspect what a service actually logged, or to investigate an error spike surfaced by `detect_anomalies` / `get_service_health`. For numeric metrics use `query_metrics` instead.",
+      "Golden rule: filter + aggregate server-side — pass `labels` to scope and `aggregate` (count_over_time/sum/topk) to get numbers, not raw rows. A high-volume window returned raw will blow past your context limit.",
       "Prerequisites: get the exact service name from `list_services` (the service must expose a logs signal).",
       "Behavior: read-only, no side effects. Returns the matching log entries (newest first, capped by `limit`) plus a summary with total/error/warn counts and top recurring error patterns. No matches yields an empty result with a zeroed summary; an unreachable backend yields a structured explanatory error, never an exception.",
     ].join(" "),
