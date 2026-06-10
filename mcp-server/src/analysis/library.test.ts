@@ -44,7 +44,7 @@ describe("embeddable analysis library", () => {
         statusBoundaries: { healthy: 80, degraded: 50 },
       }
     );
-    assert.ok(r.score >= 0 && r.score <= 100);
+    assert.ok(r.score !== null && r.score >= 0 && r.score <= 100);
     assert.ok(["healthy", "degraded", "critical"].includes(r.status as string));
   });
 });

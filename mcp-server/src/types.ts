@@ -354,20 +354,28 @@ export interface AnomalyReport {
 
 export interface ServiceHealth {
   service: string;
-  status: HealthStatus;
-  score: number; // 0-100
+  /** "unknown" when the service has no data in any signal (or doesn't exist). */
+  status: HealthStatus | "unknown";
+  /** 0-100, or null when status is "unknown" (no signal had data). */
+  score: number | null;
   signals: {
+    /** null when the service exposes no metrics signal / no metric data. */
     metrics: {
       cpu: number;
       memory: number;
       errorRate: number;
       latencyP99: number;
-    };
+    } | null;
+    /** null when the service exposes no logs signal / no log data. */
     logs: {
       errorRate: number;
       topErrors: string[];
-    };
+    } | null;
   };
   anomalies: AnomalyReport[];
   correlations: string[];
+  /** Which signal families actually had data (drives the score weighting). */
+  coverage?: { metrics: boolean; logs: boolean };
+  /** Operator-facing explanation when status is "unknown" or coverage is partial. */
+  note?: string;
 }

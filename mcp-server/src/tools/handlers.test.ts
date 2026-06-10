@@ -275,3 +275,60 @@ describe("getServiceHealthHandler — one-sided latency (regression)", () => {
     assert.equal(latAnom, undefined, `latency dropping must not be an anomaly, got: ${JSON.stringify(latAnom)}`);
   });
 });
+
+describe("getServiceHealthHandler — honest no-data / not-found (issue #453)", () => {
+  const emptySeries = (): MetricResult => ({
+    source: "prom1", service: "x", metric: "x", unit: "",
+    values: [],
+    summary: { current: 0, average: 0, min: 0, max: 0, trend: "stable" as const },
+  });
+  function metricsConnector(known: string[]): ObservabilityConnector {
+    return {
+      connect: async () => {}, disconnect: async () => {},
+      healthCheck: async () => ({ status: "up" as const, latencyMs: 1 }),
+      getDefaultMetrics: () => [], getMetrics: () => [],
+      listServices: async () => known.map((name) => ({ name, source: "prom1", signalType: "metrics" as const })),
+      name: "prom1", type: "prometheus", signalType: "metrics" as const,
+      queryMetrics: async () => emptySeries(), // no data for any metric
+    } as unknown as ObservabilityConnector;
+  }
+  function regWith(...mocks: ObservabilityConnector[]): ConnectorRegistry {
+    const reg = new ConnectorRegistry();
+    for (const m of mocks) {
+      (reg as any).connectors.set(m.name, m);
+      (reg as any).sourceConfigs.set(m.name, { name: m.name, type: m.type, url: "http://m", enabled: true });
+    }
+    return reg;
+  }
+
+  it("nonexistent service → status unknown, score null, not-found note (not 100/healthy)", async () => {
+    const reg = regWith(metricsConnector(["payment-service"])); // does NOT know the queried name
+    const data = JSON.parse((await getServiceHealthHandler(reg, { service: "nope-xyz" })).content[0].text);
+    assert.equal(data.status, "unknown");
+    assert.equal(data.score, null);
+    assert.equal(data.signals.metrics, null);
+    assert.match(data.note, /not found/i);
+  });
+
+  it("log-only service with errors → judged on logs, never 100/healthy from metric zeros", async () => {
+    const logs = {
+      connect: async () => {}, disconnect: async () => {},
+      healthCheck: async () => ({ status: "up" as const, latencyMs: 1 }),
+      getDefaultMetrics: () => [], getMetrics: () => [],
+      listServices: async () => [{ name: "logapp", source: "loki1", signalType: "logs" as const }],
+      name: "loki1", type: "loki", signalType: "logs" as const,
+      queryLogs: async () => ({
+        source: "loki1", service: "logapp", entries: [],
+        summary: { total: 60, errorCount: 40, warnCount: 0, topPatterns: ["boom"] },
+      }),
+    } as unknown as ObservabilityConnector;
+    const reg = regWith(metricsConnector([]), logs);
+    const data = JSON.parse((await getServiceHealthHandler(reg, { service: "logapp" })).content[0].text);
+    assert.notEqual(data.status, "healthy");
+    assert.notEqual(data.status, "unknown");
+    assert.equal(data.signals.metrics, null, "metrics signal must be null when no metric data");
+    assert.ok(data.signals.logs, "logs signal must be present");
+    assert.deepEqual(data.coverage, { metrics: false, logs: true });
+    assert.ok(data.score !== null && data.score < 50, `40 errors/5min log-only must not be healthy, got ${data.score}`);
+  });
+});
