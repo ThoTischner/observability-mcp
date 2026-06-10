@@ -1582,6 +1582,42 @@ async function main() {
   let ready = false;
   app.get("/healthz", (_req, res) => res.type("text").send("ok"));
 
+  // /llms.txt — the llms.txt convention (llmstxt.org): a plain-text,
+  // LLM-friendly summary of what this server is and how to use it. The
+  // primary audience of this gateway IS an LLM agent, so the gateway
+  // serves its own. Tool list is generated from the canonical registry
+  // (registry-names.ts) so it can't drift from the real surface.
+  const LLMS_TXT = [
+    "# observability-mcp",
+    "",
+    `> Unified observability gateway for AI agents (v${SERVER_VERSION}). One MCP server`,
+    "> for Prometheus, Loki, and any backend via pluggable connectors — with",
+    "> server-side filtering/aggregation so agents get numbers, not haystacks.",
+    "",
+    "MCP endpoint: POST /mcp (Streamable HTTP) · also stdio (--stdio) and WebSocket (/mcp/ws).",
+    "All tools are read-only and advertise MCP ToolAnnotations (readOnlyHint: true).",
+    "MCP resource omcp://guide/agent-usage carries the agent usage guide;",
+    "prompts triage-incident and write-postmortem compose the tools into workflows.",
+    "",
+    "## Tools",
+    "",
+    ...REGISTERED_TOOLS.map((t) => `- ${t.name} (${t.category}): ${t.summary}`),
+    "",
+    "## Connect",
+    "",
+    "    claude mcp add observability --transport http http://localhost:3000/mcp",
+    "",
+    "## Docs",
+    "",
+    "- For agents (start here): https://thotischner.github.io/observability-mcp/for-agents/",
+    "- Documentation site: https://thotischner.github.io/observability-mcp/",
+    "- Report a finding (agent-report template): https://github.com/ThoTischner/observability-mcp/issues/new?template=agent-report.yml",
+    "- Discussions (agent collaboration welcome): https://github.com/ThoTischner/observability-mcp/discussions",
+    "- Source: https://github.com/ThoTischner/observability-mcp",
+    "",
+  ].join("\n");
+  app.get("/llms.txt", (_req, res) => res.type("text/plain; charset=utf-8").send(LLMS_TXT));
+
   // Procurement-time probe: the MCP spec revisions and transports the
   // gateway supports. Static today — kept as a separate endpoint so a
   // discovery tool / RFP probe / catalog scanner can resolve our
