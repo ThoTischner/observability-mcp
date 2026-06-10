@@ -4,6 +4,68 @@ entries:
   - annotations:
       artifacthub.io/category: monitoring-logging
       artifacthub.io/changes: |
+        - kind: changed
+          description: "appVersion → 3.3.0 (agent-experience release); chart points at the 3.3.0 image"
+        - kind: added
+          description: "MCP ToolAnnotations on all 12 tools (readOnlyHint etc. for client auto-approve)"
+        - kind: added
+          description: "builtin MCP resources + prompts: agent usage guide (omcp://guide/agent-usage), triage-incident, write-postmortem"
+        - kind: added
+          description: "llms.txt served at /llms.txt, generated from the canonical tool registry"
+        - kind: added
+          description: "listed on the official MCP Registry (io.github.ThoTischner/observability-mcp)"
+      artifacthub.io/containsSecurityUpdates: "false"
+      artifacthub.io/images: |
+        - name: observability-mcp
+          image: ghcr.io/thotischner/observability-mcp:3.3.0
+          platforms:
+            - linux/amd64
+            - linux/arm64
+      artifacthub.io/license: Apache-2.0
+      artifacthub.io/links: |
+        - name: Source
+          url: https://github.com/ThoTischner/observability-mcp
+        - name: Container image
+          url: https://github.com/ThoTischner/observability-mcp/pkgs/container/observability-mcp
+        - name: npm
+          url: https://www.npmjs.com/package/@thotischner/observability-mcp
+        - name: Connector Hub
+          url: https://thotischner.github.io/observability-mcp/hub/
+      artifacthub.io/operator: "false"
+      artifacthub.io/prerelease: "false"
+      artifacthub.io/signKey: |
+        fingerprint: C240A58EC3B9D596C685FB0079826B0CB9A6329F
+        url: https://raw.githubusercontent.com/ThoTischner/observability-mcp/main/docs/helm-signing.pub.asc
+    apiVersion: v2
+    appVersion: 3.3.0
+    created: "2026-06-10T16:25:05.498388868Z"
+    description: Unified observability gateway for AI agents — one MCP server for
+      Prometheus, Loki, and any backend
+    digest: df6ef18967ac9123ad484b1d368203bdd416787a1f3c8846dfcc2feaa633aaa0
+    home: https://github.com/ThoTischner/observability-mcp
+    icon: https://raw.githubusercontent.com/ThoTischner/observability-mcp/main/docs/logo.svg
+    keywords:
+    - mcp
+    - model-context-protocol
+    - observability
+    - prometheus
+    - loki
+    - sre
+    - monitoring
+    - ai-agents
+    maintainers:
+    - name: ThoTischner
+      url: https://github.com/ThoTischner
+    name: observability-mcp
+    sources:
+    - https://github.com/ThoTischner/observability-mcp
+    type: application
+    urls:
+    - https://github.com/ThoTischner/observability-mcp/releases/download/observability-mcp-2.3.0/observability-mcp-2.3.0.tgz
+    version: 2.3.0
+  - annotations:
+      artifacthub.io/category: monitoring-logging
+      artifacthub.io/changes: |
         - kind: fixed
           description: "get_anomaly_history returned data again — it built a complete PromQL selector but passed it as `metric`, producing invalid PromQL (silent empty); now routed via rawQuery"
         - kind: changed
@@ -1770,4 +1832,4 @@ entries:
     urls:
     - https://github.com/ThoTischner/observability-mcp/releases/download/observability-mcp-0.3.0/observability-mcp-0.3.0.tgz
     version: 0.3.0
-generated: "2026-06-09T22:11:14.384474091Z"
+generated: "2026-06-10T16:25:05.498503367Z"
