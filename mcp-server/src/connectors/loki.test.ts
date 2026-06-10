@@ -116,6 +116,32 @@ describe("Q-LOG1: queryLogs LogQL assembly", () => {
     });
     assert.equal(q, '{job="raw"}');
   });
+
+  it("#452: rawQuery returning a vector/matrix fails fast with a clear message (no .level crash)", async () => {
+    const conn = new LokiConnector();
+    await conn.connect({ name: "loki", type: "loki", url: "http://loki:3100", enabled: true } as any);
+    const orig = globalThis.fetch;
+    globalThis.fetch = (async (url: any) => {
+      const u = String(url);
+      if (u.includes("/label/") && u.includes("/values")) return jsonRes({ data: ["app"] });
+      // A metric raw_query (sum(count_over_time(...))) returns resultType matrix,
+      // not streams — must not be fed to the streams parser.
+      if (u.includes("/query_range")) {
+        return jsonRes({ data: { resultType: "matrix", result: [{ metric: { url: "/" }, values: [[1000, "5"]] }] } });
+      }
+      return jsonRes({ data: [] });
+    }) as any;
+    try {
+      await conn.queryLogs({ rawQuery: "sum(count_over_time({app=\"x\"} | json [6h]))", duration: "6h" } as any);
+      assert.fail("expected a thrown error for a non-streams raw_query result");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      assert.match(msg, /'matrix' result/);
+      assert.match(msg, /aggregate.*param|query_metrics raw_query/);
+    } finally {
+      globalThis.fetch = orig;
+    }
+  });
 });
 
 describe("Q-LOG2: parseDurationSeconds / defaultBucketSeconds", () => {

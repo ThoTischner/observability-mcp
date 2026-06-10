@@ -246,6 +246,19 @@ export class LokiConnector implements ObservabilityConnector {
 
     const data = await this.apiGet<LokiQueryResponse>(url);
 
+    // A log query yields resultType "streams". A metric query (e.g. a
+    // raw_query wrapping sum()/count() → vector/matrix) does NOT — and the
+    // streams parser below would dereference undefined `.stream`/`.values`
+    // and crash on `.level` (issue #452). Fail fast with a clear, actionable
+    // message instead of running to timeout on a wrong-shaped result.
+    const resultType = data?.data?.resultType;
+    if (resultType && resultType !== "streams") {
+      throw new Error(
+        `query_logs raw_query returned a '${resultType}' result, but query_logs handles log lines (streams) only. ` +
+          "For counts/sums/top-k use the `aggregate` param on query_logs; for arbitrary vector/matrix LogQL use query_metrics raw_query.",
+      );
+    }
+
     const entries: LogEntry[] = [];
     for (const stream of data?.data?.result || []) {
       const labels = stream.stream;
