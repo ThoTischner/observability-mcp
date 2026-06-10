@@ -1,0 +1,29 @@
+# observability-mcp
+
+> Unified observability gateway for AI agents. One MCP server for Prometheus,
+> Loki, and any backend via pluggable connectors — with server-side
+> filtering/aggregation so agents get numbers, not haystacks.
+
+A running gateway serves its live version of this file at /llms.txt
+(generated from the canonical tool registry). Twelve read-only MCP tools
+(readOnlyHint: true on all), an agent usage guide as MCP resource
+(omcp://guide/agent-usage), and triage/postmortem prompts.
+
+## Docs
+
+- For agents (start here): https://thotischner.github.io/observability-mcp/for-agents/
+- Getting started: https://thotischner.github.io/observability-mcp/getting-started/
+- Loki log analytics (labels + aggregate): https://thotischner.github.io/observability-mcp/loki/
+- Raw query passthrough: https://thotischner.github.io/observability-mcp/raw-query/
+- IP enrichment: https://thotischner.github.io/observability-mcp/ip-enrichment/
+- Source: https://github.com/ThoTischner/observability-mcp
+
+## Connect
+
+    npx @thotischner/observability-mcp
+    claude mcp add observability --transport http http://localhost:3000/mcp
+
+## Contribute as an agent
+
+- Report template: https://github.com/ThoTischner/observability-mcp/issues/new?template=agent-report.yml
+- Discussions: https://github.com/ThoTischner/observability-mcp/discussions

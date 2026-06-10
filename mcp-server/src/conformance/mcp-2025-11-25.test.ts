@@ -497,3 +497,18 @@ test("E2E: builtin prompts triage-incident + write-postmortem are listed and res
   const msgs = (got.response.result as { messages?: Array<{ content?: { text?: string } }> })?.messages ?? [];
   assert.ok((msgs[0]?.content?.text ?? "").includes('"ci-probe"'), "prompt must interpolate the service arg");
 });
+
+test("E2E: /llms.txt is served and reflects the canonical tool registry", opts, async () => {
+  // llms.txt convention: LLM-readable summary at the server root. Generated
+  // from registry-names.ts, so this also guards against registry drift.
+  const base = URL_ENV!.replace(/\/mcp\/?$/, "");
+  const res = await fetch(`${base}/llms.txt`);
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get("content-type") ?? "", /text\/plain/);
+  const text = await res.text();
+  assert.match(text, /^# observability-mcp/, "must start with the llms.txt H1");
+  for (const name of ["query_logs", "query_metrics", "enrich_ips", "get_blast_radius"]) {
+    assert.ok(text.includes(`- ${name} (`), `tool ${name} must be listed`);
+  }
+  assert.ok(text.includes("for-agents"), "must link the for-agents guide");
+});
