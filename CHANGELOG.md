@@ -6,6 +6,53 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.3.0] — 2026-06-10
+
+Agent-experience release — the gateway's primary audience is an LLM
+agent, so this release makes the MCP surface self-describing and the
+collaboration loop a paved road. Purely additive; no migration needed.
+
+### Added
+
+- **MCP ToolAnnotations on all 12 tools** — every builtin tool now
+  advertises `{title, readOnlyHint: true, destructiveHint: false,
+  idempotentHint: true, openWorldHint: false}` over `tools/list`.
+  Clients (e.g. Claude) use these hints for auto-approve decisions;
+  the whole surface is read-only and now says so machine-readably.
+- **Builtin MCP resources + prompts** (first registrations through the
+  Q12 hook-wrapped seams, so plugin resource/prompt hooks now fire):
+  - resource **`omcp://guide/agent-usage`** (text/markdown) — the
+    agent-validated #415 workflow: filter→aggregate→enrich recipe,
+    signal-vs-silence behaviours, operator flags, report link.
+  - prompt **`triage-incident`** (service) — composes
+    `get_service_health` → `detect_anomalies` → `get_blast_radius` →
+    aggregated `query_logs`.
+  - prompt **`write-postmortem`** (service, duration?) —
+    `generate_postmortem` + verification + blameless-rewrite steps.
+- **`GET /llms.txt`** — the llms.txt convention, generated at boot from
+  the canonical tool registry (can't drift from the real surface), plus
+  a static variant at the docs-site root. Public in all auth modes.
+- **Official MCP Registry presence** — `server.json` + an OIDC publish
+  workflow (`mcp-registry-publish.yml`, runs on every release tag);
+  listed as `io.github.ThoTischner/observability-mcp`.
+- **Agent collaboration scaffolding** — `docs/for-agents.md` (connect,
+  proven triage recipe, how to report), the `agent-report` issue form
+  encoding the #415 report format, and seeded GitHub Discussions
+  (release announcements + the #415 case study).
+
+### Changed
+
+- README hero: benchmark headline (0/10 → 10/10) + 30-second connect
+  snippet now sit above the badge wall; secondary badges folded.
+
+### Notes
+
+- The SDK (`@thotischner/observability-mcp-sdk`) is unchanged (3.2.1) —
+  the plugin contract did not move.
+- All of the above is verified live over the MCP transport and pinned
+  by conformance tests in CI (tools/list annotations, resources/read,
+  prompts/get, /llms.txt).
+
 ## [3.2.1] — 2026-06-10
 
 Hardening patch — a post-3.2.0 reachability / end-to-end audit (4 gap
