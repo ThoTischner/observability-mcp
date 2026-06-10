@@ -442,3 +442,27 @@ test("E2E tools/call: every registered tool dispatches over MCP and returns a Ca
     assert.ok(Array.isArray(r.content), `tool ${name} must return content[]`);
   }
 });
+
+test("E2E tools/list: every builtin tool advertises ToolAnnotations (readOnlyHint)", opts, async () => {
+  // AX hardening: all 12 builtin tools are read-only; clients (e.g. Claude)
+  // use these hints for auto-approve decisions, so they must be advertised
+  // over the live transport — not just present in the registration source.
+  const session = await newSession();
+  const { response } = await jsonRpc("tools/list", {}, { id: 2, session });
+  const r = response.result as {
+    tools?: Array<{ name?: string; annotations?: { readOnlyHint?: boolean; title?: string } }>;
+  };
+  const tools = r.tools ?? [];
+  assert.ok(tools.length >= 12, `expected >=12 tools, got ${tools.length}`);
+  // Federated tools (namespaced `<prefix>.<tool>`) proxy upstream metadata and
+  // may legitimately lack annotations — only the builtin set is asserted.
+  const builtin = tools.filter((t) => t.name && !t.name.includes("."));
+  for (const t of builtin) {
+    assert.equal(
+      t.annotations?.readOnlyHint,
+      true,
+      `tool ${t.name} must advertise annotations.readOnlyHint=true`,
+    );
+    assert.ok(t.annotations?.title, `tool ${t.name} must advertise annotations.title`);
+  }
+});

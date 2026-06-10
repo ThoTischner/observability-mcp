@@ -504,6 +504,7 @@ async function main() {
       "Related: use `list_services` to see what is monitored within these sources.",
     ].join(" "),
     {},
+    { title: "List Sources", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async () => {
       await enforceEntitledAccess(ctx, { tool: "list_sources" });
       return withToolMetrics("list_sources", () => listSourcesHandler(registry, ctx));
@@ -526,6 +527,7 @@ async function main() {
           "Optional case-insensitive substring to narrow the result to matching service names (e.g. 'payment'). Omit to list every discovered service.",
         ),
     },
+    { title: "List Services", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async (args) => {
       await enforceEntitledAccess(ctx, { tool: "list_services" });
       const result = await withToolMetrics("list_services", () => listServicesHandler(registry, args, ctx));
@@ -590,6 +592,7 @@ async function main() {
           "Optional escape hatch: a verbatim PromQL expression, run as-is over the range — for ad-hoc queries the curated `metric` catalog can't express (any series, any function, broken down by any label). When set, `metric`/`service`/`groupBy`/`labels` are ignored. DISABLED by default; the operator must enable the raw-query capability (OMCP_RAW_QUERY=on) or the call is refused. Still tenant-scoped and source-allow-listed.",
         ),
     },
+    { title: "Query Metrics", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async (args) => {
       await enforceEntitledAccess(ctx, { tool: "query_metrics", source: (args as any)?.source, service: (args as any)?.service });
       const result = await withToolMetrics("query_metrics", () => queryMetricsHandler(registry, args, ctx, { allowRawQuery: RAW_QUERY_ENABLED }));
@@ -687,6 +690,7 @@ async function main() {
           "Optional escape hatch: a verbatim LogQL log query, run as-is — for selectors/pipelines the curated params can't express. When set, `service`/`labels`/`level`/`query` are ignored and it is mutually exclusive with `aggregate` (express aggregation in the LogQL itself). DISABLED by default; the operator must enable the raw-query capability (OMCP_RAW_QUERY=on) or the call is refused. Redaction still applies to the returned log lines.",
         ),
     },
+    { title: "Query Logs", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async (args) => {
       await enforceEntitledAccess(ctx, { tool: "query_logs", source: (args as any)?.source, service: (args as any)?.service });
       const result = await withToolMetrics("query_logs", () => queryLogsHandler(registry, args, ctx, { allowRawQuery: RAW_QUERY_ENABLED }));
@@ -733,6 +737,7 @@ async function main() {
       duration: z.string().optional().describe("Rolling window, e.g. '1h', '24h'. Default '1h'."),
       method: z.string().optional().describe("Filter by detector method ('mad' / 'seasonality' / 'correlator'). Optional."),
     },
+    { title: "Anomaly History", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async (args) => {
       await enforceEntitledAccess(ctx, { tool: "get_anomaly_history", service: (args as { service?: string })?.service });
       const result = await withToolMetrics("get_anomaly_history", () => getAnomalyHistoryHandler(registry, args, ctx));
@@ -754,6 +759,7 @@ async function main() {
       duration: z.string().optional().describe("Window length, e.g. '1h', '6h'. Default '1h'."),
       format: z.enum(["markdown", "json"]).optional().describe("'markdown' (default) or 'json'."),
     },
+    { title: "Generate Postmortem", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async (args) => {
       await enforceEntitledAccess(ctx, { tool: "generate_postmortem", service: (args as { service?: string })?.service });
       const result = await withToolMetrics("generate_postmortem", () => generatePostmortemHandler(registry, args, ctx));
@@ -777,6 +783,7 @@ async function main() {
       limit: z.number().int().positive().optional().describe("Soft cap on returned trace summaries. Default 50."),
       errorsOnly: z.boolean().optional().describe("If true, only traces with at least one error span."),
     },
+    { title: "Query Traces", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async (args) => {
       await enforceEntitledAccess(ctx, { tool: "query_traces", service: (args as { service?: string })?.service });
       const result = await withToolMetrics("query_traces", () => queryTracesHandler(registry, args, ctx));
@@ -799,6 +806,7 @@ async function main() {
           "Required. Exact, case-sensitive service name exactly as returned by `list_services` (e.g. 'payment-service').",
         ),
     },
+    { title: "Service Health", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async (args) => {
       await enforceEntitledAccess(ctx, { tool: "get_service_health", service: (args as any)?.service });
       const result = await withToolMetrics("get_service_health", () => getServiceHealthHandler(registry, args, ctx));
@@ -835,6 +843,7 @@ async function main() {
           "Optional. Detection threshold: 'low' flags only strong deviations (>3σ), 'medium' is balanced (>2σ), 'high' is most sensitive and noisier (>1.5σ). Default: 'medium'.",
         ),
     },
+    { title: "Detect Anomalies", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async (args) => {
       await enforceEntitledAccess(ctx, { tool: "detect_anomalies", source: (args as any)?.source, service: (args as any)?.service });
       // P1: pass the anomaly-history sink so detected scores flow
@@ -880,6 +889,7 @@ async function main() {
           "Optional. Maximum resources to return; edges are trimmed to the kept set. Default 500, max 5000.",
         ),
     },
+    { title: "Topology Graph", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async (args) => {
       await enforceEntitledAccess(ctx, { tool: "get_topology", source: (args as any)?.source });
       return withToolMetrics("get_topology", () => getTopologyHandler(registry, args, ctx));
@@ -901,6 +911,7 @@ async function main() {
           "Required. Resource to evaluate. Accepts the canonical id (e.g. 'k8s:pod:default/checkout-7f89d'), the exact resource name (e.g. 'checkout-7f89d'), or a unique substring of either.",
         ),
     },
+    { title: "Blast Radius", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async (args) => {
       await enforceEntitledAccess(ctx, { tool: "get_blast_radius" });
       return withToolMetrics("get_blast_radius", () => getBlastRadiusHandler(registry, args, ctx));
@@ -922,6 +933,7 @@ async function main() {
           "Required. IPv4 address strings to enrich (e.g. ['203.0.113.5','198.51.100.9']). Max 1000 per call; invalid entries are returned with found=false rather than failing the batch.",
         ),
     },
+    { title: "Enrich IPs", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async (args) => {
       await enforceEntitledAccess(ctx, { tool: "enrich_ips" });
       return withToolMetrics("enrich_ips", async () => enrichIpsHandler(ipEnrichment, args, ctx));
