@@ -5,6 +5,70 @@ entries:
       artifacthub.io/category: monitoring-logging
       artifacthub.io/changes: |
         - kind: changed
+          description: "appVersion → 3.3.1 (agent-feedback patch); chart points at the 3.3.1 image"
+        - kind: fixed
+          description: "query_logs count_over_time without `by` no longer leaks the label set — collapses to one bucketed series (#452)"
+        - kind: fixed
+          description: "query_logs raw_query with a vector/matrix aggregation fails fast with a clear message instead of crashing/timing out (#452)"
+        - kind: fixed
+          description: "get_service_health reports honest no-data/unknown (and not-found for typo'd names) instead of a false 100/healthy (#453)"
+        - kind: fixed
+          description: "detect_anomalies fleet scan covers log-only services and reports per-service coverage so an all-clear isn't silently partial (#453)"
+        - kind: added
+          description: "initialize.instructions populated (golden rule + guide pointer) so the usage guide auto-reaches connecting agents (#455)"
+      artifacthub.io/containsSecurityUpdates: "false"
+      artifacthub.io/images: |
+        - name: observability-mcp
+          image: ghcr.io/thotischner/observability-mcp:3.3.1
+          platforms:
+            - linux/amd64
+            - linux/arm64
+      artifacthub.io/license: Apache-2.0
+      artifacthub.io/links: |
+        - name: Source
+          url: https://github.com/ThoTischner/observability-mcp
+        - name: Container image
+          url: https://github.com/ThoTischner/observability-mcp/pkgs/container/observability-mcp
+        - name: npm
+          url: https://www.npmjs.com/package/@thotischner/observability-mcp
+        - name: Connector Hub
+          url: https://thotischner.github.io/observability-mcp/hub/
+      artifacthub.io/operator: "false"
+      artifacthub.io/prerelease: "false"
+      artifacthub.io/signKey: |
+        fingerprint: C240A58EC3B9D596C685FB0079826B0CB9A6329F
+        url: https://raw.githubusercontent.com/ThoTischner/observability-mcp/main/docs/helm-signing.pub.asc
+    apiVersion: v2
+    appVersion: 3.3.1
+    created: "2026-06-10T18:12:53.379844181Z"
+    description: Unified observability gateway for AI agents — one MCP server for
+      Prometheus, Loki, and any backend
+    digest: d8cf4f7bcd9592db6f1d1f9a047633ef178621fe2ba72b35530ca2b9716da7ac
+    home: https://github.com/ThoTischner/observability-mcp
+    icon: https://raw.githubusercontent.com/ThoTischner/observability-mcp/main/docs/logo.svg
+    keywords:
+    - mcp
+    - model-context-protocol
+    - observability
+    - prometheus
+    - loki
+    - sre
+    - monitoring
+    - ai-agents
+    maintainers:
+    - name: ThoTischner
+      url: https://github.com/ThoTischner
+    name: observability-mcp
+    sources:
+    - https://github.com/ThoTischner/observability-mcp
+    type: application
+    urls:
+    - https://github.com/ThoTischner/observability-mcp/releases/download/observability-mcp-2.3.1/observability-mcp-2.3.1.tgz
+    version: 2.3.1
+  - annotations:
+      artifacthub.io/category: monitoring-logging
+      artifacthub.io/changes: |
+        - kind: changed
           description: "appVersion → 3.3.0 (agent-experience release); chart points at the 3.3.0 image"
         - kind: added
           description: "MCP ToolAnnotations on all 12 tools (readOnlyHint etc. for client auto-approve)"
@@ -1832,4 +1896,4 @@ entries:
     urls:
     - https://github.com/ThoTischner/observability-mcp/releases/download/observability-mcp-0.3.0/observability-mcp-0.3.0.tgz
     version: 0.3.0
-generated: "2026-06-10T16:25:05.498503367Z"
+generated: "2026-06-10T18:12:53.380042578Z"
