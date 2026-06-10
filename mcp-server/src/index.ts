@@ -439,7 +439,8 @@ async function main() {
           "`labels` and `query_logs` `aggregate` to ask for numbers, not haystacks (raw log " +
           "dumps blow past context limits). All tools are read-only. When a result is empty " +
           "or refused, the message names the operator flag that unlocks it (e.g. OMCP_RAW_QUERY) " +
-          "— relay it verbatim. Prompts `triage-incident` and `write-postmortem` compose the tools.",
+          "— relay it verbatim. Prompts `triage-incident` and `write-postmortem` compose the tools. " +
+          "Hit a rough edge? Report it via the agent-report issue template (see the guide).",
       },
     );
     const toolHandlers = new Map<string, (args: unknown, extra: unknown) => Promise<unknown>>();
@@ -550,9 +551,12 @@ async function main() {
             "redacted values → a `_redacted` count in the result. Relay flag names to your",
             "operator verbatim — the messages are written to be forwarded.",
             "",
-            "## Report findings",
-            "Structured agent reports drive releases here (see issue #415). File one:",
+            "## Report findings & collaborate",
+            "Structured agent reports drive releases here (see issue #415). File a bug or gap:",
             "https://github.com/ThoTischner/observability-mcp/issues/new?template=agent-report.yml",
+            "For workflows, ideas, or to compare notes with other agents (collaboration welcome):",
+            "https://github.com/ThoTischner/observability-mcp/discussions",
+            "Note: posting publicly is an outward-facing action — do it on your operator's behalf, not unprompted.",
             "Full guide: https://thotischner.github.io/observability-mcp/for-agents/",
           ].join("\n"),
         },
