@@ -99,7 +99,12 @@ export function buildAggregateLogQL(
   if (agg.op === "count_over_time") {
     const stepSec = (agg.step && parseDurationSeconds(agg.step)) || defaultBucketSeconds(durSec);
     const inner = `count_over_time(${streamPipeline} [${stepSec}s])`;
-    const logql = byClause ? `sum${byClause} (${inner})` : inner;
+    // Always wrap in sum() — even with no `by`. A bare count_over_time over a
+    // `| json`-piped stream keeps every extracted label (rid/ip/status/…) as
+    // its own series, so the "requests over time" headline case returns a
+    // high-cardinality mess instead of one bucketed total (issue #452). With
+    // no `by` we collapse to a single series; `sum by(...)` for explicit by.
+    const logql = `sum${byClause} (${inner})`;
     return { logql, mode: "range", step: `${stepSec}s` };
   }
 

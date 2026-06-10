@@ -140,11 +140,14 @@ describe("Q-LOG2: buildAggregateLogQL", () => {
     assert.equal(r.step, "900s");
     assert.equal(r.logql, `sum by (url) (count_over_time(${PIPE} [900s]))`);
   });
-  it("count_over_time without by → bare count_over_time, default step", () => {
+  it("count_over_time without by → sum-wrapped (single series), default step (#452)", () => {
+    // Regression for issue #452: a bare count_over_time over a `| json` stream
+    // keeps every extracted label as its own series. With no `by` we must
+    // collapse to one bucketed total via sum(...).
     const r = buildAggregateLogQL(PIPE, { op: "count_over_time" }, "1h");
     assert.equal(r.mode, "range");
     assert.equal(r.step, "60s");
-    assert.equal(r.logql, `count_over_time(${PIPE} [60s])`);
+    assert.equal(r.logql, `sum (count_over_time(${PIPE} [60s]))`);
   });
   it("sum → instant total per group over the whole window", () => {
     const r = buildAggregateLogQL(PIPE, { op: "sum", by: ["status"] }, "1h");
