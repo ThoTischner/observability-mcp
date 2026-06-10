@@ -491,9 +491,108 @@ async function main() {
     }
     return (mcpServer.prompt as unknown as (...a: unknown[]) => unknown)(name, ...rest) as never;
   }) as typeof mcpServer.prompt;
-  // Suppress unused-warn — kept for the moment registrations land.
-  void registerResource;
-  void registerPrompt;
+  // --- Builtin resources + prompts (agent experience) -------------------
+  // The usage guide is the distilled, agent-validated workflow from issue
+  // #415 — served as an MCP resource so a client can pull it into context
+  // without a web fetch. Prompts compose the existing read-only tools into
+  // the two flows agents run most.
+
+  registerResource(
+    "agent-usage-guide",
+    "omcp://guide/agent-usage",
+    {
+      description:
+        "How to use this gateway effectively as an agent: the proven filter→aggregate→enrich triage recipe, signal-vs-silence behaviours, and the operator flags that unlock optional tools.",
+      mimeType: "text/markdown",
+    },
+    async (uri: URL) => ({
+      contents: [
+        {
+          uri: uri.toString(),
+          mimeType: "text/markdown",
+          text: [
+            "# Agent usage guide (observability-mcp)",
+            "",
+            "All tools are read-only (`readOnlyHint: true`). The golden rule:",
+            "**filter and aggregate server-side — ask for numbers, not haystacks.**",
+            "",
+            "## Triage recipe (agent-validated, issue #415)",
+            '1. `query_logs` with `labels` (exact-match field filters, e.g. {"environment":"prod"})',
+            '   and `aggregate` ({"op":"topk","by":["ip"],"k":10} or {"op":"count_over_time","step":"15m"})',
+            "   — pushed down to LogQL, returns a handful of numbers instead of thousands of rows.",
+            "2. `enrich_ips` with the IPs from step 1 — offline geo/ASN/hosting-flag lookup",
+            "   (bot-vs-human signal). Requires OMCP_IP_ENRICH_FILE on the operator side.",
+            '3. `query_metrics` with `labels` ({"route":"/checkout"}) and `groupBy` to scope a',
+            "   curated metric to the slice you care about.",
+            "",
+            "## Incident flow",
+            "`detect_anomalies` (fleet scan) → `get_service_health` (one-service verdict) →",
+            "`get_blast_radius` (shared-host impact) → `generate_postmortem` (markdown report).",
+            "",
+            "## When something is empty or refused",
+            "The gateway explains itself: no topology connector → explicit note; no trace",
+            "backend → explicit error; `raw_query` disabled → message naming OMCP_RAW_QUERY=on;",
+            "redacted values → a `_redacted` count in the result. Relay flag names to your",
+            "operator verbatim — the messages are written to be forwarded.",
+            "",
+            "## Report findings",
+            "Structured agent reports drive releases here (see issue #415). File one:",
+            "https://github.com/ThoTischner/observability-mcp/issues/new?template=agent-report.yml",
+            "Full guide: https://thotischner.github.io/observability-mcp/for-agents/",
+          ].join("\n"),
+        },
+      ],
+    }),
+  );
+
+  registerPrompt(
+    "triage-incident",
+    "Guided incident triage for one service: health verdict, anomaly scan, blast radius, and the log slice that matters.",
+    { service: z.string().describe("Service name as returned by list_services") },
+    ({ service }: { service: string }) => ({
+      messages: [
+        {
+          role: "user" as const,
+          content: {
+            type: "text" as const,
+            text: [
+              `Triage the service "${service}" using the observability-mcp tools, in this order:`,
+              `1. get_service_health {"service":"${service}"} — the current verdict and why.`,
+              `2. detect_anomalies {"service":"${service}","duration":"1h"} — what is statistically off.`,
+              `3. get_blast_radius {"resource":"${service}"} — who else fails if its host fails.`,
+              `4. query_logs {"service":"${service}","level":"error","aggregate":{"op":"count_over_time","step":"5m"},"duration":"1h"} — error-volume shape over time; drill into raw rows only for the spike window.`,
+              "Then summarise: current state, most likely cause, blast radius, and the next diagnostic step. Prefer aggregated queries over raw log dumps.",
+            ].join("\n"),
+          },
+        },
+      ],
+    }),
+  );
+
+  registerPrompt(
+    "write-postmortem",
+    "Generate and refine a post-incident report for one service over a window.",
+    {
+      service: z.string().describe("Service name as returned by list_services"),
+      duration: z.string().optional().describe("Look-back window, e.g. '1h', '6h'. Default '1h'."),
+    },
+    ({ service, duration }: { service: string; duration?: string }) => ({
+      messages: [
+        {
+          role: "user" as const,
+          content: {
+            type: "text" as const,
+            text: [
+              `Produce a post-mortem for "${service}" over the last ${duration || "1h"}:`,
+              `1. generate_postmortem {"service":"${service}","duration":"${duration || "1h"}"} — the stitched report (anomaly timeline, blast radius, traces, log highlights).`,
+              `2. Verify its claims: get_anomaly_history {"service":"${service}","duration":"${duration || "1h"}"} for the score timeline, and query_logs with an aggregate for the error shape.`,
+              "3. Rewrite the result as a blameless post-mortem: summary, impact, timeline, root-cause hypothesis (with confidence), follow-ups. Mark any section the gateway reported as missing data instead of inventing content.",
+            ].join("\n"),
+          },
+        },
+      ],
+    }),
+  );
 
   registerTool(
     "list_sources",
