@@ -4,11 +4,11 @@ description: Unified observability gateway for AI agents — one MCP server for 
 type: application
 
 # Chart version (this chart). Bumped on chart changes.
-version: 2.3.0
+version: 2.3.1
 
 # App version (the mcp-server image tag the chart defaults to).
 # Update with each release of the mcp-server image.
-appVersion: "3.3.0"
+appVersion: "3.3.1"
 
 home: https://github.com/ThoTischner/observability-mcp
 sources:
@@ -51,18 +51,20 @@ annotations:
     url: https://raw.githubusercontent.com/ThoTischner/observability-mcp/main/docs/helm-signing.pub.asc
   artifacthub.io/images: |
     - name: observability-mcp
-      image: ghcr.io/thotischner/observability-mcp:3.3.0
+      image: ghcr.io/thotischner/observability-mcp:3.3.1
       platforms:
         - linux/amd64
         - linux/arm64
   artifacthub.io/changes: |
     - kind: changed
-      description: "appVersion → 3.3.0 (agent-experience release); chart points at the 3.3.0 image"
+      description: "appVersion → 3.3.1 (agent-feedback patch); chart points at the 3.3.1 image"
+    - kind: fixed
+      description: "query_logs count_over_time without `by` no longer leaks the label set — collapses to one bucketed series (#452)"
+    - kind: fixed
+      description: "query_logs raw_query with a vector/matrix aggregation fails fast with a clear message instead of crashing/timing out (#452)"
+    - kind: fixed
+      description: "get_service_health reports honest no-data/unknown (and not-found for typo'd names) instead of a false 100/healthy (#453)"
+    - kind: fixed
+      description: "detect_anomalies fleet scan covers log-only services and reports per-service coverage so an all-clear isn't silently partial (#453)"
     - kind: added
-      description: "MCP ToolAnnotations on all 12 tools (readOnlyHint etc. for client auto-approve)"
-    - kind: added
-      description: "builtin MCP resources + prompts: agent usage guide (omcp://guide/agent-usage), triage-incident, write-postmortem"
-    - kind: added
-      description: "llms.txt served at /llms.txt, generated from the canonical tool registry"
-    - kind: added
-      description: "listed on the official MCP Registry (io.github.ThoTischner/observability-mcp)"
+      description: "initialize.instructions populated (golden rule + guide pointer) so the usage guide auto-reaches connecting agents (#455)"
