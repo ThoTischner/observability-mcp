@@ -6,6 +6,74 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.3.1] — 2026-06-10
+
+Agent-feedback patch — three structured agent reports against 3.3.0
+(#452/#453/#455, Loki + Grafana Cloud) turned up two real `query_logs`
+bugs, a "false-healthy" gap in the health tooling, and the missing
+auto-injected usage channel. Every finding was adversarially verified
+and fixed over the real MCP transport. Additive and non-breaking.
+
+### Fixed
+
+- **`query_logs` `aggregate: count_over_time` no longer leaks the label
+  set (#452).** With an empty `by`, a bucketed `count_over_time` over a
+  `| json` stream kept every extracted label (rid/ip/status/…) as its
+  own series, so "requests over time" came back as a high-cardinality
+  mess instead of one bucketed total. It is now always `sum`-wrapped —
+  no `by` collapses to a single series; explicit `by` is unchanged.
+- **`query_logs` `raw_query` with a vector/matrix aggregation fails fast
+  with a clear message instead of crashing (#452).** A metric
+  `raw_query` (e.g. `sum(count_over_time(...))`) returns Loki resultType
+  vector/matrix, not streams; the streams parser dereferenced undefined
+  fields and crashed on `.level`, and the 5-minute default window meant
+  it ran to timeout. The handler now checks `resultType` and returns an
+  actionable error ("use `aggregate` for counts/top-k, or query_metrics
+  raw_query for vector/matrix results").
+- **`get_service_health` reports honest "no data" / "not found" instead
+  of a confident `100/healthy` (#453).** Absent metrics were coerced to
+  `0` and scored as healthy — even for a log-only service with no metric
+  coverage, and even for a service that does not exist (a typo read as
+  good news). Health is now computed only over the signal families that
+  actually returned data (`coverage:{metrics,logs}`); a service with no
+  data in any signal is `status:"unknown"`, `score:null`, and an unknown
+  name yields an explicit "not found" note like the other tools'
+  empty-states. `signals.metrics`/`signals.logs` are `null` when absent.
+- **`detect_anomalies` fleet scan no longer silently drops log-only
+  services (#453).** Service discovery enumerated only metrics
+  connectors, so a log-only service was skipped and the "all healthy"
+  all-clear was misleadingly partial. Discovery now unions metrics + log
+  connectors (log-only services are scanned via their log error-rate),
+  and the result carries `coverage.scanned:[{service,signals[]}]` plus a
+  summary that states the coverage, so an all-clear is verifiable.
+
+### Added
+
+- **`initialize.instructions` is now populated (#455).** The one channel
+  the MCP spec auto-injects into an agent's context on connect was empty,
+  so the 3.3.0 usage guide only reached agents a human pointed at it. It
+  now carries a tight kernel: read `omcp://guide/agent-usage`, the
+  filter+aggregate golden rule, all-tools-read-only, the
+  empty-states-name-the-flag contract, and a pointer to the agent-report
+  template. The golden rule is also seeded into the `query_logs`
+  description as a fallback for clients that don't surface instructions.
+- **Collaboration pointers aligned (#455 follow-up).** The
+  `omcp://guide/agent-usage` resource's Report-findings section gains the
+  Discussions link (with an operator-behalf caveat) so the guide and
+  `/llms.txt` agree — the Discussions link stays out of the per-connect
+  `instructions` kernel by design.
+
+### Notes
+
+- **Behaviour change for custom health weights that don't sum to 1.0:**
+  `calculateHealthScore` now renormalises by the active signal weights.
+  With the default weights (which sum to 1.0) the score is unchanged;
+  custom thresholds whose weights don't sum to 1.0 will shift slightly
+  (the renormalised value is more correct — the old path could exceed
+  100 before clamping).
+- The SDK (`@thotischner/observability-mcp-sdk`) is unchanged — these are
+  all gateway tool-surface fixes; the plugin contract did not move.
+
 ## [3.3.0] — 2026-06-10
 
 Agent-experience release — the gateway's primary audience is an LLM
