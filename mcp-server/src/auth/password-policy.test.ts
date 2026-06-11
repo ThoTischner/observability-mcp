@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -111,14 +111,25 @@ test("passwordPolicyDisabledFromEnv recognises truthy values", () => {
   assert.equal(passwordPolicyDisabledFromEnv({} as NodeJS.ProcessEnv), false);
 });
 
-test("CLI hash-password.mjs stays in sync with the canonical policy", () => {
+// The CLI lives at the repo root (scripts/hash-password.mjs), reached via
+// ../../../scripts from mcp-server/src/auth. Under a partial mount that only
+// mounts mcp-server/ (e.g. the docker-first `docker run -v "$(pwd)/mcp-server:/app"`
+// unit-test command) the repo-root scripts/ dir isn't present. Skip there
+// rather than emit a spurious ENOENT failure — but in CI the full repo is
+// checked out, so a miss is a real move/rename and must still fail loudly.
+const _here = dirname(fileURLToPath(import.meta.url));
+const _cliPath = join(_here, "..", "..", "..", "scripts", "hash-password.mjs");
+const _cliSyncSkip =
+  existsSync(_cliPath) || process.env.CI
+    ? {}
+    : { skip: "scripts/hash-password.mjs not reachable from this mount (run from the repo root or in CI)" };
+
+test("CLI hash-password.mjs stays in sync with the canonical policy", _cliSyncSkip, () => {
   // The CLI deliberately duplicates the policy to stay dependency-free
   // (same precedent as the scrypt params). This guard fails loudly if the
   // two drift: every canonical denylist entry + the defaults must appear
   // verbatim in the script. (__dirname → mcp-server/src/auth)
-  const here = dirname(fileURLToPath(import.meta.url));
-  const cliPath = join(here, "..", "..", "..", "scripts", "hash-password.mjs");
-  const cli = readFileSync(cliPath, "utf8");
+  const cli = readFileSync(_cliPath, "utf8");
   for (const entry of COMMON_PASSWORD_DENYLIST) {
     assert.ok(cli.includes(`"${entry}"`), `CLI denylist is missing "${entry}"`);
   }
