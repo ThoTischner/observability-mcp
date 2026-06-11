@@ -166,6 +166,40 @@ describe("listServicesHandler", () => {
     const data = JSON.parse(result.content[0].text);
     assert.equal(data.total, 0);
   });
+
+  it("no backends configured → note distinguishes 'none configured' from 'zero services' (R5)", async () => {
+    const data = JSON.parse((await listServicesHandler(new ConnectorRegistry(), {})).content[0].text);
+    assert.equal(data.total, 0);
+    assert.match(data.note, /No observability backends are configured/i);
+  });
+
+  it("all sources fail discovery → note + not a silent 'zero services' (R5)", async () => {
+    const reg = createRegistryWithMocks([
+      createMockConnector({ name: "prom1", type: "prometheus", signalType: "metrics", listServices: async () => { throw new Error("down"); } }),
+    ]);
+    const data = JSON.parse((await listServicesHandler(reg, {})).content[0].text);
+    assert.equal(data.total, 0);
+    assert.match(data.note, /failed on all 1 configured source/i);
+  });
+
+  it("partial source failure → result is flagged partial with the failed source (R5)", async () => {
+    const reg = createRegistryWithMocks([
+      createMockConnector({ name: "prom1", type: "prometheus", signalType: "metrics", listServices: async () => { throw new Error("down"); } }),
+      createMockConnector({ name: "loki1", type: "loki", signalType: "logs", listServices: async () => [{ name: "order-service", source: "loki1", signalType: "logs" }] }),
+    ]);
+    const data = JSON.parse((await listServicesHandler(reg, {})).content[0].text);
+    assert.equal(data.total, 1);
+    assert.equal(data.partial, true);
+    assert.deepEqual(data.failedSources, ["prom1"]);
+  });
+});
+
+describe("listSourcesHandler — no-data honesty (R5)", () => {
+  it("no backends configured → explanatory note, not a bare empty list", async () => {
+    const data = JSON.parse((await listSourcesHandler(new ConnectorRegistry())).content[0].text);
+    assert.deepEqual(data.sources, []);
+    assert.match(data.note, /No observability backends are configured/i);
+  });
 });
 
 describe("detectAnomaliesHandler — fleet coverage (issue #453B)", () => {
