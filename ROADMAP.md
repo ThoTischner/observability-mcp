@@ -62,12 +62,11 @@ The moat-extension sprint on top of v2.0. See
 
 ## v4.x — next (open for community input)
 
-The v3.x increments listed in [CHANGELOG.md](CHANGELOG.md) get
-shipped first. Beyond that, the field is open — see the
-[After-F23 candidates](#after-f23--candidates-for-the-next-sprint)
-section of the [hub-parity sprint plan](https://github.com/ThoTischner/observability-mcp/tree/main/.claude/plans)
-for the menu we'll pull from. Vote with thumbs-up emoji on the
-Discussion threads if any of them matters to you.
+The v3.x increments get shipped first (see [CHANGELOG.md](CHANGELOG.md)
+for what landed, and the **Next** / **Later** sections below for the
+direction beyond that). The field is open — vote with a thumbs-up on the
+[Discussion threads](https://github.com/ThoTischner/observability-mcp/discussions)
+if any of them matters to you.
 
 ## v2.0 — shipped 2026-06-06
 
@@ -87,22 +86,6 @@ single deployment is a complete MCP control plane. See
 - ✅ RFC 7591 Dynamic Client Registration
 - ✅ Hardening — CSRF for SPA, SSRF strict-mode, plugin signature default-on
 
-## v3.0 — next
-
-A second sprint that extends the moats v2.0 secured. Track in
-`/home/neo/.claude/plans/hub-parity-sprint.md` Phases F13–F23.
-
-- `query_traces` MCP tool + Tempo/Jaeger integration
-- Multi-cloud topology providers (AWS / GCP / Consul / Istio / Linkerd)
-- TSDB-backed anomaly history for replay + post-mortem
-- Batch policy dry-run probe
-- MkDocs documentation site
-- MCP Inspector quickstart
-- Auto-generated post-mortem reports
-- Plugin SDK as standalone npm package
-- SCIM 2.0 provisioning
-- Verifiable-offline CI (egress-blocked container)
-
 ## Earlier — landed
 
 - ✅ MCP Streamable HTTP transport with all 6 tools
@@ -114,28 +97,24 @@ A second sprint that extends the moats v2.0 secured. Track in
 - ✅ Helm chart with NetworkPolicy, ServiceMonitor, `values.schema.json`, GPG-signed packages
 - ✅ Airgapped deployment story (no runtime npm, plugin tarballs baked into the image)
 - ✅ SBOM + SLSA provenance attestations on every image
+- ✅ **Embeddable analysis library** — the deterministic engine usable in-process via the `@thotischner/observability-mcp/analysis` subpath export, no transport required
+- ✅ **Multi-tenant isolation** — per-tenant source/credential scoping across every `/api/*` and tool call (cross-tenant access returns not-found)
 
 ## Next
 
-- **Embeddable analysis library.** The same deterministic analysis engine usable in-process as a library, not only via the MCP transport — for teams that want the verdicts without running the gateway.
-- **Verifiable offline mode.** A first-class "no data egress" guarantee: offline-by-default, and a CI test that runs the server in an egress-blocked network to prove it.
 - **Sovereign quickstart.** One-command, fully on-prem demo running next to a local model (no external calls), showing analyzed context vs raw queries end to end.
-- **Access control on sources & tools.** Per-credential scoping (RBAC): a given MCP connection can be restricted to specific sources, specific tools, read-only, and optional service/metric allow-lists and look-back caps. Replaces today's "every session sees everything".
+- **Per-credential access control (RBAC).** Scope a given MCP connection to specific sources, specific tools, read-only, and optional service/metric allow-lists and look-back caps — replacing today's "every session sees everything". (The tenancy layer already isolates per-tenant; this is finer-grained per-credential scoping. First slice: per-credential gating for `raw_query`, today a global `OMCP_RAW_QUERY` flag.)
 - **More built-in connectors.** Grafana Mimir / Cortex, VictoriaMetrics, OpenSearch / Elasticsearch logs, OpenTelemetry, **Datadog** (read-only). Driven by user demand — see [discussion #97](https://github.com/ThoTischner/observability-mcp/discussions/97).
-- **Traces as a first-class signal.** Tempo / Jaeger / OTLP connector. `query_traces` MCP tool joining the existing six. Correlator extended to metrics ↔ logs ↔ traces.
-- **Framework adapters.** Thin wrappers so users on LangChain / LlamaIndex can register the six tools without learning the MCP transport directly.
+- **Framework adapters.** Thin wrappers so users on LangChain / LlamaIndex can register the tools without learning the MCP transport directly.
 - **Claude Skill.** Publish observability-mcp as an [Anthropic Skill](https://docs.anthropic.com/en/docs/build-with-claude/skills).
-- **Plugin SDK on npm.** Published independently so anyone can write a connector in their own repo without forking us.
-- **Plugin signature verification.** `PLUGIN_REQUIRE_SIGNATURE=true` mode rejecting unsigned tarballs at load time (Sigstore keyless OIDC).
+- **Plugin signature verification at load.** A `PLUGIN_REQUIRE_SIGNATURE=true` mode rejecting unsigned tarballs at load time (Sigstore keyless OIDC) — building on the default-on signing already shipped.
 
 ## Later
 
-- **Curated tool/source bundles ("products").** Publish a scoped, versioned set of tools over selected sources as its own addressable MCP endpoint with its own credential — so an agent gets exactly the access it needs, nothing more. A catalog to author, version, and browse them.
-- **Structured audit log.** A queryable record of every tool call (which principal, which sources touched, which tool, allow/deny) for teams that need to evidence agent access.
-- **Multi-tenant gateway mode.** One server, isolated per-tenant sources and credentials. For platform teams running observability-access-as-a-service.
+- **Curated tool/source bundles ("products") catalog.** A catalog to author, version, and browse scoped, versioned tool/source bundles, each its own addressable MCP endpoint with its own credential — so an agent gets exactly the access it needs, nothing more.
+- **Queryable audit log.** A `GET /api/audit` history of every tool call (which principal, which sources touched, which tool, allow/deny) for teams that need to evidence agent access — building on the push-based audit sinks already shipped.
 - **Connector Hub catalog.** Registry where users discover and install connectors with one command.
-- **Native incident artefacts.** Auto-generated post-mortems from a sequence of `detect_anomalies` + `query_logs` calls, persisted as markdown.
-- **Server-side score history.** A small TSDB-backed history so `get_service_health` returns trends that survive reloads.
+- **Server-side score history.** A small TSDB-backed history so `get_service_health` returns trends that survive reloads (the anomaly-score history TSDB already ships; this extends it to health verdicts).
 
 ## Not on the roadmap (yet)
 
