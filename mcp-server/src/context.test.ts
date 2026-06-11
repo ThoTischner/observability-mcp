@@ -36,6 +36,13 @@ test("principalContext — passes allowedTools through; empty array → undefine
   assert.equal(ctx3.allowedTools, undefined);
 });
 
+test("principalContext — allowRawQuery passes through, off by default (R4 per-credential raw_query)", () => {
+  assert.equal(principalContext("agent").allowRawQuery, undefined);
+  assert.equal(principalContext("agent", undefined, {}).allowRawQuery, undefined);
+  assert.equal(principalContext("agent", undefined, { allowRawQuery: false }).allowRawQuery, undefined);
+  assert.equal(principalContext("agent", undefined, { allowRawQuery: true }).allowRawQuery, true);
+});
+
 test("defaultContext — no allowedTools (anonymous sees every tool, back-compat)", () => {
   const ctx = defaultContext();
   assert.equal(ctx.allowedTools, undefined);

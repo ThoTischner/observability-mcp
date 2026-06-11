@@ -16,6 +16,11 @@
  *                  # via the bypass_redaction tool arg. Off by default
  *                  # for every key — pair with the redaction:bypass
  *                  # RBAC permission for the management-plane angle.
+ *   OMCP_KEY_RAW_QUERY="agent,ci"
+ *                  # optional comma-separated list of key NAMES allowed to
+ *                  # run raw_query even when the global OMCP_RAW_QUERY
+ *                  # capability is off. Effective gate = global OR per-key,
+ *                  # so it only widens; off by default for every key.
  *   OMCP_KEY_TENANTS="agent=acme;ci=bigco"
  *                  # optional per-key tenant assignment. Unlisted keys
  *                  # land in the "default" tenant — identical to the
@@ -45,6 +50,11 @@ export interface Credential {
    *  to explicitly set `bypass_redaction: true` in the tool args —
    *  this flag only authorises it; it never auto-disables redaction. */
   bypassRedaction?: boolean;
+  /** True when the operator opted this credential into running `raw_query`
+   *  even with the global OMCP_RAW_QUERY capability off. Configured via
+   *  OMCP_KEY_RAW_QUERY. The effective gate is `global OR per-credential` —
+   *  it only widens access, never narrows a globally-enabled deployment. */
+  allowRawQuery?: boolean;
   /** Tenant this credential belongs to. Omitted → DEFAULT_TENANT. */
   tenant?: string;
   /** Product id this credential is bound to. When set, /mcp tools/list
@@ -94,6 +104,7 @@ export function loadCredentials(env: NodeJS.ProcessEnv = process.env): Credentia
   if (!raw) return [];
   const keySources = parseKeySources(env.OMCP_KEY_SOURCES);
   const bypassNames = parseBypassSet(env.OMCP_KEY_BYPASS_REDACTION);
+  const rawQueryNames = parseBypassSet(env.OMCP_KEY_RAW_QUERY);
   const keyTenants = parseKeyTenants(env.OMCP_KEY_TENANTS);
   const keyProducts = parseKeyProducts(env.OMCP_KEY_PRODUCTS);
   const creds: Credential[] = [];
@@ -107,6 +118,7 @@ export function loadCredentials(env: NodeJS.ProcessEnv = process.env): Credentia
       token,
       allowedSources: keySources.get(name),
       bypassRedaction: bypassNames.has(name) || undefined,
+      allowRawQuery: rawQueryNames.has(name) || undefined,
       tenant: keyTenants.get(name) || undefined,
       productId: keyProducts.get(name) || undefined,
     });

@@ -20,7 +20,7 @@ describe("single-tenant auth primitive", () => {
     assert.equal(creds.length, 2);
     assert.deepEqual(
       creds[0],
-      { name: "ci", token: "tok_abc", allowedSources: undefined, bypassRedaction: undefined, tenant: undefined, productId: undefined }
+      { name: "ci", token: "tok_abc", allowedSources: undefined, bypassRedaction: undefined, allowRawQuery: undefined, tenant: undefined, productId: undefined }
     );
     assert.equal(creds[1].name, "key");
     assert.equal(creds[1].token, "tok_bare");
@@ -50,6 +50,22 @@ describe("single-tenant auth primitive", () => {
   it("OMCP_KEY_BYPASS_REDACTION absent → no key bypasses (least privilege default)", () => {
     const creds = loadCredentials({ OMCP_API_KEYS: "agent:tok1,ci:tok2" });
     for (const c of creds) assert.equal(c.bypassRedaction, undefined);
+  });
+
+  it("parses OMCP_KEY_RAW_QUERY → flags only the listed names", () => {
+    const creds = loadCredentials({
+      OMCP_API_KEYS: "agent:tok1,ci:tok2,unprivileged:tok3",
+      OMCP_KEY_RAW_QUERY: "agent, ci",
+    });
+    assert.equal(creds.find((c) => c.name === "agent")?.allowRawQuery, true);
+    assert.equal(creds.find((c) => c.name === "ci")?.allowRawQuery, true);
+    // Unlisted keys MUST be undefined (not false) so it only widens.
+    assert.equal(creds.find((c) => c.name === "unprivileged")?.allowRawQuery, undefined);
+  });
+
+  it("OMCP_KEY_RAW_QUERY absent → no key may raw_query per-credential (global flag still applies)", () => {
+    const creds = loadCredentials({ OMCP_API_KEYS: "agent:tok1,ci:tok2" });
+    for (const c of creds) assert.equal(c.allowRawQuery, undefined);
   });
 
   it("parses OMCP_KEY_TENANTS → assigns tenant to named keys; unlisted stays undefined (default)", () => {

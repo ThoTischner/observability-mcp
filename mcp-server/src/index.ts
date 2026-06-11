@@ -713,7 +713,7 @@ async function main() {
     { title: "Query Metrics", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async (args) => {
       await enforceEntitledAccess(ctx, { tool: "query_metrics", source: (args as any)?.source, service: (args as any)?.service });
-      const result = await withToolMetrics("query_metrics", () => queryMetricsHandler(registry, args, ctx, { allowRawQuery: RAW_QUERY_ENABLED }));
+      const result = await withToolMetrics("query_metrics", () => queryMetricsHandler(registry, args, ctx, { allowRawQuery: RAW_QUERY_ENABLED || ctx.allowRawQuery === true }));
       return chargeTokenBudget(result, ctx, "query_metrics");
     }
   );
@@ -812,7 +812,7 @@ async function main() {
     { title: "Query Logs", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async (args) => {
       await enforceEntitledAccess(ctx, { tool: "query_logs", source: (args as any)?.source, service: (args as any)?.service });
-      const result = await withToolMetrics("query_logs", () => queryLogsHandler(registry, args, ctx, { allowRawQuery: RAW_QUERY_ENABLED }));
+      const result = await withToolMetrics("query_logs", () => queryLogsHandler(registry, args, ctx, { allowRawQuery: RAW_QUERY_ENABLED || ctx.allowRawQuery === true }));
       // Redact PII / secrets from the log payload before it crosses the
       // MCP boundary into the agent's context. Per-call bypass kicks in
       // only when BOTH (a) the credential is OMCP_KEY_BYPASS_REDACTION
@@ -3699,6 +3699,7 @@ async function main() {
     }
     return principalContext(cred.name, cred.allowedSources, {
       allowBypassRedaction: cred.bypassRedaction,
+      allowRawQuery: cred.allowRawQuery,
       tenant: cred.tenant,
       allowedTools,
     });
@@ -3942,6 +3943,7 @@ async function main() {
     return {
       ctx: principalContext(cred.name, cred.allowedSources, {
         allowBypassRedaction: cred.bypassRedaction,
+        allowRawQuery: cred.allowRawQuery,
         tenant: cred.tenant,
         allowedTools,
       }),

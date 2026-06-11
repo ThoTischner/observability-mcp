@@ -27,6 +27,12 @@ export interface RequestContext {
    *  tool call ALSO sets `bypass_redaction: true` in its args. Default
    *  false. Configured via OMCP_KEY_BYPASS_REDACTION. */
   allowBypassRedaction?: boolean;
+  /** When true, this credential may run `raw_query` even if the global
+   *  OMCP_RAW_QUERY capability is off. Per-credential gating (configured via
+   *  OMCP_KEY_RAW_QUERY) — the effective gate is `global OR per-credential`,
+   *  so a global enable still works and this only widens, never narrows.
+   *  Default false. */
+  allowRawQuery?: boolean;
   /** Tenant the request operates in. ALWAYS set — defaults to
    *  "default" for anonymous principals + missing-tenant credentials,
    *  preserving the single-namespace behaviour of pre-E7 deployments. */
@@ -63,13 +69,14 @@ export function defaultContext(opts: { allowBypassRedaction?: boolean } = {}): R
 export function principalContext(
   principalId: string,
   allowedSources?: string[],
-  opts: { allowBypassRedaction?: boolean; tenant?: string; allowedTools?: string[] } = {},
+  opts: { allowBypassRedaction?: boolean; allowRawQuery?: boolean; tenant?: string; allowedTools?: string[] } = {},
 ): RequestContext {
   return {
     principalId,
     auth: "apikey",
     allowedSources: allowedSources && allowedSources.length > 0 ? allowedSources : undefined,
     allowBypassRedaction: opts.allowBypassRedaction || undefined,
+    allowRawQuery: opts.allowRawQuery || undefined,
     tenant: normaliseTenant(opts.tenant),
     allowedTools: opts.allowedTools && opts.allowedTools.length > 0 ? opts.allowedTools : undefined,
     correlationId: randomUUID(),
