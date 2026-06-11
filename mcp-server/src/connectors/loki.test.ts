@@ -166,6 +166,24 @@ describe("Q-LOG2: buildAggregateLogQL", () => {
     assert.equal(r.step, "900s");
     assert.equal(r.logql, `sum by (url) (count_over_time(${PIPE} [900s]))`);
   });
+  it("count_over_time with a label-filter pipeline + no by → valid sum-wrapped LogQL (#452 leftover #2)", () => {
+    // The reporter saw an intermittent 400 on a label-filtered count_over_time
+    // and wondered if the collapse path emits different LogQL when a filter is
+    // present. It does not: the label filter lives in the streamPipeline
+    // (identical to the sum/topk path, which works), and the count_over_time
+    // branch wraps it verbatim. Assert the emitted LogQL is well-formed —
+    // `sum (count_over_time({sel} | json | environment="prod" [step]))` — so
+    // any future regression in the generated query is caught here.
+    const filtered = '{service_name="app"} | json | environment="prod"';
+    const r = buildAggregateLogQL(filtered, { op: "count_over_time", step: "1h" }, "6h");
+    assert.equal(r.mode, "range");
+    assert.equal(r.step, "3600s");
+    assert.equal(r.logql, `sum (count_over_time(${filtered} [3600s]))`);
+    // Structural sanity: balanced parens, sum-wrapped, single range selector.
+    assert.equal((r.logql.match(/\(/g) || []).length, (r.logql.match(/\)/g) || []).length);
+    assert.match(r.logql, /^sum \(count_over_time\(.*\[\d+s\]\)\)$/);
+  });
+
   it("count_over_time without by → sum-wrapped (single series), default step (#452)", () => {
     // Regression for issue #452: a bare count_over_time over a `| json` stream
     // keeps every extracted label as its own series. With no `by` we must
