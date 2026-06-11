@@ -184,7 +184,8 @@ export interface MetricSummary {
 export interface MetricGroup {
   key: string;
   values: DataPoint[];
-  summary: MetricSummary;
+  /** null when this group has no data points — absent ≠ a real zero reading. */
+  summary: MetricSummary | null;
 }
 
 export interface MetricResult {
@@ -193,12 +194,15 @@ export interface MetricResult {
   metric: string;
   unit: string;
   values: DataPoint[];
-  summary: MetricSummary;
+  /** null when `values` is empty (no series matched this service/metric) — a
+   *  no-data signal, not a confident all-zeros reading (issue #462). */
+  summary: MetricSummary | null;
   resolvedSeries?: string;   // The actual PromQL executed (for debugging when auto-resolved)
   resolvedLabel?: string;    // Which label (job/service/app/...) the service was matched on
   groupBy?: string;          // Label the result was broken down by
   groups?: MetricGroup[];    // Per-group time-series (set when groupBy was requested and >1 group exists)
   hint?: string;             // Suggestion when caller may want a different query shape
+  note?: string;             // Operator-facing explanation, e.g. why summary is null (no-data)
 }
 
 export interface LogEntry {

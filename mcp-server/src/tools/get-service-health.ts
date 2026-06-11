@@ -47,18 +47,18 @@ export async function getServiceHealthHandler(
     if (!connector.queryMetrics) continue;
     try {
       const cpuResult = await connector.queryMetrics({ service: args.service, metric: "cpu", duration: "5m" });
-      if (cpuResult.values.length > 0) { cpu = cpuResult.summary.current; metricsHadData = true; }
+      if (cpuResult.summary) { cpu = cpuResult.summary.current; metricsHadData = true; }
       checkAnomaly(cpuResult.values.map(v => v.value), "cpu", args.service, connector.name, anomalies);
 
       const memResult = await connector.queryMetrics({ service: args.service, metric: "memory", duration: "5m" });
-      if (memResult.values.length > 0) { memory = memResult.summary.current / 1_000_000; metricsHadData = true; } // MB for display
+      if (memResult.summary) { memory = memResult.summary.current / 1_000_000; metricsHadData = true; } // MB for display
 
       const errResult = await connector.queryMetrics({ service: args.service, metric: "error_rate", duration: "5m" });
-      if (errResult.values.length > 0) { errorRate = errResult.summary.current; metricsHadData = true; }
+      if (errResult.summary) { errorRate = errResult.summary.current; metricsHadData = true; }
       checkAnomaly(errResult.values.map(v => v.value), "error_rate", args.service, connector.name, anomalies);
 
       const latResult = await connector.queryMetrics({ service: args.service, metric: "latency_p99", duration: "5m" });
-      if (latResult.values.length > 0) { latencyP99 = latResult.summary.current; metricsHadData = true; }
+      if (latResult.summary) { latencyP99 = latResult.summary.current; metricsHadData = true; }
       checkAnomaly(latResult.values.map(v => v.value), "latency_p99", args.service, connector.name, anomalies);
     } catch (err) {
       console.error("Health check metrics failed for %s:", sanitizeForLog(args.service), err);

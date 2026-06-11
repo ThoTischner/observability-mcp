@@ -302,6 +302,11 @@ export class PrometheusConnector implements ObservabilityConnector {
       resolvedLabel: label,
     };
 
+    if (!result.summary) {
+      result.note = `No data: no '${params.metric}' series matched "${params.service}" in this window. ` +
+        "The service may expose logs only, or the metric name/label didn't match. Absent ≠ zero — summary is null rather than all-zeros.";
+    }
+
     if (params.groupBy && groups.length > 1) {
       result.groupBy = params.groupBy;
       result.groups = groups;
@@ -365,6 +370,9 @@ export class PrometheusConnector implements ObservabilityConnector {
       resolvedSeries: rawQuery,
       resolvedLabel: "",
     };
+    if (!result.summary) {
+      result.note = "No data: the query returned no series in this window. Absent ≠ zero — summary is null rather than all-zeros.";
+    }
     if (groups.length > 1) result.groups = groups;
     return result;
   }
@@ -565,7 +573,10 @@ export class PrometheusConnector implements ObservabilityConnector {
 
   private computeSummary(values: number[]): MetricResult["summary"] {
     if (values.length === 0) {
-      return { current: 0, average: 0, min: 0, max: 0, trend: "stable" };
+      // No data points → no-data, NOT a confident all-zeros reading. Coercing
+      // an empty series to {current:0,trend:"stable"} is indistinguishable
+      // from a service genuinely idling at 0 (issue #462).
+      return null;
     }
     const current = values[values.length - 1];
     const average = values.reduce((a, b) => a + b, 0) / values.length;

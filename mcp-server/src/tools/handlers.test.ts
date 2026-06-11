@@ -313,7 +313,9 @@ describe("getServiceHealthHandler — honest no-data / not-found (issue #453)", 
   const emptySeries = (): MetricResult => ({
     source: "prom1", service: "x", metric: "x", unit: "",
     values: [],
-    summary: { current: 0, average: 0, min: 0, max: 0, trend: "stable" as const },
+    // No data → null summary (matches the real connector after #462), so the
+    // health handler treats it as no-coverage, not a real zero reading.
+    summary: null,
   });
   function metricsConnector(known: string[]): ObservabilityConnector {
     return {

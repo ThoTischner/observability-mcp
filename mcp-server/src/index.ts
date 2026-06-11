@@ -663,7 +663,7 @@ async function main() {
       "Fetch the raw time-series for ONE metric of ONE service over a look-back window, returned together with pre-computed summary statistics.",
       "When to use: when you need the actual numeric values or the trend of a known metric. For a 'is this service OK?' verdict use `get_service_health`; to find which services are misbehaving use `detect_anomalies`.",
       "Prerequisites: get the exact service name from `list_services` and choose a metric from the list at the end of this description.",
-      "Behavior: read-only, no side effects. Returns an ordered array of {timestamp, value} points plus a summary {current, average, min, max, trend}. With `groupBy` set, returns one labelled series per distinct label value under `groups` instead of a single aggregated series. Units depend on the metric (e.g. CPU as %, latency as ms, rates as per-second). An unknown service/metric or an unreachable backend yields a structured explanatory error, never an exception.",
+      "Behavior: read-only, no side effects. Returns an ordered array of {timestamp, value} points plus a summary {current, average, min, max, trend}. When no series matched (e.g. a logs-only service has no such metric), `values` is empty and `summary` is `null` (not all-zeros) with a `note` — absent data is not a real zero reading. With `groupBy` set, returns one labelled series per distinct label value under `groups` instead of a single aggregated series. Units depend on the metric (e.g. CPU as %, latency as ms, rates as per-second). An unknown service/metric or an unreachable backend yields a structured explanatory error, never an exception.",
       `Available metrics: ${metricsList}`,
     ].join(" "),
     {

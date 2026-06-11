@@ -32,7 +32,7 @@ export function correlateSignals(
     const serviceMetrics = metricResults.filter((m) => m.service === anomaly.service);
     for (const metric of serviceMetrics) {
       if (metric.metric === anomaly.metric) continue;
-      if (metric.summary.trend === "rising") {
+      if (metric.summary && metric.summary.trend === "rising") {
         correlations.push(
           `${anomaly.service}: ${anomaly.metric} anomaly coincides with rising ${metric.metric} ` +
           `(current: ${metric.summary.current.toFixed(2)})`

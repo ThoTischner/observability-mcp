@@ -66,13 +66,9 @@ describe("PrometheusConnector", () => {
   });
 
   describe("computeSummary", () => {
-    it("returns zeros for empty array", () => {
+    it("returns null for empty array — no-data, not a false all-zeros reading (#462)", () => {
       const s = proto.computeSummary([]);
-      assert.equal(s.current, 0);
-      assert.equal(s.average, 0);
-      assert.equal(s.min, 0);
-      assert.equal(s.max, 0);
-      assert.equal(s.trend, "stable");
+      assert.equal(s, null);
     });
 
     it("computes correct summary for values", () => {
@@ -218,6 +214,37 @@ describe("PrometheusConnector", () => {
         assert.equal(result.resolvedSeries, raw);
         assert.equal(result.metric, "(raw)");
         assert.equal(result.values[0].value, 42);
+      } finally {
+        globalThis.fetch = orig;
+      }
+    });
+  });
+
+  describe("queryMetrics no-data → null summary, not zero-fill (#462)", () => {
+    const fakeSource = { name: "test", type: "prometheus" as const, url: "http://localhost:9090", enabled: true };
+
+    it("an empty result set yields values:[], summary:null, and a no-data note", async () => {
+      const connector = new PrometheusConnector();
+      await connector.connect({ ...fakeSource });
+      const orig = globalThis.fetch;
+      // raw_query bypasses the candidate-probe / label-resolve path and runs
+      // query_range directly — here it returns an empty result set (the
+      // no-data case: a logs-only service has no such metric series).
+      globalThis.fetch = (async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ data: { result: [] } }),
+      } as any)) as any;
+      try {
+        const result = await connector.queryMetrics({
+          service: "",
+          metric: "",
+          duration: "1h",
+          rawQuery: "rate(process_cpu_seconds_total{job=\"logs-only-svc\"}[1m]) * 100",
+        });
+        assert.deepEqual(result.values, [], "no data points");
+        assert.equal(result.summary, null, "summary must be null, not {current:0,...}");
+        assert.match(result.note ?? "", /No data/i, "must carry a no-data note");
       } finally {
         globalThis.fetch = orig;
       }
