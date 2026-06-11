@@ -6,6 +6,37 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.6.1] — 2026-06-11
+
+Security + agent-feedback patch. Additive / non-breaking.
+
+### Fixed
+
+- **`enrich_ips` now advertises IPv6 in its MCP tool surface (#476).** IPv6
+  lookup shipped in 3.4.0, but the agent-facing `tools/list` description +
+  `ips` param (the inline registration in index.ts) still said "IPv4
+  addresses" — so an agent would pre-filter IPv6 clients out before calling,
+  hiding the capability at its core use case. Both now say "IPv4 or IPv6"
+  with a v6 example; a conformance assertion guards the advertised surface.
+- **OpenSSL base-image CVEs cleared.** The pinned `node:26-alpine` digest
+  carried `libcrypto3`/`libssl3` 3.5.6-r0 (a batch of OpenSSL CVEs flagged by
+  the Trivy image scan); the runtime stage now `apk upgrade`s just those two
+  packages to 3.5.7-r0 at build time.
+
+### Security
+
+- Triaged the 14 open CodeQL alerts on our code: all were verified
+  false-positive / won't-fix / used-in-tests and dismissed with written
+  justifications — the code already carried the relevant guards (a
+  `__proto__`/`constructor`/`prototype` deny-set + allow-lists on the
+  batch-dry-run matrix, `sanitizeForLog` on logged user input, an operator-
+  config-only fs path, and linear/anchored regexes on trusted input). No
+  code change was required; this is recorded for auditability.
+
+### Notes
+
+- The SDK (`@thotischner/observability-mcp-sdk`) is unchanged.
+
 ## [3.6.0] — 2026-06-11
 
 Closes the **last** open v3.3 candidate — the SCIM Provisioning UI.
