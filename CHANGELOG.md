@@ -6,6 +6,66 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.4.0] — 2026-06-11
+
+Roadmap-candidate release — closes two v3.3 candidates and proactively
+hardens the remaining tools against the "absent ≠ zero" empty-state class
+(the root of #453/#462) before it could be reported again. All additive /
+opt-in; migrating from 3.3 is non-breaking.
+
+### Added
+
+- **IPv6 in `enrich_ips` + an offline dataset converter** (v3.3 candidate).
+  `enrich_ips` now resolves IPv6 as well as IPv4 (128-bit longest-prefix
+  lookup, `::` compression and IPv4-mapped tails parse); v6 rows in the
+  dataset are loaded, not skipped, and the tool accepts v6 inputs.
+  `scripts/build-ip-enrich-csv.mjs` reshapes a licensed **MaxMind
+  GeoLite2** export (City + Locations + optional ASN, v4 + v6) into the
+  `enrich_ips` CSV — dependency-free, RFC-4180-aware. The geo/ASN data
+  stays operator-side; nothing is bundled and there is no network call,
+  preserving the air-gapped guarantee. See [ip-enrichment.md](docs/ip-enrichment.md).
+- **Per-credential `raw_query` gating** (v3.3 candidate). `raw_query` was a
+  global-only capability (`OMCP_RAW_QUERY=on`); a credential can now be
+  granted it individually via `OMCP_KEY_RAW_QUERY="agent,ci"` (credential
+  names, mirroring `OMCP_KEY_BYPASS_REDACTION`). Effective gate is
+  `global OR per-credential` — it only widens, never narrows a
+  globally-enabled deployment. See [raw-query.md](docs/raw-query.md).
+
+### Fixed
+
+- **Honest no-data / partial states across the remaining tools** (proactive
+  sweep of the #453/#462 class):
+  - `list_services` distinguishes *no backends configured* / *discovery
+    failed on all sources* / *genuinely none* via a `note`, and surfaces
+    `partial:true` + `failedSources[]` when only some sources fail
+    (previously a down source silently halved the fleet).
+  - `list_sources` adds an explanatory `note` when nothing is configured.
+  - `get_blast_radius` returns an explicit "no topology connector" note
+    when no topology source is configured, instead of a generic
+    "resource not found" that misattributed the cause.
+  - `generate_postmortem` computes `coverage{anomalies,traces,topology,logs}`
+    + `builtFromSignal` and leads the markdown with a banner when the report
+    was built from zero signal — so it isn't mistaken for a real finding.
+
+### Changed
+
+- **ROADMAP reconciled** against shipped state — the stale `Next`/`Later`
+  vision lists (and a duplicate `v3.0 — next` block) had items that already
+  shipped (verifiable offline, query_traces, plugin SDK on npm, multi-tenant,
+  auto-postmortems, embeddable analysis library); these moved to the landed
+  sections. A dead internal anchor and two links to a private directory were
+  removed.
+- The `hash-password` policy-sync test no longer emits a spurious failure
+  under the docker-first partial mount — it skips when the repo-root script
+  is unreachable, but still asserts in CI (full checkout).
+
+### Notes
+
+- `MetricResult.summary`/`MetricGroup.summary` have been nullable since
+  3.3.2 (the #462 no-data fix); no further type change here.
+- The SDK (`@thotischner/observability-mcp-sdk`) is unchanged — these are
+  gateway tool-surface and tooling changes; the plugin contract did not move.
+
 ## [3.3.2] — 2026-06-11
 
 Agent-feedback patch — two more reports against 3.3.1 (#462 and the
