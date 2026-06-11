@@ -80,7 +80,7 @@ export async function queryLogsHandler(
   const isRaw = !!args.raw_query;
   if (isRaw && !opts.allowRawQuery) {
     return errorResponse(
-      "raw_query is disabled. The operator must enable the raw-query capability (OMCP_RAW_QUERY=on) to run verbatim LogQL — it bypasses the curated log surface, so it is off by default."
+      "raw_query is disabled. The operator must enable the raw-query capability (OMCP_RAW_QUERY=on globally, or per-credential via OMCP_KEY_RAW_QUERY) to run verbatim LogQL — it bypasses the curated log surface, so it is off by default."
     );
   }
   if (isRaw && args.aggregate) {

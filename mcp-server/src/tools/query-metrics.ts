@@ -66,7 +66,7 @@ export async function queryMetricsHandler(
   const isRaw = !!args.raw_query;
   if (isRaw && !opts.allowRawQuery) {
     return errorResponse(
-      "raw_query is disabled. The operator must enable the raw-query capability (OMCP_RAW_QUERY=on) to run verbatim PromQL — it bypasses the curated metric surface, so it is off by default."
+      "raw_query is disabled. The operator must enable the raw-query capability (OMCP_RAW_QUERY=on globally, or per-credential via OMCP_KEY_RAW_QUERY) to run verbatim PromQL — it bypasses the curated metric surface, so it is off by default."
     );
   }
 

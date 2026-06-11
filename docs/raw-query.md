@@ -9,14 +9,26 @@ default**.
 
 ## Enabling
 
+Two ways, and the effective gate is **either one** (`global OR
+per-credential`) — so enabling globally still works, and the
+per-credential form only *widens* access, never narrows a globally-enabled
+deployment.
+
 ```bash
+# Global — every caller may use raw_query.
 OMCP_RAW_QUERY=on      # also accepts: true, 1
+
+# Per-credential — only the named API-key credentials may use raw_query,
+# even with the global flag off. Needs OMCP_API_KEYS configured.
+OMCP_KEY_RAW_QUERY="agent,ci"
 ```
 
-When unset (the default) any call that passes `raw_query` is refused
-with a clear message — the param is still *advertised* in `tools/list`
-(so an agent can discover it and explain the requirement), but the
-server will not execute it.
+When neither is set (the default) any call that passes `raw_query` is
+refused with a clear message — the param is still *advertised* in
+`tools/list` (so an agent can discover it and explain the requirement),
+but the server will not execute it. Per-credential gating lets you hand a
+trusted automation credential the escape hatch while keeping anonymous /
+other sessions on the curated surface only.
 
 ## Usage
 
