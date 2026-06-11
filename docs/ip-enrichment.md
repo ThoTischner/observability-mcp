@@ -23,16 +23,18 @@ implicitly.
 ## Dataset format
 
 A dependency-free CSV (so no parser library / host `npm install` is
-needed). One row per IPv4 network:
+needed). One row per network (IPv4 or IPv6):
 
 ```csv
 network,country,city,asn,org,hosting
 1.2.3.0/24,US,Ashburn,AS14618,Example Cloud,true
 203.0.113.5,DE,Berlin,AS3320,Example ISP,false
+2001:db8::/32,US,,AS14618,Example Cloud,true
 ```
 
-- `network` — an IPv4 CIDR, or a bare IPv4 (treated as `/32`). IPv6 rows
-  are skipped (logged at boot); IPv4 covers the access-log case.
+- `network` — an IPv4 or IPv6 CIDR, or a bare address (treated as `/32`
+  resp. `/128`). Both families are supported; lookups dispatch by address
+  family. IPv4-mapped IPv6 (`::ffff:1.2.3.4`) parses on the IPv6 side.
 - `country`, `city`, `asn`, `org` — optional; an empty cell is omitted
   from the result.
 - `hosting` — `true`/`1`/`yes` (case-insensitive) marks a
@@ -48,6 +50,31 @@ You supply the data offline — e.g. export the ranges of interest from
 whatever geo/ASN source you already license into this CSV and mount it.
 This keeps enrichment air-gapped and avoids bundling any third-party
 database into the image.
+
+### Building the CSV from a MaxMind GeoLite2 export
+
+`scripts/build-ip-enrich-csv.mjs` reshapes a licensed **MaxMind GeoLite2**
+export into this CSV. It runs with plain `node` (no npm install), handles
+IPv4 and IPv6, and joins City blocks → country/city via the Locations
+file and (optionally) ASN blocks → asn/org. The geo/ASN **data never
+leaves your machine** — the script only reformats a file you already
+license; nothing is bundled and there is no network call.
+
+```bash
+node scripts/build-ip-enrich-csv.mjs \
+  --city-blocks GeoLite2-City-Blocks-IPv4.csv \
+  --city-blocks GeoLite2-City-Blocks-IPv6.csv \
+  --locations   GeoLite2-City-Locations-en.csv \
+  --asn-blocks  GeoLite2-ASN-Blocks-IPv4.csv \
+  --asn-blocks  GeoLite2-ASN-Blocks-IPv6.csv \
+  --out enrich.csv
+# then: OMCP_IP_ENRICH_FILE=enrich.csv
+```
+
+`--locations` and `--asn-blocks` are optional (with only city blocks you
+get `network,country,city`). The `hosting` flag is left blank — GeoLite2
+City/ASN don't carry it (it lives in the paid Anonymous-IP DB); set it
+yourself if you have that data.
 
 ## Usage
 

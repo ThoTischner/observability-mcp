@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { ipv4ToInt, parseCidr, IpEnrichmentDataset } from "./ip-dataset.js";
+import { ipv4ToInt, parseCidr, ipv6ToBigInt, parseCidr6, IpEnrichmentDataset } from "./ip-dataset.js";
 
 describe("ipv4ToInt", () => {
   it("parses valid IPv4", () => {
@@ -52,14 +52,14 @@ describe("IpEnrichmentDataset.fromCsv + lookup", () => {
     "10.0.0.0/8,US,,AS100,Example Cloud,true",
     "10.1.2.0/24,US,Ashburn,AS100,Example Cloud Edge,true",
     "203.0.113.5,DE,Berlin,AS3320,Example ISP,false",
-    "2001:db8::/32,XX,,,,", // IPv6 → skipped
+    "2001:db8::/32,XX,,,,", // IPv6 — now parsed, not skipped
     "garbage-row",
   ].join("\n");
 
-  it("parses rows, skips header/comments/blank, counts skipped", () => {
+  it("parses rows (v4 + v6), skips header/comments/blank, counts skipped", () => {
     const ds = IpEnrichmentDataset.fromCsv(csv);
-    assert.equal(ds.size, 3); // 3 valid IPv4 rows
-    assert.equal(ds.skipped, 2); // IPv6 + garbage
+    assert.equal(ds.size, 4); // 3 IPv4 + 1 IPv6 row
+    assert.equal(ds.skipped, 1); // only the garbage row
   });
 
   it("returns the most specific (longest-prefix) match", () => {
@@ -89,5 +89,85 @@ describe("IpEnrichmentDataset.fromCsv + lookup", () => {
     const ds = IpEnrichmentDataset.fromCsv(csv);
     assert.equal(ds.lookup("8.8.8.8"), null);
     assert.equal(ds.lookup("not-an-ip"), null);
+  });
+});
+
+describe("ipv6ToBigInt", () => {
+  it("parses a full address", () => {
+    assert.equal(ipv6ToBigInt("2001:0db8:0000:0000:0000:0000:0000:0001"), 0x20010db8000000000000000000000001n);
+  });
+  it("expands :: zero-compression", () => {
+    assert.equal(ipv6ToBigInt("2001:db8::1"), 0x20010db8000000000000000000000001n);
+    assert.equal(ipv6ToBigInt("::1"), 1n);
+    assert.equal(ipv6ToBigInt("::"), 0n);
+    assert.equal(ipv6ToBigInt("ff02::"), 0xff020000000000000000000000000000n);
+  });
+  it("parses an IPv4-mapped tail", () => {
+    // ::ffff:1.2.3.4 → the v4 lives in the low 32 bits with ffff above it
+    assert.equal(ipv6ToBigInt("::ffff:1.2.3.4"), 0x00000000000000000000ffff01020304n);
+  });
+  it("rejects malformed input", () => {
+    assert.equal(ipv6ToBigInt("2001:db8::1::2"), null); // two ::
+    assert.equal(ipv6ToBigInt("gggg::1"), null);
+    assert.equal(ipv6ToBigInt("1.2.3.4"), null); // v4 is not v6
+    assert.equal(ipv6ToBigInt("12345::"), null); // hextet too long
+    assert.equal(ipv6ToBigInt(""), null);
+  });
+});
+
+describe("parseCidr6", () => {
+  it("parses a /32 to its inclusive range", () => {
+    const r = parseCidr6("2001:db8::/32");
+    assert.equal(r?.prefix, 32);
+    assert.equal(r?.start, 0x20010db8000000000000000000000000n);
+    assert.equal(r?.end, 0x20010db8ffffffffffffffffffffffffn);
+  });
+  it("treats a bare address as /128", () => {
+    const r = parseCidr6("2001:db8::1");
+    assert.equal(r?.prefix, 128);
+    assert.equal(r?.start, r?.end);
+  });
+  it("handles /0 (whole space)", () => {
+    const r = parseCidr6("::/0");
+    assert.equal(r?.start, 0n);
+    assert.equal(r?.end, (1n << 128n) - 1n);
+  });
+  it("rejects bad prefixes / addresses", () => {
+    assert.equal(parseCidr6("2001:db8::/129"), null);
+    assert.equal(parseCidr6("nope::/32"), null);
+  });
+});
+
+describe("IpEnrichmentDataset IPv6 lookup", () => {
+  const csv = [
+    "network,country,city,asn,org,hosting",
+    "2001:db8::/32,US,,AS100,Example Cloud,true",
+    "2001:db8:1::/48,US,Ashburn,AS100,Example Cloud Edge,true",
+    "2606:4700::/32,US,,AS13335,Example CDN,true",
+    "10.0.0.0/8,DE,Berlin,AS3320,Example ISP,false", // v4 row alongside
+  ].join("\n");
+
+  it("returns the most specific v6 match", () => {
+    const ds = IpEnrichmentDataset.fromCsv(csv);
+    const hit = ds.lookup("2001:db8:1::abcd"); // inside both /32 and /48
+    assert.equal(hit?.city, "Ashburn");
+    assert.equal(hit?.org, "Example Cloud Edge");
+  });
+  it("falls back to the broader v6 range", () => {
+    const ds = IpEnrichmentDataset.fromCsv(csv);
+    const hit = ds.lookup("2001:db8:9::1"); // only in /32
+    assert.equal(hit?.asn, "AS100");
+    assert.equal(hit?.city, undefined);
+  });
+  it("keeps v4 and v6 lookups independent", () => {
+    const ds = IpEnrichmentDataset.fromCsv(csv);
+    assert.equal(ds.lookup("10.1.2.3")?.country, "DE"); // v4 path
+    assert.equal(ds.lookup("2606:4700::1")?.org, "Example CDN"); // v6 path
+    assert.equal(ds.lookup("2607:f8b0::1"), null); // unmatched v6
+  });
+  it("normalises an IPv4-mapped query against a v4 row? no — :: form hits v6 table only", () => {
+    const ds = IpEnrichmentDataset.fromCsv(csv);
+    // A ':'-bearing query goes to the v6 table; it won't match the 10.0.0.0/8 v4 row.
+    assert.equal(ds.lookup("::ffff:10.1.2.3"), null);
   });
 });

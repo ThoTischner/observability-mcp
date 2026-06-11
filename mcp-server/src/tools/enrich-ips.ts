@@ -1,4 +1,4 @@
-import { IpEnrichmentDataset, ipv4ToInt } from "../enrich/ip-dataset.js";
+import { IpEnrichmentDataset, ipv4ToInt, ipv6ToBigInt } from "../enrich/ip-dataset.js";
 import { defaultContext, type RequestContext } from "../context.js";
 import { errorResponse } from "./validation.js";
 
@@ -10,10 +10,15 @@ import { errorResponse } from "./validation.js";
 export const enrichIpsDefinition = {
   name: "enrich_ips" as const,
   description:
-    "Resolve a batch of IPv4 addresses to geo (country/city), ASN/org, and a hosting/proxy flag from a local offline dataset. Use this to answer 'where are these visitors from / which are bots or datacenter IPs' without an out-of-band geo API call. Requires the operator to have configured an offline dataset (OMCP_IP_ENRICH_FILE); returns a clear notice otherwise.",
+    "Resolve a batch of IPv4 or IPv6 addresses to geo (country/city), ASN/org, and a hosting/proxy flag from a local offline dataset. Use this to answer 'where are these visitors from / which are bots or datacenter IPs' without an out-of-band geo API call. Requires the operator to have configured an offline dataset (OMCP_IP_ENRICH_FILE); returns a clear notice otherwise.",
 };
 
 const MAX_IPS = 1000;
+
+/** A string is a valid IP if it parses as either IPv4 or IPv6. */
+function isValidIp(ip: string): boolean {
+  return ipv4ToInt(ip) !== null || ipv6ToBigInt(ip) !== null;
+}
 
 export interface EnrichIpsArgs {
   ips?: string[];
@@ -46,7 +51,7 @@ export function enrichIpsHandler(
   }
   const ips = args.ips;
   if (!Array.isArray(ips) || ips.length === 0) {
-    return errorResponse("`ips` must be a non-empty array of IPv4 address strings.");
+    return errorResponse("`ips` must be a non-empty array of IPv4 or IPv6 address strings.");
   }
   if (ips.length > MAX_IPS) {
     return errorResponse(`Too many IPs (${ips.length}); max ${MAX_IPS} per call.`);
@@ -56,7 +61,7 @@ export function enrichIpsHandler(
   let invalid = 0;
   let matched = 0;
   for (const ip of ips) {
-    if (typeof ip !== "string" || ipv4ToInt(ip) === null) {
+    if (typeof ip !== "string" || !isValidIp(ip)) {
       invalid++;
       results.push({ ip: String(ip), found: false });
       continue;
