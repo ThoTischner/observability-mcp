@@ -22,6 +22,13 @@ RUN npm prune --omit=dev
 # silences false-positive scans like the one ArtifactHub reported.
 FROM node:26-alpine@sha256:e71ac5e964b9201072425d59d2e876359efa25dc96bb1768cb73295728d6e4ea
 
+# Patch base-image OS packages that lag the pinned digest snapshot. The
+# digest carries libcrypto3/libssl3 3.5.6-r0 (a batch of OpenSSL CVEs);
+# the Alpine repo already ships the 3.5.7-r0 fix. Upgrade just those two
+# packages at build time so Trivy's image scan is clean without waiting
+# for a new base digest. --no-cache leaves no apk index behind.
+RUN apk upgrade --no-cache libcrypto3 libssl3
+
 ARG GIT_COMMIT=""
 ARG BUILD_DATE=""
 
