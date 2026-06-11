@@ -127,6 +127,44 @@ returns.
 Every section is independently optional so a half-configured
 deployment still produces SOMETHING useful instead of failing.
 
+## Custom report template
+
+The default markdown layout suits most teams, but you can override it
+to match your own incident-report format. Point
+`OMCP_POSTMORTEM_TEMPLATE` at a file of `{{token}}` placeholders:
+
+```bash
+OMCP_POSTMORTEM_TEMPLATE=/etc/omcp/postmortem.md
+```
+
+```markdown
+## Incident — {{service}} ({{window}})
+
+{{synopsis}}
+
+### Timeline
+{{timeline}}
+
+### Blast radius
+{{blastRadius}}
+
+### Follow-ups
+{{followUps}}
+```
+
+Available tokens: `service`, `window`, `from`, `to`, `tenant`,
+`synopsis`, `timeline`, `blastRadius`, `signals`, `traces`,
+`logHighlights`, `followUps`. Each expands to a pre-rendered markdown
+block (tables for the data sections), so you compose the layout without
+re-implementing the rendering. An **unknown token is left verbatim** in
+the output — a typo is visible, not silently dropped. When the env var
+is unset the built-in layout is used; an unreadable template path falls
+back to the built-in layout (logged) rather than failing the report.
+
+> The no-signal honesty banner (when a report is built from zero signal)
+> still prepends a custom template — it's a correctness notice, not part
+> of the layout.
+
 ## Related
 
 - [`query_traces`](query-traces.md) — drill into a specific

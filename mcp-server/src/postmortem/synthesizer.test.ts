@@ -178,3 +178,34 @@ test("synthesizePostmortem: report carries the input window + iso bounds back in
   assert.equal(r.fromIso, "2026-06-06T00:00:00.000Z");
   assert.equal(r.toIso, "2026-06-06T01:00:00.000Z");
 });
+
+test("custom template: tokens are interpolated; default path unchanged when no template", () => {
+  const data = input({
+    anomalies: [anomaly("2026-06-06T00:10:00Z", 0.7, "mad", "warn", "cpu")],
+    blastRadius: { nodes: [{ id: "n1", kind: "pod", name: "payment-1", root: true }], edges: [] },
+    logHighlights: ["payment: 5xx spike"],
+  });
+  // Default (no template) still produces the built-in report.
+  const def = synthesizePostmortem(data);
+  assert.match(def.markdown, /^# Post-mortem — payment/);
+
+  // Custom template interpolates the known tokens.
+  const tpl = "INCIDENT {{service}} ({{window}})\n\n{{synopsis}}\n\nTIMELINE:\n{{timeline}}\n\nFOLLOWUPS:\n{{followUps}}\n\nLOGS:\n{{logHighlights}}";
+  const out = synthesizePostmortem({ ...data, template: tpl }).markdown;
+  assert.match(out, /^INCIDENT payment \(1h\)/);
+  assert.ok(!out.includes("# Post-mortem"), "custom template replaces the default layout");
+  assert.match(out, /TIMELINE:\n\| ts \| service \| score/);
+  assert.match(out, /LOGS:\n- payment: 5xx spike/);
+  assert.ok(out.includes(def.synopsis), "synopsis token expands to the computed synopsis");
+});
+
+test("custom template: unknown token is left verbatim (visible typo, not silent blank)", () => {
+  const out = synthesizePostmortem({ ...input(), template: "{{service}} / {{nope}}" }).markdown;
+  assert.equal(out, "payment / {{nope}}");
+});
+
+test("custom template: empty sections render their placeholder text, not a crash", () => {
+  const out = synthesizePostmortem({ ...input(), template: "T:{{timeline}} L:{{logHighlights}}" }).markdown;
+  assert.match(out, /T:_No anomaly samples in this window\._/);
+  assert.match(out, /L:_No log highlights\._/);
+});
