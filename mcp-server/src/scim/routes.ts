@@ -4,7 +4,7 @@
 //   GET    /scim/v2/ServiceProviderConfig
 //   GET    /scim/v2/ResourceTypes
 //   GET    /scim/v2/Schemas
-//   GET    /scim/v2/Users        list (no filter support yet)
+//   GET    /scim/v2/Users        list (filter: <attr> eq "x"; startIndex/count)
 //   GET    /scim/v2/Users/:id
 //   POST   /scim/v2/Users
 //   PATCH  /scim/v2/Users/:id    minimal: replace top-level attrs
@@ -31,6 +31,7 @@ import {
   type ScimPatchRequest,
 } from "./types.js";
 import { ScimNotFoundError, type IScimStore, ScimValidationError } from "./store.js";
+import { applyScimList } from "./query.js";
 
 export interface ScimRoutesDeps {
   store: IScimStore;
@@ -76,7 +77,7 @@ export function registerScimRoutes(app: Application, deps: ScimRoutesDeps): void
       documentationUri: "https://thotischner.github.io/observability-mcp/scim-provisioning/",
       patch: { supported: true },
       bulk: { supported: false, maxOperations: 0, maxPayloadSize: 0 },
-      filter: { supported: false, maxResults: 200 },
+      filter: { supported: true, maxResults: 200 },
       changePassword: { supported: false },
       sort: { supported: false },
       etag: { supported: false },
@@ -130,14 +131,24 @@ export function registerScimRoutes(app: Application, deps: ScimRoutesDeps): void
   });
 
   // ---- Users ----
-  app.get("/scim/v2/Users", (_req, res) => {
+  app.get("/scim/v2/Users", (req, res) => {
     const users = store.listUsers().map((u) => withGroups(u, store));
+    let page;
+    try {
+      page = applyScimList(users as unknown as Record<string, unknown>[], req.query as Record<string, string>);
+    } catch (e) {
+      if ((e as { scimUnsupported?: boolean }).scimUnsupported) {
+        res.status(400).json(scimError(400, (e as Error).message));
+        return;
+      }
+      throw e;
+    }
     res.json({
       schemas: [SCIM_SCHEMA_LIST_RESPONSE],
-      totalResults: users.length,
-      itemsPerPage: users.length,
-      startIndex: 1,
-      Resources: users,
+      totalResults: page.totalResults,
+      itemsPerPage: page.itemsPerPage,
+      startIndex: page.startIndex,
+      Resources: page.resources,
     });
   });
 
@@ -182,14 +193,24 @@ export function registerScimRoutes(app: Application, deps: ScimRoutesDeps): void
   });
 
   // ---- Groups ----
-  app.get("/scim/v2/Groups", (_req, res) => {
+  app.get("/scim/v2/Groups", (req, res) => {
     const groups = store.listGroups();
+    let page;
+    try {
+      page = applyScimList(groups as unknown as Record<string, unknown>[], req.query as Record<string, string>);
+    } catch (e) {
+      if ((e as { scimUnsupported?: boolean }).scimUnsupported) {
+        res.status(400).json(scimError(400, (e as Error).message));
+        return;
+      }
+      throw e;
+    }
     res.json({
       schemas: [SCIM_SCHEMA_LIST_RESPONSE],
-      totalResults: groups.length,
-      itemsPerPage: groups.length,
-      startIndex: 1,
-      Resources: groups,
+      totalResults: page.totalResults,
+      itemsPerPage: page.itemsPerPage,
+      startIndex: page.startIndex,
+      Resources: page.resources,
     });
   });
 
