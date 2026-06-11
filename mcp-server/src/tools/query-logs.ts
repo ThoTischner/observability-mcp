@@ -138,7 +138,8 @@ export async function queryLogsHandler(
     }
     if (aggResults.length === 0) {
       return {
-        content: [{ type: "text" as const, text: JSON.stringify({ error: aggErrors.length ? `Aggregate failed: ${aggErrors.join("; ")}` : "No data returned", service: args.service, duration }) }],
+        // `window` = the requested look-back, not elapsed time (issue #452).
+        content: [{ type: "text" as const, text: JSON.stringify({ error: aggErrors.length ? `Aggregate failed: ${aggErrors.join("; ")}` : "No data returned", service: args.service, window: duration }) }],
         isError: aggErrors.length > 0,
       };
     }
@@ -179,7 +180,9 @@ export async function queryLogsHandler(
           text: JSON.stringify({
             error: errors.length > 0 ? `Query failed: ${errors.join("; ")}` : "No logs returned",
             service: args.service,
-            duration,
+            // The requested look-back window, NOT elapsed wall-clock time. Named
+            // `window` so a fast failure isn't misread as a 5-minute hang (#452).
+            window: duration,
           }),
         },
       ],
