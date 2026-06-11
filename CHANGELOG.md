@@ -6,6 +6,43 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.3.2] — 2026-06-11
+
+Agent-feedback patch — two more reports against 3.3.1 (#462 and the
+reopened #452) extending the "absent ≠ zero" honesty principle into the
+raw metric tool and tidying a stale field the fail-fast fix surfaced.
+Additive and non-breaking.
+
+### Fixed
+
+- **`query_metrics` reports no-data honestly instead of false zeros
+  (#462).** For a service with no matching series (e.g. a logs-only
+  service queried for `cpu`), the tool returned `values:[]` but
+  `summary:{current:0,…,trend:"stable"}` — indistinguishable from a
+  service genuinely idling at 0. `summary` is now `null` (with an
+  explanatory `note`) when no series matched, mirroring the #453A health
+  fix one level down. `MetricResult.summary` and `MetricGroup.summary`
+  are now nullable; consumers (correlation, health scoring) treat a null
+  summary as no-data.
+- **`query_logs` error responses report `window`, not `duration`
+  (#452).** The fail-fast fix (3.3.1) surfaced a stale field: the
+  error / no-data response echoed the requested look-back as `duration`,
+  which an agent reads as elapsed wall-clock — so a sub-second failure
+  looked like a 5-minute hang. The field is now named `window`; the
+  success path and the input parameter are unchanged.
+
+### Notes
+
+- The label-filtered `count_over_time` 400 reported under #452 could not
+  be reproduced: the emitted LogQL
+  (`sum (count_over_time({sel} | json | label="v" [step]))`) is
+  well-formed and structurally identical to the working `sum`/`topk`
+  path. A regression guard asserting that LogQL shape was added; the
+  intermittent 400 is treated as backend-side/transient.
+- `MetricResult.summary`/`MetricGroup.summary` becoming nullable is
+  additive (a new `null` case for the no-data state); existing readers
+  that always had data are unaffected. SDK unchanged.
+
 ## [3.3.1] — 2026-06-10
 
 Agent-feedback patch — three structured agent reports against 3.3.0

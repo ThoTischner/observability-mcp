@@ -4,11 +4,11 @@ description: Unified observability gateway for AI agents — one MCP server for 
 type: application
 
 # Chart version (this chart). Bumped on chart changes.
-version: 2.3.1
+version: 2.3.2
 
 # App version (the mcp-server image tag the chart defaults to).
 # Update with each release of the mcp-server image.
-appVersion: "3.3.1"
+appVersion: "3.3.2"
 
 home: https://github.com/ThoTischner/observability-mcp
 sources:
@@ -51,20 +51,16 @@ annotations:
     url: https://raw.githubusercontent.com/ThoTischner/observability-mcp/main/docs/helm-signing.pub.asc
   artifacthub.io/images: |
     - name: observability-mcp
-      image: ghcr.io/thotischner/observability-mcp:3.3.1
+      image: ghcr.io/thotischner/observability-mcp:3.3.2
       platforms:
         - linux/amd64
         - linux/arm64
   artifacthub.io/changes: |
     - kind: changed
-      description: "appVersion → 3.3.1 (agent-feedback patch); chart points at the 3.3.1 image"
+      description: "appVersion → 3.3.2 (agent-feedback patch); chart points at the 3.3.2 image"
     - kind: fixed
-      description: "query_logs count_over_time without `by` no longer leaks the label set — collapses to one bucketed series (#452)"
+      description: "query_metrics reports no-data honestly (summary:null + note) instead of false all-zeros for a service with no matching series (#462)"
     - kind: fixed
-      description: "query_logs raw_query with a vector/matrix aggregation fails fast with a clear message instead of crashing/timing out (#452)"
-    - kind: fixed
-      description: "get_service_health reports honest no-data/unknown (and not-found for typo'd names) instead of a false 100/healthy (#453)"
-    - kind: fixed
-      description: "detect_anomalies fleet scan covers log-only services and reports per-service coverage so an all-clear isn't silently partial (#453)"
+      description: "query_logs error/no-data responses report `window` (the look-back) not `duration`, so a fast failure isn't misread as a 5-minute hang (#452)"
     - kind: added
-      description: "initialize.instructions populated (golden rule + guide pointer) so the usage guide auto-reaches connecting agents (#455)"
+      description: "regression guard: label-filtered count_over_time emits well-formed sum-wrapped LogQL (#452)"
