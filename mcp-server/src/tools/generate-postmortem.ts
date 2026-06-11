@@ -8,6 +8,7 @@
 // this handler is just the orchestration: pull each upstream
 // primitive in parallel, hand the result to the synthesizer.
 
+import { readFileSync } from "node:fs";
 import type { ConnectorRegistry } from "../connectors/registry.js";
 import { defaultContext, type RequestContext } from "../context.js";
 import { validateDuration, validateServiceName, errorResponse } from "./validation.js";
@@ -18,6 +19,30 @@ import {
   type TraceSummary,
 } from "../postmortem/synthesizer.js";
 import type { MetricResult, TraceResult } from "../types.js";
+
+// Optional operator-supplied report template (v3.3 candidate). Set
+// OMCP_POSTMORTEM_TEMPLATE to a file of `{{token}}` placeholders to override
+// the built-in layout; unset → the default report. Read once and cached; a
+// read error falls back to the default (logged once) rather than failing the
+// tool — a broken template must not break incident reporting.
+let _templateCache: string | null | undefined;
+function loadPostmortemTemplate(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  if (_templateCache !== undefined) return _templateCache ?? undefined;
+  const path = env.OMCP_POSTMORTEM_TEMPLATE?.trim();
+  if (!path) { _templateCache = null; return undefined; }
+  try {
+    _templateCache = readFileSync(path, "utf8");
+  } catch (err) {
+    console.error("OMCP_POSTMORTEM_TEMPLATE unreadable, using the built-in layout:", err instanceof Error ? err.message : err);
+    _templateCache = null;
+  }
+  return _templateCache ?? undefined;
+}
+
+/** Test seam: reset the cached template (so tests can vary the env). */
+export function _resetPostmortemTemplateCache(): void {
+  _templateCache = undefined;
+}
 
 export const generatePostmortemDefinition = {
   name: "generate_postmortem" as const,
@@ -74,6 +99,7 @@ export async function generatePostmortemHandler(
     blastRadius,
     traces,
     logHighlights,
+    template: loadPostmortemTemplate(),
   });
 
   // Which primitives actually carried data. A post-mortem synthesised from

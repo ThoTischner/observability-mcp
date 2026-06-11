@@ -53,6 +53,13 @@ export interface PostmortemInput {
   traces: TraceSummary[];
   /** Optional log-error summary lines, e.g. ["payment-service: 412 5xx in window"]. */
   logHighlights?: string[];
+  /** Optional custom report template (issue: v3.3 candidate). When set, the
+   *  markdown body is rendered by interpolating `{{placeholder}}` tokens
+   *  instead of the built-in layout. Unset → the default report (unchanged).
+   *  Available tokens: service, window, from, to, tenant, synopsis, timeline,
+   *  blastRadius, signals, traces, logHighlights, followUps. An unknown token
+   *  is left verbatim so a typo is visible rather than silently dropped. */
+  template?: string;
 }
 
 export interface PostmortemReport {
@@ -92,7 +99,7 @@ export function synthesizePostmortem(input: PostmortemInput): PostmortemReport {
 
   const synopsis = synopsisFor(input, peakScore, errorTraces, blastSize);
 
-  const markdown = renderMarkdown({
+  const renderCtx = {
     input,
     timeline,
     contributingSignals,
@@ -102,7 +109,12 @@ export function synthesizePostmortem(input: PostmortemInput): PostmortemReport {
     blastSize,
     followUps,
     synopsis,
-  });
+  };
+  // Default layout unless the operator supplied a custom template — the
+  // default path is byte-for-byte unchanged.
+  const markdown = input.template
+    ? renderTemplate(input.template, buildTemplateVars(renderCtx))
+    : renderMarkdown(renderCtx);
 
   return {
     service: input.service,
@@ -285,4 +297,82 @@ function renderMarkdown(ctx: {
   // is normally a few KB but a pathological 10k-sample timeline
   // could approach MB without the slice() caps above.
   return lines.join("\n");
+}
+
+// --- Custom template engine (v3.3 candidate) -------------------------------
+// Operators can override the report layout with a template of `{{token}}`
+// placeholders. The default path (no template) is unchanged. Each token maps
+// to a pre-rendered markdown block so a template author composes sections
+// without re-implementing the table rendering.
+
+type RenderCtx = {
+  input: PostmortemInput;
+  timeline: PostmortemReport["sections"]["timeline"];
+  contributingSignals: PostmortemReport["sections"]["contributingSignals"];
+  peakNode: BlastRadiusNode | undefined;
+  peakScore: number;
+  errorTraces: number;
+  blastSize: number;
+  followUps: string[];
+  synopsis: string;
+};
+
+/** Build the `{{token}}` → markdown-block map for a custom template. */
+export function buildTemplateVars(ctx: RenderCtx): Record<string, string> {
+  const { input, timeline, contributingSignals, peakNode, errorTraces, followUps, synopsis } = ctx;
+
+  const timelineBlock = timeline.length === 0
+    ? "_No anomaly samples in this window._"
+    : ["| ts | service | score | severity | method |", "|---|---|---|---|---|",
+       ...timeline.slice(0, 20).map((t) => `| \`${t.ts}\` | \`${t.service}\` | ${t.score} | ${t.severity} | ${t.method} |`),
+       ...(timeline.length > 20 ? [`| … | _${timeline.length - 20} more rows_ |  |  |  |`] : [])].join("\n");
+
+  const brLines: string[] = [];
+  brLines.push(peakNode ? `Root node: **\`${peakNode.name}\`** (\`${peakNode.kind}\`).` : "_Topology snapshot empty._");
+  if (input.blastRadius.nodes.length > 0) {
+    brLines.push("", "| node | kind |", "|---|---|",
+      ...input.blastRadius.nodes.slice(0, 30).map((n) => `| \`${n.name}\`${n.root ? " *(root)*" : ""} | \`${n.kind}\` |`));
+  }
+  brLines.push("", `Edges in radius: **${input.blastRadius.edges.length}**.`);
+  const blastRadiusBlock = brLines.join("\n");
+
+  const signalsBlock = contributingSignals.length === 0
+    ? "_No anomaly samples to rank._"
+    : ["| signal | samples | mean score |", "|---|---|---|",
+       ...contributingSignals.slice(0, 10).map((s) => `| \`${s.signal}\` | ${s.count} | ${s.meanScore} |`)].join("\n");
+
+  const tracesBlock = input.traces.length === 0
+    ? "_No traces returned for the window. Configure a Tempo / Jaeger source if traces are expected._"
+    : ["| trace | service | duration ms | error |", "|---|---|---|---|",
+       ...input.traces.slice(0, 10).map((t) => `| \`${t.traceId}\` | \`${t.rootService}\` | ${t.durationMs} | ${t.hasError ? "yes" : "no"} |`),
+       ...(errorTraces > 0 ? [`\n_${errorTraces} of the returned traces carried error spans._`] : [])].join("\n");
+
+  const logHighlightsBlock = (input.logHighlights ?? []).length === 0
+    ? "_No log highlights._"
+    : input.logHighlights!.map((l) => `- ${l}`).join("\n");
+
+  const followUpsBlock = followUps.map((f) => `- ${f}`).join("\n");
+
+  return {
+    service: input.service,
+    window: input.window,
+    from: input.fromIso,
+    to: input.toIso,
+    tenant: input.tenant,
+    synopsis,
+    timeline: timelineBlock,
+    blastRadius: blastRadiusBlock,
+    signals: signalsBlock,
+    traces: tracesBlock,
+    logHighlights: logHighlightsBlock,
+    followUps: followUpsBlock,
+  };
+}
+
+/** Interpolate `{{token}}` placeholders. An unknown token is left verbatim so
+ *  a typo is visible in the output rather than silently producing a blank. */
+export function renderTemplate(template: string, vars: Record<string, string>): string {
+  return template.replace(/\{\{\s*([a-zA-Z][\w]*)\s*\}\}/g, (whole, key: string) =>
+    Object.prototype.hasOwnProperty.call(vars, key) ? vars[key] : whole,
+  );
 }
