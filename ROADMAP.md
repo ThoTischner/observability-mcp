@@ -49,7 +49,9 @@ Still open (vote via Discussions):
 
 - A custom postmortem template engine (persistence + the Postmortems UI tab already ship)
 - SCIM filter/search on the collection endpoints + a UI Provisioning sub-tab
-- Strict-mode MkDocs build (resolve the cross-repo link warnings)
+
+(The strict-mode MkDocs build already ships — `docs.yml` runs
+`mkdocs build --strict`, so a broken cross-repo link fails CI.)
 
 ## v3.0 — shipped 2026-06-06
 
