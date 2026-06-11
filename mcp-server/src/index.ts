@@ -1041,8 +1041,8 @@ async function main() {
   registerTool(
     "enrich_ips",
     [
-      "Resolve a batch of IPv4 addresses to geo (country/city), ASN/org, and a hosting/proxy flag.",
-      "When to use: answering 'where are these visitors from?' or 'which of these IPs are bots / datacenter / VPN exit nodes?' over access logs, without an out-of-band geo-API call per IP.",
+      "Resolve a batch of IPv4 or IPv6 addresses to geo (country/city), ASN/org, and a hosting/proxy flag.",
+      "When to use: answering 'where are these visitors from?' or 'which of these IPs are bots / datacenter / VPN exit nodes?' over access logs, without an out-of-band geo-API call per IP. Both IPv4 and IPv6 clients are resolved — don't pre-filter v6 out.",
       "Behavior: read-only. Looks each IP up in a LOCAL offline dataset the operator configured (OMCP_IP_ENRICH_FILE) — there is no external network call, so it is safe in air-gapped deployments. Returns one row per input IP with found=true/false plus any known fields. If no dataset is configured it returns a clear notice explaining how to enable it.",
       "Related: pull the IPs from `query_logs` (use `labels`/`aggregate` to find the IPs of interest first).",
     ].join(" "),
@@ -1050,7 +1050,7 @@ async function main() {
       ips: z
         .array(z.string())
         .describe(
-          "Required. IPv4 address strings to enrich (e.g. ['203.0.113.5','198.51.100.9']). Max 1000 per call; invalid entries are returned with found=false rather than failing the batch.",
+          "Required. IPv4 or IPv6 address strings to enrich (e.g. ['203.0.113.5','2001:db8::1']). Max 1000 per call; invalid entries are returned with found=false rather than failing the batch.",
         ),
     },
     { title: "Enrich IPs", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },

@@ -524,3 +524,16 @@ test("E2E: initialize advertises non-empty instructions pointing at the usage gu
   assert.match(r.instructions!, /omcp:\/\/guide\/agent-usage/, "must point at the usage-guide resource");
   assert.match(r.instructions!, /aggregate/i, "must carry the filter+aggregate golden rule");
 });
+
+test("E2E: enrich_ips advertises IPv6 in its description + ips param (issue #476)", opts, async () => {
+  const session = await newSession();
+  const { response } = await jsonRpc("tools/list", {}, { id: 40, session });
+  const r = response.result as {
+    tools?: Array<{ name?: string; description?: string; inputSchema?: { properties?: Record<string, { description?: string }> } }>;
+  };
+  const tool = r.tools?.find((t) => t.name === "enrich_ips");
+  assert.ok(tool, "enrich_ips must be advertised");
+  assert.match(tool.description ?? "", /IPv6/, "description must mention IPv6 (not IPv4-only)");
+  const ipsDesc = tool.inputSchema?.properties?.ips?.description ?? "";
+  assert.match(ipsDesc, /IPv6/, "the ips param must mention IPv6");
+});
