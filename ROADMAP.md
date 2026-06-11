@@ -34,15 +34,22 @@ real-world feedback in issue #415. All additive / opt-in. See
 - ✅ `get_topology` explicit no-connector note (issue #415, signal vs. silence)
 - ✅ `query_logs` `labels`/`aggregate` made reachable over MCP (3.1.1 hotfix — 3.1.0 ship gap)
 
-### v3.3 — candidates
+## v3.4 — shipped 2026-06-11
+
+Closes two v3.3 candidates and hardens the remaining tools against the
+"absent ≠ zero" empty-state class. See [CHANGELOG.md](CHANGELOG.md).
+
+- ✅ IPv6 in `enrich_ips` + an offline MaxMind GeoLite2 → CSV converter (`scripts/build-ip-enrich-csv.mjs`); data stays operator-side, air-gapped
+- ✅ Per-credential `raw_query` gating (`OMCP_KEY_RAW_QUERY`; effective gate = global OR per-credential)
+- ✅ Honest no-data/partial states across `list_services` / `list_sources` / `get_blast_radius` / `generate_postmortem`
+
+### v3.x — candidates
 
 Still open (vote via Discussions):
 
 - A custom postmortem template engine (persistence + the Postmortems UI tab already ship)
 - SCIM filter/search on the collection endpoints + a UI Provisioning sub-tab
 - Strict-mode MkDocs build (resolve the cross-repo link warnings)
-- IPv6 support + bundled-dataset tooling for `enrich_ips`
-- Per-credential / RBAC gating for `raw_query` (today it's a global capability flag)
 
 ## v3.0 — shipped 2026-06-06
 
