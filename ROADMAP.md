@@ -43,18 +43,24 @@ Closes two v3.3 candidates and hardens the remaining tools against the
 - ✅ Per-credential `raw_query` gating (`OMCP_KEY_RAW_QUERY`; effective gate = global OR per-credential)
 - ✅ Honest no-data/partial states across `list_services` / `list_sources` / `get_blast_radius` / `generate_postmortem`
 
+## v3.6 — shipped 2026-06-11
+
+Closes the last v3.3 candidate. See [CHANGELOG.md](CHANGELOG.md).
+
+- ✅ Read-only SCIM **Provisioning** dashboard sub-tab + `GET /api/provisioning` — an admin-gated, secret-free view of the Users/Groups an identity provider has pushed via `/scim/v2`
+
 ## v3.5 — shipped 2026-06-11
 
-Closes the remaining v3.3 candidates. See [CHANGELOG.md](CHANGELOG.md).
+Closes two more v3.3 candidates. See [CHANGELOG.md](CHANGELOG.md).
 
 - ✅ SCIM `filter` (`<attr> eq`) + `startIndex`/`count` pagination on the `/Users` and `/Groups` collection endpoints (RFC 7644); `ServiceProviderConfig` advertises `filter.supported`
 - ✅ Custom post-mortem template engine — `OMCP_POSTMORTEM_TEMPLATE` (`{{token}}` placeholders); built-in layout unchanged when unset
 
 ### v3.x — candidates
 
-Still open (vote via Discussions):
-
-- SCIM **Provisioning UI sub-tab** — a read-only dashboard view of the provisioned Users/Groups. (The SCIM filter/search backend ships in v3.5; this UI half is deferred because identity providers reconcile directly against `/scim/v2`.)
+The v3.3 candidate set is **complete** — every item shipped (see the v3.4 /
+v3.5 / v3.6 sections above). Future direction lives in the **Next** /
+**Later** sections below; vote via [Discussions](https://github.com/ThoTischner/observability-mcp/discussions).
 
 (The strict-mode MkDocs build already ships — `docs.yml` runs
 `mkdocs build --strict`, so a broken cross-repo link fails CI.)

@@ -6,6 +6,30 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.6.0] — 2026-06-11
+
+Closes the **last** open v3.3 candidate — the SCIM Provisioning UI.
+Additive / opt-in; migrating from 3.5 is non-breaking.
+
+### Added
+
+- **SCIM Provisioning dashboard sub-tab + `GET /api/provisioning`.** A
+  read-only view (under Access → Provisioning) of the Users and Groups an
+  identity provider has pushed via SCIM 2.0, so operators can confirm a
+  sync without poking the token-gated `/scim/v2` API from a browser. The
+  endpoint is admin-gated (`users:delete`, like `/api/subjects`) and its
+  projection is **secret-free** — userName/displayName/active/groups for
+  users and displayName/member-count for groups; the SCIM token, password,
+  raw meta/schemas and emails are never returned. When SCIM is not enabled
+  it returns `configured:false` with a "how to enable" note (not a 404),
+  and the UI renders that state; the tables have a client-side filter.
+
+### Notes
+
+- This completes the v3.3 candidate set — the candidate list is now empty.
+- The SDK (`@thotischner/observability-mcp-sdk`) is unchanged — a
+  gateway-surface + UI addition; the plugin contract did not move.
+
 ## [3.5.0] — 2026-06-11
 
 Candidate-cleanup release — closes the remaining v3.3 candidates. All
