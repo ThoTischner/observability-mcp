@@ -2226,6 +2226,7 @@ curl -X PUT http://localhost:3000/api/enterprise/catalog \
         <button class="pol-subtab" role="tab" aria-controls="pol-pane-roles" data-pol-tab="roles" onclick="polSetTab('roles')">Roles</button>
         <button class="pol-subtab" role="tab" aria-controls="pol-pane-bindings" data-pol-tab="bindings" onclick="polSetTab('bindings')">Bindings</button>
         <button class="pol-subtab" role="tab" aria-controls="pol-pane-subjects" data-pol-tab="subjects" onclick="polSetTab('subjects')">Subjects</button>
+        <button class="pol-subtab" role="tab" aria-controls="pol-pane-provisioning" data-pol-tab="provisioning" onclick="polSetTab('provisioning')">Provisioning</button>
         <button class="pol-subtab" role="tab" aria-controls="pol-pane-batch" data-pol-tab="batch" onclick="polSetTab('batch')">Batch evaluate</button>
       </nav>
 
@@ -2324,6 +2325,21 @@ curl -X PUT http://localhost:3000/api/enterprise/catalog \
             onclick="infoPop(this)">?</button>
         </h2></div>
         <div id="pol-subjects-body" class="content"><div class="empty">Loading…</div></div>
+      </div>
+
+      <!-- Provisioning sub-tab (C2b) — read-only view of the SCIM-provisioned
+           Users/Groups an identity provider has pushed via /scim/v2. -->
+      <div class="card pol-pane" id="pol-pane-provisioning" role="tabpanel" hidden>
+        <div class="card-header"><h2>Provisioning
+          <button class="info" aria-label="About provisioning"
+            data-title="SCIM provisioning"
+            data-info="Read-only view of the Users and Groups an identity provider (Entra, Okta) has pushed via SCIM 2.0 at /scim/v2. Enable by setting OMCP_SCIM_TOKEN. This dashboard never exposes the SCIM bearer token; the IdP reconciles directly against the /scim/v2 endpoints."
+            onclick="infoPop(this)">?</button>
+          <span style="flex:1"></span>
+          <input id="pol-provisioning-filter" type="search" class="input" placeholder="Filter…"
+            style="max-width:220px" oninput="polRenderProvisioning()" aria-label="Filter provisioned identities">
+        </div>
+        <div id="pol-provisioning-body" class="content"><div class="empty">Loading…</div></div>
       </div>
 
       <!-- Batch evaluate sub-tab (P4) — wraps POST /api/policy/dry-run-batch
@@ -3148,8 +3164,74 @@ function polSetTab(name) {
   // Lazy-load Subjects on first visit — it has its own endpoint
   // so deferring the fetch keeps the page-enter cost low.
   if (name === 'subjects') polLoadSubjects();
+  if (name === 'provisioning') polLoadProvisioning();
   if (name === 'bindings') polLoadBindings();
   if (name === 'batch') polBatchInit();
+}
+
+// --- Provisioning sub-tab (C2b) — read-only SCIM Users/Groups view ---
+let POL_PROVISIONING = null;
+async function polLoadProvisioning() {
+  const body = document.getElementById('pol-provisioning-body');
+  if (!body) return;
+  if (POL_PROVISIONING) { polRenderProvisioning(); return; }
+  try {
+    const r = await fetch('/api/provisioning');
+    if (!r.ok) {
+      body.innerHTML = '<div class="empty">Provisioning view requires the <code>users:delete</code> permission (admin role).</div>';
+      return;
+    }
+    POL_PROVISIONING = await r.json();
+    polRenderProvisioning();
+  } catch (e) {
+    body.innerHTML = '<div class="empty">Provisioning unavailable: ' + escHtml(String(e && e.message || e)) + '</div>';
+  }
+}
+function polRenderProvisioning() {
+  const body = document.getElementById('pol-provisioning-body');
+  const j = POL_PROVISIONING;
+  if (!body || !j) return;
+  if (!j.configured) {
+    body.innerHTML = '<div class="pol-subjects-empty" style="padding:var(--sp-4)">'
+      + escHtml(j.note || 'SCIM provisioning is not enabled.') + '</div>';
+    return;
+  }
+  const q = (document.getElementById('pol-provisioning-filter')?.value || '').toLowerCase();
+  const match = (s) => !q || String(s).toLowerCase().includes(q);
+  const users = (j.users || []).filter((u) => match(u.userName) || match(u.displayName) || (u.groups || []).some(match));
+  const groups = (j.groups || []).filter((g) => match(g.displayName));
+
+  const usersHtml = users.map((u) => `
+    <tr>
+      <td><code>${escHtml(u.userName)}</code></td>
+      <td>${escHtml(u.displayName || '') || '<span class="t-sm" style="opacity:.5">—</span>'}</td>
+      <td>${u.active ? '<span class="pill">active</span>' : '<span class="pill" style="background:var(--warning-soft);color:var(--warning)">inactive</span>'}</td>
+      <td>${(u.groups || []).map((g) => `<span class="pill">${escHtml(g)}</span>`).join(' ') || '<span class="t-sm" style="opacity:.5">—</span>'}</td>
+    </tr>`).join('');
+  const groupsHtml = groups.map((g) => `
+    <tr>
+      <td><code>${escHtml(g.displayName)}</code></td>
+      <td>${g.members}</td>
+    </tr>`).join('');
+
+  const usersTbl = usersHtml
+    ? `<table class="data-table" style="width:100%"><thead><tr><th>Username</th><th>Display name</th><th>Status</th><th>Groups</th></tr></thead><tbody>${usersHtml}</tbody></table>`
+    : `<div class="pol-subjects-empty">${q ? 'No users match the filter.' : 'No provisioned users yet — the identity provider has not pushed any.'}</div>`;
+  const groupsTbl = groupsHtml
+    ? `<table class="data-table" style="width:100%"><thead><tr><th>Group</th><th>Members</th></tr></thead><tbody>${groupsHtml}</tbody></table>`
+    : `<div class="pol-subjects-empty">${q ? 'No groups match the filter.' : 'No provisioned groups yet.'}</div>`;
+
+  body.innerHTML = `
+    <div class="pol-subjects-section">
+      <h3>Users <span class="pol-subjects-count">${(j.users || []).length}</span>
+        <span class="pol-subjects-source">via SCIM /scim/v2/Users</span></h3>
+      ${usersTbl}
+    </div>
+    <div class="pol-subjects-section">
+      <h3>Groups <span class="pol-subjects-count">${(j.groups || []).length}</span>
+        <span class="pol-subjects-source">via SCIM /scim/v2/Groups</span></h3>
+      ${groupsTbl}
+    </div>`;
 }
 
 // --- Batch evaluate sub-tab (P4) ---

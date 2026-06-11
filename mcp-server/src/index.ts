@@ -77,8 +77,9 @@ import {
   cspStrictReportFromEnv,
   CSP_NONCE_PLACEHOLDER,
 } from "./security/csp.js";
-import { createScimStore } from "./scim/store.js";
+import { createScimStore, type IScimStore } from "./scim/store.js";
 import { registerScimRoutes } from "./scim/routes.js";
+import { projectProvisioning } from "./scim/provisioning-view.js";
 import { BuiltinPolicyEngine, type PolicyEngine } from "./auth/policy/engine.js";
 import { loadPolicyFromFile, writePolicyFile, PolicyLoadError, VALID_RESOURCES, VALID_ACTIONS } from "./auth/policy/loader.js";
 import { OpaPolicyEngine } from "./auth/policy/opa.js";
@@ -2017,6 +2018,15 @@ async function main() {
     res.json(result);
   });
 
+  // --- /api/provisioning — read-only view of SCIM-provisioned identities --
+  // Set below when SCIM is enabled (OMCP_SCIM_TOKEN). Lets the dashboard show
+  // the IdP-pushed Users/Groups without exposing the token-gated /scim/v2 API
+  // to a browser session. Read-only; never returns secrets.
+  let provisioningStore: IScimStore | null = null;
+  app.get("/api/provisioning", need("users", "delete"), (_req, res) => {
+    res.json(projectProvisioning(provisioningStore));
+  });
+
   // --- /api/subjects — aggregated principals catalogue ------------------
   // The third k8s-shaped RBAC view: who the deployment knows about.
   // Three independent sources, returned in three independent arrays so
@@ -2616,6 +2626,8 @@ async function main() {
         redis: scimRedis,
         redisKey: process.env.OMCP_SCIM_REDIS_KEY?.trim(),
       });
+      // Expose the same store (read-only) to the dashboard's /api/provisioning.
+      provisioningStore = scimStore;
       registerScimRoutes(app, {
         store: scimStore,
         bearerToken: scimToken,

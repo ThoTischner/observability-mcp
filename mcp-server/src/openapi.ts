@@ -670,6 +670,36 @@ export function buildOpenApiSpec(version: string): OpenAPIV3_1.Document {
           },
         },
       },
+      "/api/provisioning": {
+        get: {
+          tags: ["auth"],
+          summary: "Read-only view of SCIM-provisioned Users/Groups (admin-only).",
+          description: "Mirrors the directory an identity provider has pushed via SCIM 2.0 (/scim/v2). Read-only and secret-free — never returns the SCIM bearer token. When SCIM is not enabled (no OMCP_SCIM_TOKEN), returns configured:false with an explanatory note rather than a 404.",
+          responses: {
+            "200": {
+              description: "Provisioning payload.",
+              content: { "application/json": { schema: {
+                type: "object",
+                properties: {
+                  configured: { type: "boolean" },
+                  users: { type: "array", items: { type: "object", properties: {
+                    userName: { type: "string" }, displayName: { type: "string" },
+                    active: { type: "boolean" },
+                    groups: { type: "array", items: { type: "string" } },
+                    externalId: { type: "string" },
+                  } } },
+                  groups: { type: "array", items: { type: "object", properties: {
+                    displayName: { type: "string" }, members: { type: "integer" },
+                    externalId: { type: "string" },
+                  } } },
+                  note: { type: "string" },
+                },
+              } } },
+            },
+            "403": { description: "Missing users:delete permission (admin-only)." },
+          },
+        },
+      },
       "/api/subjects": {
         get: {
           tags: ["auth"],
