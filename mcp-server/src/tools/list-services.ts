@@ -25,6 +25,10 @@ export async function listServicesHandler(
   // Tenant-scoped: only consult sources the caller can see.
   const connectors = registry.getByTenant(ctx.tenant);
   const allServices: ServiceInfo[] = [];
+  // Track per-connector discovery failures so an empty result isn't silently
+  // partial — a down source must not make half the fleet vanish without a
+  // signal (the "absent ≠ zero" class, cf. #453).
+  const failedSources: string[] = [];
 
   for (const connector of connectors) {
     try {
@@ -32,6 +36,7 @@ export async function listServicesHandler(
       allServices.push(...services);
     } catch (err) {
       console.error(`Failed to list services from ${connector.name}:`, err);
+      failedSources.push(connector.name);
     }
   }
 
@@ -66,11 +71,36 @@ export async function listServicesHandler(
     services = services.filter((s) => s.name.toLowerCase().includes(f));
   }
 
+  // An empty result is ambiguous — say *why* so an agent doesn't read it as
+  // "this environment has no services". Distinguish: no backends configured,
+  // discovery failed on some/all sources, or genuinely none discovered.
+  let note: string | undefined;
+  if (connectors.length === 0) {
+    note = "No observability backends are configured for this tenant — add one via the Sources tab or config/sources.yaml. This is not 'zero services'.";
+  } else if (failedSources.length === connectors.length) {
+    note = `Service discovery failed on all ${connectors.length} configured source(s) (${failedSources.join(", ")}) — the empty result is an error, not 'zero services'. Check source health via list_sources.`;
+  } else if (services.length === 0 && !args.filter) {
+    note = "No services discovered — the configured backend(s) returned none in this tenant.";
+  }
+
   return {
     content: [
       {
         type: "text" as const,
-        text: JSON.stringify({ services, total: services.length }, null, 2),
+        text: JSON.stringify(
+          {
+            services,
+            total: services.length,
+            // Only present when some (but not all) sources failed — a partial
+            // result the caller should know is incomplete.
+            ...(failedSources.length > 0 && failedSources.length < connectors.length
+              ? { partial: true, failedSources }
+              : {}),
+            ...(note ? { note } : {}),
+          },
+          null,
+          2,
+        ),
       },
     ],
   };

@@ -76,16 +76,36 @@ export async function generatePostmortemHandler(
     logHighlights,
   });
 
+  // Which primitives actually carried data. A post-mortem synthesised from
+  // ZERO signal still renders a full, authoritative-looking document — an
+  // on-call could paste it into a ticket as if it were a real finding. Make
+  // the coverage explicit so an empty report is self-labelling (the
+  // "absent ≠ zero" class, cf. #453/#462).
+  const coverage = {
+    anomalies: anomalies.length > 0,
+    traces: traces.length > 0,
+    topology: blastRadius.nodes.length > 0,
+    logs: logHighlights.length > 0,
+  };
+  const anySignal = Object.values(coverage).some(Boolean);
+  const reportWithCoverage = { ...report, coverage, builtFromSignal: anySignal };
+
   if ((args.format || "markdown").toLowerCase() === "json") {
     return {
-      content: [{ type: "text" as const, text: JSON.stringify(report) }],
+      content: [{ type: "text" as const, text: JSON.stringify(reportWithCoverage) }],
       isError: false,
     };
   }
-  // Default: return the markdown body. The structured sections live
-  // in JSON if the caller asked for them.
+  // Default: return the markdown body. When there was no signal at all, lead
+  // with a banner so the document isn't mistaken for a real finding.
+  const banner = anySignal
+    ? ""
+    : "> ⚠️ **No signal in this window.** This report was built from zero anomalies, traces, " +
+      "topology, and log highlights. Either the window was genuinely clean, or the relevant " +
+      "backends aren't configured/writing (anomaly-history sink, traces connector, topology " +
+      "connector). Verify coverage before relying on this.\n\n";
   return {
-    content: [{ type: "text" as const, text: report.markdown }],
+    content: [{ type: "text" as const, text: banner + report.markdown }],
     isError: false,
   };
 }

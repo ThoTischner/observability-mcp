@@ -30,11 +30,19 @@ export async function listSourcesHandler(
     latencyMs: healthResults[c.name]?.latencyMs,
   }));
 
+  // An empty list is ambiguous on its own — name the cause so an agent
+  // doesn't read it as a transient/permission blip (the "absent ≠ zero"
+  // class). When nothing is configured, say so explicitly.
+  const note =
+    sources.length === 0
+      ? "No observability backends are configured for this tenant. Add one via the Sources tab or config/sources.yaml — this is 'none configured', not a query error."
+      : undefined;
+
   return {
     content: [
       {
         type: "text" as const,
-        text: JSON.stringify({ sources }, null, 2),
+        text: JSON.stringify({ sources, ...(note ? { note } : {}) }, null, 2),
       },
     ],
   };

@@ -226,6 +226,28 @@ export async function getBlastRadiusHandler(
   ctx: RequestContext = defaultContext(),
 ) {
   const agg = await aggregateTopology(registry, ctx.tenant);
+
+  // No topology-capable connector → the resource can't be found because there
+  // IS no graph, not because the name is wrong. Say so explicitly instead of a
+  // generic "not found" that misattributes the cause (the "absent ≠ zero"
+  // class, consistent with get_topology's empty-graph note).
+  if (agg.sources.length === 0) {
+    return {
+      isError: true,
+      content: [{
+        type: "text" as const,
+        text: JSON.stringify({
+          resource: args.resource,
+          hosts: [],
+          note:
+            "No topology-capable connector is configured, so there is no blast radius to compute. " +
+            "Add a topology source (the built-in `kubernetes` connector, or aws/gcp/istio/linkerd/consul) " +
+            "— a metrics/logs-only deployment has no topology graph. This is not 'resource not found'.",
+        }, null, 2),
+      }],
+    };
+  }
+
   const found = resolveResource(args.resource, agg.resources);
   if ("error" in found) {
     return {

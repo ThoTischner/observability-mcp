@@ -244,6 +244,17 @@ describe("get_blast_radius tool", () => {
     assert.match(out.error, /No resource found/);
   });
 
+  it("no topology connector → explicit note, not a misleading 'resource not found' (R5)", async () => {
+    // An empty registry has no topology source. The cause is "no graph", not
+    // "wrong name" — the response must say so rather than blame the resource.
+    const reg = new ConnectorRegistry(new PluginLoader());
+    const result = await getBlastRadiusHandler(reg, { resource: "anything" });
+    assert.equal((result as { isError?: boolean }).isError, true);
+    const out = parseTool(result);
+    assert.match(out.note, /No topology-capable connector is configured/i);
+    assert.ok(!out.error || !/No resource found/.test(out.error), "must not misattribute to a not-found name");
+  });
+
   it("uses ownership root, not direct owner, when grouping co-tenants", async () => {
     // api-aaa is OWNED_BY a ReplicaSet which is OWNED_BY a Deployment.
     // The blast-radius should bucket api-aaa under the Deployment, not the RS.
