@@ -47,4 +47,18 @@ describe("enrichIpsHandler (R6, issue #415 Gap B)", () => {
     assert.deepEqual(out.summary, { total: 3, matched: 1, unmatched: 1, invalid: 1 });
     assert.equal(out.datasetSize, 2);
   });
+
+  it("accepts IPv6 inputs and enriches them (not counted invalid)", () => {
+    const ds6 = IpEnrichmentDataset.fromCsv(
+      ["2001:db8::/32,US,,AS14618,Example Cloud,true", "1.2.3.0/24,DE,Berlin,AS3320,Example ISP,false"].join("\n"),
+    );
+    const out = parse(enrichIpsHandler(ds6, { ips: ["2001:db8::1", "2606:4700::1", "1.2.3.9"] }));
+    const v6hit = out.results.find((r: any) => r.ip === "2001:db8::1");
+    assert.equal(v6hit.found, true);
+    assert.equal(v6hit.org, "Example Cloud");
+    const v6miss = out.results.find((r: any) => r.ip === "2606:4700::1");
+    assert.equal(v6miss.found, false);
+    // A valid-but-unmatched IPv6 is "unmatched", NOT "invalid".
+    assert.deepEqual(out.summary, { total: 3, matched: 2, unmatched: 1, invalid: 0 });
+  });
 });

@@ -67,6 +67,8 @@ jobs:
           node --test hub/build-catalog.test.mjs
       - name: Audit-verifier CLI (end-to-end)
         run: node --test scripts/verify-audit.test.mjs
+      - name: IP-enrich CSV converter CLI (end-to-end)
+        run: node --test scripts/build-ip-enrich-csv.test.mjs
       - name: Connectors (tests + manifest/catalog integrity in sync)
         run: |
           node --test connectors/*/*.test.mjs connectors/*/contract/*.test.mjs
