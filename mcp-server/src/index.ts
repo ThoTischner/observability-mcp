@@ -121,6 +121,7 @@ import { queryMetricsHandler } from "./tools/query-metrics.js";
 import { queryLogsHandler } from "./tools/query-logs.js";
 import { enrichIpsHandler } from "./tools/enrich-ips.js";
 import { IpEnrichmentDataset } from "./enrich/ip-dataset.js";
+import { RdapResolver } from "./enrich/rdap.js";
 import { queryTracesHandler } from "./tools/query-traces.js";
 import { getAnomalyHistoryHandler } from "./tools/get-anomaly-history.js";
 import { generatePostmortemHandler } from "./tools/generate-postmortem.js";
@@ -382,6 +383,14 @@ async function main() {
         } — enrich_ips will report 'not configured'`,
       );
     }
+  }
+  // Optional ONLINE RDAP fallback (issue #477) — OFF by default to keep the
+  // air-gapped guarantee. Built only when OMCP_IP_ENRICH_RDAP is truthy; the
+  // offline CSV stays preferred and RDAP only fills gaps it didn't cover.
+  let ipRdap: RdapResolver | null = null;
+  if (["on", "true", "1"].includes(String(process.env.OMCP_IP_ENRICH_RDAP ?? "").toLowerCase())) {
+    ipRdap = new RdapResolver({ baseUrl: process.env.OMCP_IP_ENRICH_RDAP_URL?.trim() || undefined });
+    console.log("[enrich] RDAP online fallback ENABLED (OMCP_IP_ENRICH_RDAP) — enrich_ips will query rdap.org for gaps the offline dataset doesn't cover");
   }
   function redactToolText<T extends { content: Array<{ text: string }> }>(
     result: T,
@@ -1043,7 +1052,7 @@ async function main() {
     [
       "Resolve a batch of IPv4 or IPv6 addresses to geo (country/city), ASN/org, and a hosting/proxy flag.",
       "When to use: answering 'where are these visitors from?' or 'which of these IPs are bots / datacenter / VPN exit nodes?' over access logs, without an out-of-band geo-API call per IP. Both IPv4 and IPv6 clients are resolved — don't pre-filter v6 out.",
-      "Behavior: read-only. Looks each IP up in a LOCAL offline dataset the operator configured (OMCP_IP_ENRICH_FILE) — there is no external network call, so it is safe in air-gapped deployments. Returns one row per input IP with found=true/false plus any known fields. If no dataset is configured it returns a clear notice explaining how to enable it.",
+      "Behavior: read-only. By default looks each IP up in a LOCAL offline dataset the operator configured (OMCP_IP_ENRICH_FILE) with NO external network call — safe in air-gapped deployments. Optionally, if the operator enabled OMCP_IP_ENRICH_RDAP, IPs the dataset doesn't cover fall back to an online RDAP query (country/org only) and the result carries via:'rdap'; the offline dataset is always preferred. Returns one row per input IP with found=true/false plus any known fields. If neither is configured it returns a clear notice explaining how to enable them.",
       "Related: pull the IPs from `query_logs` (use `labels`/`aggregate` to find the IPs of interest first).",
     ].join(" "),
     {
@@ -1056,7 +1065,7 @@ async function main() {
     { title: "Enrich IPs", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async (args) => {
       await enforceEntitledAccess(ctx, { tool: "enrich_ips" });
-      return withToolMetrics("enrich_ips", async () => enrichIpsHandler(ipEnrichment, args, ctx));
+      return withToolMetrics("enrich_ips", async () => enrichIpsHandler(ipEnrichment, args, ctx, ipRdap));
     }
   );
 

@@ -1,4 +1,5 @@
 import { IpEnrichmentDataset, ipv4ToInt, ipv6ToBigInt } from "../enrich/ip-dataset.js";
+import type { RdapResolver } from "../enrich/rdap.js";
 import { defaultContext, type RequestContext } from "../context.js";
 import { errorResponse } from "./validation.js";
 
@@ -32,21 +33,27 @@ export interface IpEnrichmentResult {
   asn?: string;
   org?: string;
   hosting?: boolean;
+  /** Which backend produced the hit — "dataset" (offline CSV) or "rdap"
+   *  (online fallback). Absent when not found. */
+  via?: "dataset" | "rdap";
 }
 
-export function enrichIpsHandler(
+export async function enrichIpsHandler(
   dataset: IpEnrichmentDataset | null,
   args: EnrichIpsArgs,
   // The RequestContext seam — enrich_ips doesn't scope by tenant today (the
   // dataset is a single process-wide table), but every tool handler threads
   // ctx so access-control / audit can attach without a signature change later.
   _ctx: RequestContext = defaultContext(),
+  // Optional online RDAP fallback (issue #477). Present only when the operator
+  // set OMCP_IP_ENRICH_RDAP=on; absent → no external call (air-gapped default).
+  rdap?: RdapResolver | null,
 ) {
-  if (!dataset) {
+  if (!dataset && !rdap) {
     return errorResponse(
       "IP enrichment is not configured. Set OMCP_IP_ENRICH_FILE to a local CSV " +
-        "(network,country,city,asn,org,hosting) to enable offline geo/ASN/hosting " +
-        "lookups — there is no external API call, so it stays air-gapped.",
+        "(network,country,city,asn,org,hosting) for offline lookups (air-gapped), " +
+        "or OMCP_IP_ENRICH_RDAP=on for an online RDAP fallback (country/org only).",
     );
   }
   const ips = args.ips;
@@ -60,19 +67,31 @@ export function enrichIpsHandler(
   const results: IpEnrichmentResult[] = [];
   let invalid = 0;
   let matched = 0;
+  let viaRdap = 0;
   for (const ip of ips) {
     if (typeof ip !== "string" || !isValidIp(ip)) {
       invalid++;
       results.push({ ip: String(ip), found: false });
       continue;
     }
-    const hit = dataset.lookup(ip);
+    // Offline CSV is preferred (city precision, air-gapped). RDAP only fills
+    // gaps the dataset didn't cover, and only when the operator opted in.
+    const hit = dataset ? dataset.lookup(ip) : null;
     if (hit) {
       matched++;
-      results.push({ ip, found: true, ...hit });
-    } else {
-      results.push({ ip, found: false });
+      results.push({ ip, found: true, via: "dataset", ...hit });
+      continue;
     }
+    if (rdap) {
+      const r = await rdap.lookup(ip);
+      if (r) {
+        matched++;
+        viaRdap++;
+        results.push({ ip, found: true, via: "rdap", ...r });
+        continue;
+      }
+    }
+    results.push({ ip, found: false });
   }
 
   return {
@@ -82,8 +101,15 @@ export function enrichIpsHandler(
         text: JSON.stringify(
           {
             results,
-            summary: { total: ips.length, matched, unmatched: ips.length - matched - invalid, invalid },
-            datasetSize: dataset.size,
+            summary: {
+              total: ips.length,
+              matched,
+              unmatched: ips.length - matched - invalid,
+              invalid,
+              ...(rdap ? { viaRdap } : {}),
+            },
+            datasetSize: dataset?.size ?? 0,
+            ...(rdap ? { rdapEnabled: true } : {}),
           },
           null,
           2,
