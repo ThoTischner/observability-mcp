@@ -6,6 +6,45 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.5.0] — 2026-06-11
+
+Candidate-cleanup release — closes the remaining v3.3 candidates. All
+additive / opt-in; migrating from 3.4 is non-breaking.
+
+### Added
+
+- **SCIM filter + pagination on the collection endpoints** (v3.3
+  candidate). `GET /scim/v2/Users` and `/Groups` now support the SCIM
+  `filter` query param (`<attr> eq "value"`, plus `active eq true`) and
+  `startIndex`/`count` pagination (RFC 7644 §3.4.2) — Okta requires
+  `filter` for reconciliation and large directories need paging. A non-`eq`
+  / malformed filter returns **400** rather than a misleading full list;
+  `ServiceProviderConfig` now advertises `filter.supported: true`. The
+  no-param list response is unchanged (back-compat).
+- **Custom post-mortem template engine** (v3.3 candidate).
+  `generate_postmortem`'s markdown layout is overridable via
+  `OMCP_POSTMORTEM_TEMPLATE` (a file of `{{token}}` placeholders:
+  service/window/from/to/tenant/synopsis/timeline/blastRadius/signals/
+  traces/logHighlights/followUps). Unset → the built-in layout, unchanged.
+  An unknown token is left verbatim; an unreadable template path falls back
+  to the built-in layout (logged), never failing the report. See
+  [postmortems.md](docs/postmortems.md#custom-report-template).
+
+### Changed
+
+- ROADMAP reconciled again: the strict-mode MkDocs build was already
+  shipping (`docs.yml` runs `mkdocs build --strict`), so it was dropped
+  from the candidate list.
+
+### Notes
+
+- The SCIM **Provisioning UI sub-tab** half of that candidate is
+  intentionally deferred — identity providers reconcile directly against
+  `/scim/v2`, so the dashboard view is lower-value; it remains the one open
+  v3.3 candidate.
+- The SDK (`@thotischner/observability-mcp-sdk`) is unchanged — these are
+  gateway-surface and tooling changes; the plugin contract did not move.
+
 ## [3.4.0] — 2026-06-11
 
 Roadmap-candidate release — closes two v3.3 candidates and proactively
