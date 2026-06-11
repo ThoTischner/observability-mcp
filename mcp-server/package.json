@@ -1,6 +1,6 @@
 {
   "name": "@thotischner/observability-mcp",
-  "version": "3.5.0",
+  "version": "3.6.0",
   "description": "Unified observability gateway for AI agents — one MCP server for Prometheus, Loki, and any backend",
   "type": "module",
   "license": "Apache-2.0",
