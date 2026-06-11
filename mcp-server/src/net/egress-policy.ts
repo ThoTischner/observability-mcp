@@ -32,6 +32,7 @@ export const EGRESS_ALLOWLIST: ReadonlyArray<{ prefix: string; reason: string }>
   { prefix: "index.ts", reason: "connector-hub plugin install of an operator/registry-requested tarball URL" },
   { prefix: "auth/oidc/", reason: "OIDC client calls the operator-configured OMCP_OIDC_ISSUER for discovery, JWKS, and code-exchange" },
   { prefix: "auth/policy/", reason: "OpaPolicyEngine queries the operator-configured OMCP_OPA_URL on every RBAC decision" },
+  { prefix: "enrich/rdap.ts", reason: "enrich_ips RDAP fallback — OFF by default; only when the operator opts in with OMCP_IP_ENRICH_RDAP does it query the RDAP bootstrap. No call otherwise; the air-gapped default is preserved" },
 ];
 
 /**
