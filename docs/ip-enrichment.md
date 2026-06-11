@@ -103,6 +103,33 @@ A typical agent flow: pull the IPs of interest with `query_logs`
 
 ## Air-gapped guarantee
 
-`enrich_ips` never makes an outbound request — all data comes from the
-local file. This is the deliberate trade vs. a live geo-API enrichment
-on every log line, which would break the air-gapped deployment model.
+By default `enrich_ips` never makes an outbound request — all data comes
+from the local file. This is the deliberate trade vs. a live geo-API
+enrichment on every log line, which would break the air-gapped model.
+
+## Optional online RDAP fallback (non-air-gapped)
+
+For deployments that aren't air-gapped, building a MaxMind dataset is a
+lot of ceremony just to answer "where is this IP / is it a datacenter".
+You can instead enable an **opt-in** online fallback that queries the
+authoritative RIR via **RDAP** (RFC 9082/9083) over HTTPS:
+
+```bash
+OMCP_IP_ENRICH_RDAP=on          # also accepts true / 1
+# optional: override the bootstrap endpoint (default https://rdap.org)
+# OMCP_IP_ENRICH_RDAP_URL=https://rdap.org
+```
+
+- **OFF by default** — the air-gapped guarantee above holds unless you
+  set this. No external call is ever made otherwise.
+- **The offline dataset is always preferred.** RDAP is only consulted for
+  IPs the dataset didn't cover (or when no dataset is configured). Hits
+  carry `via: "rdap"`; dataset hits carry `via: "dataset"`. The summary
+  reports `viaRdap`.
+- **Returns country + org only** — RDAP carries no city-level geo and no
+  hosting/proxy flag (the org name is the bot-vs-human signal). For city
+  precision, use the offline GeoLite2 dataset.
+- **Privacy**: RDAP queries the authoritative registry, not a third-party
+  geo broker — the cleanest posture for looked-up visitor IPs.
+- Results are **cached with a TTL** (default 1h; misses cached briefly) to
+  respect RIR rate limits; a flaky RIR returns a miss, never an error.
