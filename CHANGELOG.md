@@ -6,6 +6,30 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.7.0] — 2026-06-12
+
+Feature release. Additive / non-breaking — the air-gapped default is unchanged.
+
+### Added
+
+- **`enrich_ips` optional online RDAP fallback (#477).** For deployments that
+  aren't air-gapped, you can now enable an opt-in online backend that resolves
+  IPs via authoritative-registry **RDAP** (RFC 9082/9083) over HTTPS, instead of
+  building a MaxMind dataset:
+  - **OFF by default** — set `OMCP_IP_ENRICH_RDAP=on` to enable (optionally
+    `OMCP_IP_ENRICH_RDAP_URL` to override the default `https://rdap.org`
+    bootstrap). No external call is ever made unless you opt in; the
+    air-gapped guarantee holds in the default config.
+  - **Offline dataset stays preferred.** RDAP is only consulted for IPs the
+    local CSV didn't cover (or when no dataset is configured). Hits carry
+    `via: "dataset"` / `via: "rdap"`; the summary reports `viaRdap`.
+  - **Returns country + org only** — RDAP has no city-level geo or
+    hosting/proxy flag (the org name is the bot-vs-human signal). Results are
+    cached with a TTL; a flaky RIR returns a miss, never a hard error.
+  - The new outbound call is registered in the verifiable-offline egress
+    policy as an opt-in destination, so the "no telemetry/phone-home" guard
+    still holds.
+
 ## [3.6.1] — 2026-06-11
 
 Security + agent-feedback patch. Additive / non-breaking.
