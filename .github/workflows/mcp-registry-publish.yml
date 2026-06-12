@@ -87,7 +87,25 @@ jobs:
         run: ./mcp-publisher publish
 
       - name: Verify listing
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
           set -euo pipefail
-          sleep 5
-          curl -fsS "https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.ThoTischner/observability-mcp" | head -c 600
+          # The registry is eventually-consistent after publish; poll for the
+          # just-published VERSION to actually appear rather than printing a
+          # truncated blob. (The old `curl | head -c` tripped SIGPIPE → exit 23
+          # under pipefail and showed the pre-existing version, so it failed the
+          # job even when the publish succeeded.)
+          url="https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.ThoTischner/observability-mcp"
+          for i in $(seq 1 15); do
+            body="$(curl -fsS "$url")" || { echo "registry query failed — retry $i/15"; sleep 10; continue; }
+            if printf '%s' "$body" | grep -qF "\"version\":\"$VERSION\""; then
+              echo "registry lists $VERSION"
+              printf '%s' "$body" | head -c 600 || true
+              exit 0
+            fi
+            echo "registry does not list $VERSION yet — retry $i/15"
+            sleep 10
+          done
+          echo "registry never listed $VERSION after retries"
+          exit 1
