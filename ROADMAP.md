@@ -34,6 +34,12 @@ real-world feedback in issue #415. All additive / opt-in. See
 - ✅ `get_topology` explicit no-connector note (issue #415, signal vs. silence)
 - ✅ `query_logs` `labels`/`aggregate` made reachable over MCP (3.1.1 hotfix — 3.1.0 ship gap)
 
+## v3.7 — shipped 2026-06-12
+
+Optional online enrichment for non-air-gapped deployments. See [CHANGELOG.md](CHANGELOG.md).
+
+- ✅ `enrich_ips` optional online **RDAP** fallback (RFC 9082/9083) — OFF by default (`OMCP_IP_ENRICH_RDAP=on`); offline CSV stays preferred; country/org only; registered as an opt-in egress destination so the air-gapped default is unchanged (#477)
+
 ## v3.4 — shipped 2026-06-11
 
 Closes two v3.3 candidates and hardens the remaining tools against the
