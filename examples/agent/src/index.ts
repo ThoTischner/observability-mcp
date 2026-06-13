@@ -4,7 +4,12 @@ import { IncidentDeduper } from "./dedup.js";
 
 // Config from env vars
 const MCP_URL = process.env.MCP_URL || "http://mcp-server:3000/mcp";
-const SETTINGS_URL = MCP_URL.replace("/mcp", "/api/settings");
+// Derive the gateway's HTTP base from MCP_URL by stripping a trailing `/mcp`
+// path segment. Do NOT use String.replace("/mcp", …): the substring `/mcp`
+// also occurs inside `//mcp-server`, so a plain replace rewrites the host
+// (→ http://api/sources-server:3000/mcp → ENOTFOUND). Anchor to the end.
+const API_BASE = MCP_URL.replace(/\/mcp\/?$/, "");
+const SETTINGS_URL = `${API_BASE}/api/settings`;
 const OLLAMA_URL = process.env.OLLAMA_URL || "http://host.docker.internal:11434";
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "llama3.1:8b";
 const SYSTEM_PROMPT = process.env.SYSTEM_PROMPT || `You are an SRE agent monitoring microservices infrastructure. When observability data shows anomalies or issues:
@@ -138,7 +143,7 @@ async function chatWithOllama(
 async function main() {
   log("Starting observability-mcp agent");
 
-  await waitForService(MCP_URL.replace("/mcp", "/api/sources"), "MCP Server");
+  await waitForService(`${API_BASE}/api/sources`, "MCP Server");
   await syncSettings();
   log(`Config: MCP=${MCP_URL} OLLAMA=${OLLAMA_URL} MODEL=${OLLAMA_MODEL} INTERVAL=${checkInterval}ms`);
 
