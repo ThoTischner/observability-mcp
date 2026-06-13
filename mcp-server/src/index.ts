@@ -2481,6 +2481,28 @@ async function main() {
     res.json({ ok: true });
   });
 
+  // Deviation → rule (one click): absorb exactly this observed call shape into
+  // the accepted profile (widen the matching rule, or create a tight one).
+  app.post("/api/inspect/profile/from-deviation", need("inspection", "write"), audit("inspection", "write"), (req, res) => {
+    const b = (req.body || {}) as Record<string, unknown>;
+    const principal = typeof b.principal === "string" ? b.principal : "";
+    const tool = typeof b.tool === "string" ? b.tool : "";
+    if (!principal || !tool) { res.status(400).json({ error: "principal and tool are required" }); return; }
+    const str = (v: unknown) => (typeof v === "string" && v ? v : undefined);
+    const argShape: Record<string, string> = {};
+    if (b.argShape && typeof b.argShape === "object") {
+      for (const [k, v] of Object.entries(b.argShape as Record<string, unknown>)) {
+        if (typeof v === "string") argShape[k] = v;
+      }
+    }
+    const rule = inspectProfile.absorb({
+      principal, tool,
+      source: str(b.source), service: str(b.service), namespace: str(b.namespace),
+      argShape,
+    });
+    res.json({ rule });
+  });
+
   // Deviations: calls in the window that fell outside the accepted profile
   // (decision != allow). In dry-run these are would-block; in enforce, blocked.
   app.get("/api/inspect/deviations", need("inspection", "read"), (req, res) => {

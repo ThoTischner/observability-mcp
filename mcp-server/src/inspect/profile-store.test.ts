@@ -54,6 +54,36 @@ describe("ProfileStore", () => {
     assert.equal(b.persisted, true);
   });
 
+  it("absorb: creates a tight accepted rule for a brand-new deviation", () => {
+    const s = new ProfileStore();
+    const r = s.absorb({ principal: "mallory", tool: "query_logs", service: "pay", argShape: { window: "<=1h" } });
+    assert.equal(r.status, "accepted");
+    assert.deepEqual(r.constraints.service, ["pay"]);
+    assert.deepEqual(r.constraints.argShape!.window, ["<=1h"]);
+    // that exact call is now allowed
+    assert.equal(s.evaluate({ principal: "mallory", tool: "query_logs", service: "pay", argShape: { window: "<=1h" } }).verdict, "allow");
+  });
+
+  it("absorb: widens an existing accepted rule (sorted union, no dupes)", () => {
+    const s = new ProfileStore();
+    s.absorb({ principal: "a", tool: "t", service: "s1", argShape: {} });
+    const r = s.absorb({ principal: "a", tool: "t", service: "s2", argShape: {} });
+    assert.deepEqual(r.constraints.service, ["s1", "s2"]);
+    // idempotent
+    const r2 = s.absorb({ principal: "a", tool: "t", service: "s2", argShape: {} });
+    assert.deepEqual(r2.constraints.service, ["s1", "s2"]);
+    assert.equal(s.list().filter((x) => x.id === ruleId("a", "t")).length, 1);
+  });
+
+  it("absorb: flips a previously-rejected/suggested rule to accepted", () => {
+    const s = new ProfileStore();
+    s.derive([obs({ principal: "a", tool: "t", service: "s1" })]); // suggested
+    s.setStatus(ruleId("a", "t"), "rejected");
+    const r = s.absorb({ principal: "a", tool: "t", service: "s9", argShape: {} });
+    assert.equal(r.status, "accepted");
+    assert.deepEqual(r.constraints.service, ["s1", "s9"]);
+  });
+
   it("a missing/invalid file starts empty, never throws", () => {
     assert.doesNotThrow(() => {
       const s = new ProfileStore({ file: "profile-store-missing.json", reader: () => "not json{", writer: () => {} });

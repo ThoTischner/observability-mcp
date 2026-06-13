@@ -10,6 +10,7 @@ import type { Observation } from "./store.js";
 import {
   deriveProfile,
   evaluateCall,
+  ruleId,
   type CallSignature,
   type EvalResult,
   type ProfileRule,
@@ -23,6 +24,7 @@ export interface ProfileStoreOptions {
   /** Seams for tests. */
   reader?: (file: string) => string;
   writer?: (file: string, data: string) => void;
+  now?: () => number;
 }
 
 export class ProfileStore {
@@ -30,11 +32,13 @@ export class ProfileStore {
   private readonly file?: string;
   private readonly reader: (file: string) => string;
   private readonly writer: (file: string, data: string) => void;
+  private readonly now: () => number;
 
   constructor(opts: ProfileStoreOptions = {}) {
     this.file = opts.file;
     this.reader = opts.reader ?? ((f) => readFileSync(f, "utf8"));
     this.writer = opts.writer ?? ((f, d) => writeFileSync(f, d));
+    this.now = opts.now ?? (() => Date.now());
     if (opts.rules) this.rules = opts.rules;
     else if (this.file) this.load();
   }
@@ -104,6 +108,42 @@ export class ProfileStore {
       return true;
     }
     return false;
+  }
+
+  /**
+   * Absorb a single (deviating) call into the profile: widen the accepted rule
+   * for (subject, tool) to include this call's resource values + arg buckets,
+   * creating a tight accepted rule if none exists. Makes exactly that observed
+   * shape allowed — the "add this deviation to the profile" one-click. Returns
+   * the upserted rule.
+   */
+  absorb(call: CallSignature): ProfileRule {
+    const id = ruleId(call.principal, call.tool);
+    const ts = new Date(this.now()).toISOString();
+    let r = this.rules.find((x) => x.id === id);
+    if (!r) {
+      r = { id, subject: call.principal, tool: call.tool, constraints: {}, status: "accepted", provenance: { learnedFrom: 1, firstSeen: ts, lastSeen: ts } };
+      this.rules.push(r);
+    } else {
+      r.status = "accepted";
+      r.provenance.lastSeen = ts;
+    }
+    const add = (arr: string[] | undefined, v: string): string[] => {
+      const a = arr ?? [];
+      if (!a.includes(v)) a.push(v);
+      a.sort();
+      return a;
+    };
+    for (const dim of ["source", "service", "namespace"] as const) {
+      const v = call[dim];
+      if (v != null) r.constraints[dim] = add(r.constraints[dim], v);
+    }
+    for (const [k, b] of Object.entries(call.argShape || {})) {
+      r.constraints.argShape = r.constraints.argShape ?? {};
+      r.constraints.argShape[k] = add(r.constraints.argShape[k], b);
+    }
+    this.persist();
+    return r;
   }
 
   evaluate(call: CallSignature): EvalResult {
