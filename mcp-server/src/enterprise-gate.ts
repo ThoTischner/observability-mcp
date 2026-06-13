@@ -63,6 +63,7 @@ type GateState =
       claims: Record<string, unknown>;
       accessControl: boolean;
       inspectEnforce: boolean;
+      hasFeature: (feature: string) => boolean;
       enforceRbac?: (policy: unknown, ctx: unknown, req: unknown) => unknown;
       enforceCatalog?: (catalog: unknown, ctx: unknown, req: unknown) => unknown;
       rbacPolicy?: unknown;
@@ -151,6 +152,7 @@ async function buildGate(): Promise<GateState> {
     claims,
     accessControl: has("access-control"),
     inspectEnforce: has("inspect-enforce"),
+    hasFeature: has,
   };
 
   // Audit (best-effort; only if entitled and the module loads). The log
@@ -190,9 +192,20 @@ export function _resetEnterpriseGate(): void {
  * keep observe/dry-run and simply can't switch to blocking enforce.
  */
 export async function inspectEnforceEntitled(): Promise<boolean> {
+  return featureEntitled("inspect-enforce");
+}
+
+/**
+ * Is a named entitlement feature active? True only with a valid entitlement
+ * token that carries the feature. Default-OFF (no token / enterprise modules
+ * absent) → false, never throws — so OSS deployments keep their free surface
+ * and a feature is only gated when the operator has actively configured it.
+ * Used to license SSO/OIDC ("sso"), SCIM ("scim"), multi-tenancy ("tenancy").
+ */
+export async function featureEntitled(feature: string): Promise<boolean> {
   if (!gatePromise) gatePromise = buildGate();
   const g = await gatePromise;
-  return g.mode === "active" && g.inspectEnforce === true;
+  return g.mode === "active" && g.hasFeature(feature);
 }
 
 /** Gate mode — for diagnostics (/api/info). */
