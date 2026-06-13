@@ -130,11 +130,13 @@ test("listGrantedPermissions — deduplicates across overlapping roles", () => {
 
 test("listGrantedPermissions — admin lists every (resource, action) once", () => {
   const p = listGrantedPermissions(["admin"]);
-  // 10 resources (added 'products' in the products-RBAC phase) * 3 actions
-  // = 30, plus the special redaction:bypass entry = 31.
-  assert.equal(p.length, 31);
+  // 11 resources (added 'products' in the products-RBAC phase, 'inspection'
+  // in the Inspect phase) * 3 actions = 33, plus the special redaction:bypass
+  // entry = 34.
+  assert.equal(p.length, 34);
   assert.ok(p.some((g) => g.resource === "redaction" && g.action === "bypass"));
   assert.ok(p.some((g) => g.resource === "products" && g.action === "delete"));
+  assert.ok(p.some((g) => g.resource === "inspection" && g.action === "write"));
 });
 
 test("DEFAULT_POLICY shape — has the three built-in roles", () => {

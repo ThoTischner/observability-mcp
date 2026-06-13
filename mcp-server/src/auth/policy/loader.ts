@@ -31,7 +31,7 @@ import { BuiltinPolicyEngine, type PolicyEngine } from "./engine.js";
 export const VALID_RESOURCES: ReadonlySet<Resource> = new Set([
   "sources", "services", "health", "topology", "settings",
   "connectors", "audit", "catalog", "users", "redaction",
-  "products",
+  "products", "inspection",
 ]);
 export const VALID_ACTIONS: ReadonlySet<Action> = new Set(["read", "write", "delete", "bypass"]);
 

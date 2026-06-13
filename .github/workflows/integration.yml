@@ -235,6 +235,17 @@ jobs:
           echo "$body" | jq .
           echo "$body" | jq -e '.revisions | index("2025-11-25")' > /dev/null
 
+      - name: Inspect observe-path E2E
+        # Proves a real tools/call over the transport is captured by the
+        # observe recorder and surfaces on /api/inspect/events + /flows.
+        run: |
+          docker run --rm \
+            -w /app -v "$PWD/mcp-server:/app" \
+            --network=host \
+            -e OMCP_CONFORMANCE_URL=http://localhost:3000/mcp \
+            node:20-alpine sh -c \
+            "npx --yes tsx --test src/conformance/inspect-e2e.test.ts"
+
       - name: Dump logs on failure
         if: failure()
         run: |
