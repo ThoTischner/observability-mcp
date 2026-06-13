@@ -80,3 +80,15 @@ test("PluginLoader.load(): with verify on + no trust root → builtins still loa
     assert.ok(names.includes("kubernetes"), "kubernetes builtin must remain available");
   });
 });
+
+test("PluginLoader.load(): builtins carry manifest metadata (description shows in Installed Connectors)", async () => {
+  const loader = new PluginLoader({ pluginsDir: tmp() });
+  await loader.load();
+  for (const name of ["prometheus", "loki", "kubernetes"]) {
+    const c = loader.get(name);
+    assert.ok(c, `${name} builtin present`);
+    assert.ok(c!.manifest, `${name} builtin has a manifest`);
+    assert.ok((c!.manifest!.description || "").length > 10, `${name} builtin has a non-empty description`);
+    assert.equal(c!.manifest!.name, name);
+  }
+});

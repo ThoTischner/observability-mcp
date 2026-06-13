@@ -136,19 +136,52 @@ export class PluginLoader {
   }
 
   private loadBuiltins(): void {
+    // Builtins carry inline manifest metadata so the Installed Connectors UI
+    // shows a name/description/version like filesystem plugins do (without it,
+    // describeInstalled() falls back to an empty description). Mirrors
+    // plugins/<name>/manifest.json — keep the description text in sync.
     this.register({
       name: "prometheus",
       source: "builtin",
+      manifest: {
+        schemaVersion: 1,
+        name: "prometheus",
+        displayName: "Prometheus",
+        version: "1.0.0",
+        description:
+          "PromQL-based metrics backend with prom-client default scrape support and dynamic service-label resolution.",
+        signalTypes: ["metrics"],
+        capabilities: { queryMetrics: true, listServices: true, listAvailableMetrics: true },
+      },
       factory: () => new PrometheusConnector(),
     });
     this.register({
       name: "loki",
       source: "builtin",
+      manifest: {
+        schemaVersion: 1,
+        name: "loki",
+        displayName: "Loki",
+        version: "1.0.0",
+        description:
+          "LogQL-based log backend with dynamic service-label discovery (service_name / service / job / app / container).",
+        signalTypes: ["logs"],
+        capabilities: { queryLogs: true, listServices: true },
+      },
       factory: () => new LokiConnector(),
     });
     this.register({
       name: "kubernetes",
       source: "builtin",
+      manifest: {
+        schemaVersion: 1,
+        name: "kubernetes",
+        displayName: "Kubernetes",
+        version: "0.1.0",
+        description:
+          "Watches a Kubernetes cluster (in-cluster or via kubeconfig) and exposes pods, nodes, deployments, replicasets and namespaces as an infrastructure topology graph. Edges: RUNS_ON (pod→node), OWNED_BY (pod→rs→deployment), IN_NAMESPACE.",
+        signalTypes: ["topology"],
+      },
       factory: () => new KubernetesConnector(),
     });
   }
