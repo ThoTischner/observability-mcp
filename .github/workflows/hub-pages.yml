@@ -65,10 +65,15 @@ jobs:
           rm -rf "$tmp/hub"
           mkdir -p "$tmp/hub"
           cp -r /tmp/site/. "$tmp/hub/"
+          # GitHub Pages runs Jekyll by default, which drops this static
+          # /hub/ subtree (files exist on the branch but 404 live). A root
+          # .nojekyll makes Pages serve the branch verbatim so
+          # /hub/index.json + /hub/catalog/*.json resolve. Idempotent.
+          touch "$tmp/.nojekyll"
           cd "$tmp"
-          git add hub
+          git add hub .nojekyll
           if git diff --cached --quiet; then
-            echo "hub/ unchanged — nothing to publish."
+            echo "hub/ + .nojekyll unchanged — nothing to publish."
             exit 0
           fi
           git commit -m "chore(hub): publish connector hub site [skip ci]"
