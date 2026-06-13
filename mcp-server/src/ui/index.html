@@ -1429,6 +1429,11 @@
     .gov-step small { font-size: var(--fs-xs); color: var(--text-muted); }
     .gov-arrow { align-self: center; color: var(--text-dim); font-size: var(--fs-lg); }
 
+    /* ===== Inspect — granular rule editor chips ===== */
+    .rule-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .rule-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border: 1px solid var(--border-strong); border-radius: var(--radius-pill); font-size: var(--fs-sm); cursor: pointer; background: var(--surface-2); }
+    .rule-chip input { margin: 0; }
+
     /* ===== Playground (Q13) — restrained, monochrome ===== */
     .pg-seg { display:inline-flex; gap:0; border:1px solid var(--border); border-radius:6px; overflow:hidden; }
     .pg-seg button { border:none; background:transparent; color:var(--text-2,var(--text)); font:inherit; font-size:12px; padding:3px 11px; cursor:pointer; }
@@ -1558,6 +1563,19 @@
        there is something the operator needs to fix (currently only the
        ephemeral session secret case). -->
   <div id="omcp-warning-bar" class="omcp-warning-bar" style="display:none" role="alert"></div>
+
+  <!-- Inspect: granular rule editor — toggle which observed values/buckets a rule allows -->
+  <div class="modal-overlay" id="inspect-rule-modal">
+    <div class="modal" style="width:min(620px,92vw)">
+      <div class="modal-header"><h3 id="inspect-rule-modal-title">Edit rule</h3><button class="btn-icon" onclick="closeModal('inspect-rule-modal')">&times;</button></div>
+      <div class="modal-body" id="inspect-rule-modal-body"></div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeModal('inspect-rule-modal')">Cancel</button>
+        <button class="btn" onclick="inspectSaveRule(false)">Save</button>
+        <button class="btn btn-primary" onclick="inspectSaveRule(true)">Save &amp; accept</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Login modal — shown when /api/* returns 401 OMCP_AUTH_REQUIRED -->
   <div class="modal-overlay" id="login-modal">
@@ -7543,7 +7561,7 @@ function inspectInit(){
     // Delegated handler for profile rule actions (data-rule + data-act) — keeps
     // user-derived rule ids out of inline onclick (XSS-safe).
     const ptab=document.getElementById('inspect-tab-profile');
-    if(ptab) ptab.addEventListener('click',(ev)=>{ const b=ev.target.closest('button[data-rule]'); if(b) inspectRuleAction(b.getAttribute('data-rule'), b.getAttribute('data-act')); });
+    if(ptab) ptab.addEventListener('click',(ev)=>{ const b=ev.target.closest('button[data-rule]'); if(!b) return; const id=b.getAttribute('data-rule'), act=b.getAttribute('data-act'); if(act==='edit') inspectOpenRuleEditor(id); else inspectRuleAction(id, act); });
     // Self-checking poll: only refreshes while the tab is active AND live.
     inspectTimer=setInterval(()=>{
       if(document.getElementById('page-inspect').classList.contains('active') && inspectLive) loadInspectFlows(false);
@@ -7648,6 +7666,48 @@ async function inspectDerive(){
   }catch(e){ toast('Learn failed','error'); }
 }
 
+// G2: granular editor — toggle which observed values/buckets a rule allows.
+function inspectChip(attr, val){
+  return '<label class="rule-chip"><input type="checkbox" '+attr+' value="'+escHtml(val)+'" checked> '+esc(val)+'</label>';
+}
+function inspectOpenRuleEditor(id){
+  const rule=(window.__inspectRules||[]).find(r=>r.id===id); if(!rule){ toast('Rule not found','error'); return; }
+  window.__inspectEditRuleId=id;
+  document.getElementById('inspect-rule-modal-title').textContent='Edit rule — '+rule.subject+' → '+rule.tool;
+  const c=rule.constraints||{}; let html='';
+  for(const dim of ['source','service','namespace']){
+    if(c[dim] && c[dim].length){
+      html+='<div class="form-group"><label>'+dim+'</label><div class="rule-chips">'+c[dim].map(v=>inspectChip('data-dim="'+dim+'"',v)).join('')+'</div></div>';
+    }
+  }
+  if(c.argShape){
+    for(const k in c.argShape){
+      html+='<div class="form-group"><label>arg: '+esc(k)+'</label><div class="rule-chips">'+c.argShape[k].map(v=>inspectChip('data-argkey="'+escHtml(k)+'"',v)).join('')+'</div></div>';
+    }
+  }
+  if(!html) html='<div class="muted t-xs">This rule has no constraints (it matches the tool with no resource/arg restrictions). Nothing to narrow.</div>';
+  html+='<div class="form-hint">Unchecking a value removes it from the allow-list — calls using it then count as a deviation. Narrow only; you can re-learn to widen.</div>';
+  document.getElementById('inspect-rule-modal-body').innerHTML=html;
+  document.getElementById('inspect-rule-modal').classList.add('open');
+}
+async function inspectSaveRule(accept){
+  const id=window.__inspectEditRuleId; if(!id) return;
+  const body=document.getElementById('inspect-rule-modal-body');
+  const constraints={};
+  body.querySelectorAll('input[data-dim]:checked').forEach(i=>{ const d=i.getAttribute('data-dim'); (constraints[d]=constraints[d]||[]).push(i.value); });
+  const arg={};
+  body.querySelectorAll('input[data-argkey]:checked').forEach(i=>{ const k=i.getAttribute('data-argkey'); (arg[k]=arg[k]||[]).push(i.value); });
+  if(Object.keys(arg).length) constraints.argShape=arg;
+  try{
+    const r=await fetch('/api/inspect/profile/rules/'+encodeURIComponent(id),{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({constraints})});
+    if(!r.ok){ toast(r.status===403?'Need inspection:write':'Save failed','error'); return; }
+    if(accept){ await fetch('/api/inspect/profile/rules/'+encodeURIComponent(id),{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({status:'accepted'})}); }
+    closeModal('inspect-rule-modal');
+    toast(accept?'Saved & accepted':'Rule updated','ok');
+    inspectLoadProfile();
+  }catch(e){ toast('Save failed','error'); }
+}
+
 async function inspectRuleAction(id,status){
   try{
     const r=await fetch('/api/inspect/profile/rules/'+encodeURIComponent(id),{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({status})});
@@ -7668,6 +7728,7 @@ function renderInspectProfile(data){
   const acc=rules.filter(r=>r.status==='accepted');
   const rej=rules.filter(r=>r.status==='rejected');
   window.__inspectSuggestedIds=sugg.map(r=>r.id);
+  window.__inspectRules=rules;
   document.getElementById('inspect-sugg-count').textContent=sugg.length?('('+sugg.length+')'):'';
   document.getElementById('inspect-acc-count').textContent=acc.length?('('+acc.length+')'):'';
   document.getElementById('inspect-rej-count').textContent=rej.length?('('+rej.length+')'):'';
@@ -7685,6 +7746,7 @@ function renderInspectProfile(data){
         +'</div>'
         +'<div style="display:flex; gap:6px; flex-shrink:0;">'
           +'<button class="btn btn-sm btn-primary" data-rule="'+escHtml(r.id)+'" data-act="accepted">Accept</button>'
+          +'<button class="btn btn-sm" data-rule="'+escHtml(r.id)+'" data-act="edit" title="Narrow which values this rule allows">Edit</button>'
           +'<button class="btn btn-sm btn-ghost" data-rule="'+escHtml(r.id)+'" data-act="rejected">Reject</button>'
         +'</div>'
       +'</div></div>').join('');
@@ -7695,7 +7757,7 @@ function renderInspectProfile(data){
   else{
     a.innerHTML='<table class="dtable"><thead><tr><th>Subject</th><th>Tool</th><th>Constraints</th><th>Learned</th><th></th></tr></thead><tbody>'
       +acc.map(r=>'<tr><td>'+esc(r.subject)+'</td><td>'+esc(r.tool)+'</td><td class="muted t-xs">'+inspectConstraintSummary(r.constraints)+'</td><td>'+r.provenance.learnedFrom+'</td>'
-        +'<td style="text-align:right; white-space:nowrap;"><button class="btn btn-sm btn-ghost" data-rule="'+escHtml(r.id)+'" data-act="suggested" title="Move back to review">Unaccept</button></td></tr>').join('')
+        +'<td style="text-align:right; white-space:nowrap;"><button class="btn btn-sm" data-rule="'+escHtml(r.id)+'" data-act="edit" title="Narrow which values this rule allows">Edit</button> <button class="btn btn-sm btn-ghost" data-rule="'+escHtml(r.id)+'" data-act="suggested" title="Move back to review">Unaccept</button></td></tr>').join('')
       +'</tbody></table>';
   }
 
