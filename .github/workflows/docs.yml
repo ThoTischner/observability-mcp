@@ -79,6 +79,16 @@ jobs:
               cp -n "$f" site/
               echo "  preserved $(basename "$f")"
             done
+            # The connector hub catalog lives on gh-pages under hub/ (published
+            # by hub-pages.yml). Pages serves from THIS main-built site, not the
+            # gh-pages branch, so mirror hub/ in too — otherwise
+            # /hub/index.json + /hub/catalog/*.json 404 even though they exist
+            # on the branch. This is the path the in-app connector hub fetches.
+            if [ -d /tmp/ghpages/hub ]; then
+              mkdir -p site/hub
+              cp -r /tmp/ghpages/hub/. site/hub/
+              echo "  preserved hub/ connector catalog"
+            fi
             git worktree remove --force /tmp/ghpages || true
             echo "::notice::Helm repo files preserved alongside docs site"
           else
