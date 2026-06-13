@@ -1440,6 +1440,18 @@
     .pg-seg button + button { border-left:1px solid var(--border); }
     .pg-seg button.active { background:var(--surface-3); color:var(--text); font-weight:600; }
     .pg-seg button.locked { color:var(--text-dim); }
+    /* Entitlement lock optic — consistent across every enterprise feature.
+       The nav badge sits after the label; the page banner explains the lock. */
+    .nav-btn .ent-lock { margin-left:auto; font-size:11px; opacity:.65; flex:0 0 auto; }
+    .nav-btn.ent-locked .nav-label { opacity:.7; }
+    .ent-banner { display:flex; gap:10px; align-items:flex-start; margin:0 0 16px; padding:11px 14px;
+      border:1px solid var(--border); border-left:3px solid var(--accent,#6b8afd);
+      background:var(--surface-2,var(--surface)); border-radius:6px; font-size:var(--fs-sm,13px); }
+    .ent-banner .ent-banner-ico { font-size:15px; line-height:1.3; flex:0 0 auto; }
+    .ent-banner b { color:var(--text); }
+    .ent-banner .ent-banner-body { color:var(--text-2,var(--text)); }
+    .ent-banner code { font-family:var(--mono); font-size:12px; background:var(--bg); padding:1px 5px; border-radius:3px; }
+    .pol-subtab .ent-lock { margin-left:5px; font-size:10px; opacity:.65; }
     /* JSON: two tones only — keys at full strength, scalars muted. */
     .pg-json { white-space:pre-wrap; font-family:var(--mono); font-size:12px; background:var(--bg); padding:12px; border:1px solid var(--border); border-radius:4px; max-height:540px; overflow:auto; margin:0; color:var(--text-3,#8a93a5); }
     .pg-json .k { color:var(--text); }
@@ -2078,6 +2090,10 @@
         </div>
         <div class="ph-actions"><button class="btn btn-primary btn-sm" onclick="entEditNew('rbac')">+ New role</button><button class="btn btn-sm" id="ent-rbac-editbtn" onclick="entEditOpen('rbac')">Edit policy</button></div>
       </div>
+      <div class="ent-banner" data-ent-feature="access-control" style="display:none">
+        <span class="ent-banner-ico">🔒</span>
+        <div class="ent-banner-body"><b>Enterprise feature.</b> Enforcing role-based access control requires an entitlement (<code>access-control</code>). You can review the configuration freely; rules only take effect with a license. <a href="#" onclick="showPage('entitlement');return false;">View entitlement →</a></div>
+      </div>
       <div class="card gov-overview">
         <div class="card-header"><h2>How governance fits together</h2></div>
         <div class="gov-flow">
@@ -2253,6 +2269,10 @@ curl -X PUT http://localhost:3000/api/enterprise/policy \
           <div class="gov-sub">Which tools a credential is <em>offered</em> (packaging). Distinct from <b>Policies</b>, which decide what's <em>permitted</em>.</div>
         </div>
       </div>
+      <div class="ent-banner" data-ent-feature="access-control" style="display:none">
+        <span class="ent-banner-ico">🔒</span>
+        <div class="ent-banner-body"><b>Enterprise feature.</b> Governed context products are enforced with an entitlement (<code>access-control</code>). You can define products here; the binding only filters <code>tools/list</code> with a license. <a href="#" onclick="showPage('entitlement');return false;">View entitlement →</a></div>
+      </div>
 
       <!-- Primary surface: MCP Products via /api/products (RBAC-gated). -->
       <div class="card" id="mcp-products-card">
@@ -2349,6 +2369,10 @@ curl -X PUT http://localhost:3000/api/enterprise/catalog \
           <div class="gov-sub">What a role is <em>allowed</em> to call at all — coarse RBAC (resource × action). Distinct from <b>Inspect</b>, which judges whether a call is <em>normal</em>.</div>
         </div>
         <div class="ph-actions"><span id="pol-engine" class="badge"></span></div>
+      </div>
+      <div class="ent-banner" data-ent-feature="access-control" style="display:none">
+        <span class="ent-banner-ico">🔒</span>
+        <div class="ent-banner-body"><b>Enterprise feature.</b> The policy engine enforces verdicts with an entitlement (<code>access-control</code>). Roles and bindings are editable here; they only gate calls with a license. <a href="#" onclick="showPage('entitlement');return false;">View entitlement →</a></div>
       </div>
 
       <!-- Engine banner — colour + copy distinguishes editable file
@@ -2513,6 +2537,10 @@ curl -X PUT http://localhost:3000/api/enterprise/catalog \
       <!-- Provisioning sub-tab (C2b) — read-only view of the SCIM-provisioned
            Users/Groups an identity provider has pushed via /scim/v2. -->
       <div class="card pol-pane" id="pol-pane-provisioning" role="tabpanel" hidden>
+        <div class="ent-banner" data-ent-feature="scim" style="display:none">
+          <span class="ent-banner-ico">🔒</span>
+          <div class="ent-banner-body"><b>Enterprise feature.</b> SCIM 2.0 provisioning requires an entitlement (<code>scim</code>). With <code>OMCP_SCIM_TOKEN</code> set but unlicensed, the <code>/scim/v2</code> routes are not mounted (fail-closed). <a href="#" onclick="showPage('entitlement');return false;">View entitlement →</a></div>
+        </div>
         <div class="card-header"><h2>Provisioning
           <button class="info" aria-label="About provisioning"
             data-title="SCIM provisioning"
@@ -2580,6 +2608,10 @@ curl -X PUT http://localhost:3000/api/enterprise/catalog \
           <div class="gov-sub">An append-only, tamper-evident record of every mutating action — who did what, when.</div>
         </div>
         <div class="ph-actions"><span id="ent-chain"></span></div>
+      </div>
+      <div class="ent-banner" data-ent-feature="audit" style="display:none">
+        <span class="ent-banner-ico">🔒</span>
+        <div class="ent-banner-body"><b>Enterprise feature.</b> The tamper-evident audit log requires an entitlement (<code>audit</code>). Without it, decisions are not recorded to the hash-chained sink. <a href="#" onclick="showPage('entitlement');return false;">View entitlement →</a></div>
       </div>
       <div class="card">
         <div class="card-header"><h2>Recent decisions
@@ -7526,10 +7558,46 @@ function loadingBlock(label) {
 }
 async function refresh(){await Promise.all([loadSources(),loadServices(),loadDashUsage()]);}
 
+// Entitlement lock optic. /api/info.governance.entitlements is a flat
+// { feature: bool } map; all false on the OSS default. We render a consistent
+// 🔒 badge + explanatory banner on every entitled feature so the enterprise
+// surface reads as "visible but locked" rather than silently inert. Purely
+// informational — the real enforcement is server-side and fail-closed.
+window.__entitlements = window.__entitlements || {};
+function omcpFeatureLocked(feature){ return !window.__entitlements[feature]; }
+// nav-rail page → required feature
+const ENT_NAV_FEATURES = { products:'access-control', access:'access-control', policies:'access-control', audit:'audit' };
+function applyEntitlementLocks(gov){
+  window.__entitlements = (gov && gov.entitlements) || {};
+  // 1. Nav-rail badges.
+  for(const page in ENT_NAV_FEATURES){
+    const btn=document.querySelector(`.nav-btn[data-page="${page}"]`);
+    if(!btn) continue;
+    const locked=omcpFeatureLocked(ENT_NAV_FEATURES[page]);
+    btn.classList.toggle('ent-locked', locked);
+    let lk=btn.querySelector('.ent-lock');
+    if(locked && !lk){ lk=document.createElement('span'); lk.className='ent-lock'; lk.textContent='🔒'; lk.setAttribute('aria-label','Enterprise feature — requires an entitlement'); lk.title='Enterprise feature — requires an entitlement'; btn.appendChild(lk); }
+    else if(!locked && lk){ lk.remove(); }
+  }
+  // 2. Page / sub-tab banners (declarative: any [data-ent-feature]).
+  document.querySelectorAll('.ent-banner[data-ent-feature]').forEach(el=>{
+    el.style.display=omcpFeatureLocked(el.getAttribute('data-ent-feature'))?'flex':'none';
+  });
+  // 3. Provisioning sub-tab badge (SCIM).
+  const provTab=document.querySelector('.pol-subtab[data-pol-tab="provisioning"]');
+  if(provTab){
+    const locked=omcpFeatureLocked('scim');
+    let lk=provTab.querySelector('.ent-lock');
+    if(locked && !lk){ lk=document.createElement('span'); lk.className='ent-lock'; lk.textContent='🔒'; provTab.appendChild(lk); }
+    else if(!locked && lk){ lk.remove(); }
+  }
+}
+
 async function loadInfo(){
   try{
     const r=await fetch('/api/info'); if(!r.ok) return;
     const d=await r.json();
+    try{ applyEntitlementLocks(d.governance); }catch(e){/* lock optic is best-effort */}
     const footer=document.getElementById('info-footer');
     if(!footer) return;
     const plugins=(d.plugins||[]).map(p=>`<span class="footer-pill">${esc(p.name)}<span class="footer-pill-meta">${esc(p.source)}${p.version?` · ${esc(p.version)}`:''}</span></span>`).join('');

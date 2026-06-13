@@ -20,6 +20,7 @@ COPY topology.spec.mjs ./topology.spec.mjs
 COPY rail.spec.mjs ./rail.spec.mjs
 COPY inspect.spec.mjs ./inspect.spec.mjs
 COPY governance.spec.mjs ./governance.spec.mjs
+COPY entitlement-locks.spec.mjs ./entitlement-locks.spec.mjs
 
 # When run with --network=host (Linux) OMCP_UI_BASE defaults to localhost.
 # In a compose network pass OMCP_UI_BASE=http://mcp-server:3000 explicitly.

@@ -23,6 +23,7 @@ import {
   updateCatalog,
   inspectEnforceEntitled,
   featureEntitled,
+  entitledFeatures,
 } from "./enterprise-gate.js";
 import {
   loadCredentials,
@@ -1570,6 +1571,10 @@ async function main() {
   // once here so both /api/info and the route-mount block agree.
   const scimConfigured = !!process.env.OMCP_SCIM_TOKEN?.trim();
   const scimEntitled = scimConfigured && (await featureEntitled("scim"));
+  // One flat map of every entitled feature → bool, surfaced on /api/info so
+  // the UI can render a consistent lock optic. Resolved once at boot (the
+  // entitlement token is read at startup and never changes at runtime).
+  const entitlements = await entitledFeatures();
   let inspectBootMode = bootMode(process.env.OMCP_INSPECT);
   if (inspectBootMode === "enforce" && !inspectEnforceAllowed) {
     console.warn("[inspect] OMCP_INSPECT=enforce requires an entitlement (inspect-enforce); running in dry-run.");
@@ -1966,6 +1971,10 @@ async function main() {
         // server is running, so the `tenancy` entitlement is necessarily
         // present — an unentitled multi-tenant config fails closed at boot.
         multiTenant: tenancyConfigured,
+        // Per-feature entitlement map ({ "access-control": bool, audit, sso,
+        // scim, tenancy, "inspect-enforce" }) so the UI shows a lock badge on
+        // every entitled feature. All false on the OSS default (no token).
+        entitlements,
         federationUpstreams: (process.env.OMCP_FEDERATION_UPSTREAMS ?? "")
           .split(",").map((s) => s.trim()).filter(Boolean).length,
       },
