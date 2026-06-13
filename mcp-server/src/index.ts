@@ -2492,6 +2492,9 @@ async function main() {
     const argShape: Record<string, string> = {};
     if (b.argShape && typeof b.argShape === "object") {
       for (const [k, v] of Object.entries(b.argShape as Record<string, unknown>)) {
+        // Guard prototype-polluting keys from the request body (the key is
+        // remote input — js/remote-property-injection).
+        if (k === "__proto__" || k === "constructor" || k === "prototype") continue;
         if (typeof v === "string") argShape[k] = v;
       }
     }

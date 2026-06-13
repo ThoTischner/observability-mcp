@@ -85,6 +85,9 @@ export function deriveSignature(_tool: string, args: unknown): Signature {
 
   for (const [k, v] of Object.entries(a)) {
     if ((RESOURCE_KEYS as readonly string[]).includes(k)) continue;
+    // Never let a prototype-polluting arg name into the shape map (keys come
+    // from arbitrary tool-call arguments — js/remote-property-injection).
+    if (k === "__proto__" || k === "constructor" || k === "prototype") continue;
     if (Array.isArray(v)) {
       sig.argShape[k] = "n=" + countBucket(v.length);
     } else if (typeof v === "number") {

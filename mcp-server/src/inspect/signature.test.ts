@@ -78,6 +78,17 @@ describe("deriveSignature", () => {
     assert.deepEqual(deriveSignature("x", "str"), { argShape: {} });
   });
 
+  it("drops prototype-polluting arg keys (__proto__/constructor/prototype)", () => {
+    const sig = deriveSignature("x", JSON.parse('{"__proto__":"p","constructor":"c","prototype":"q","ok":5}'));
+    const keys = Object.keys(sig.argShape);
+    assert.ok(!keys.includes("__proto__"));
+    assert.ok(!keys.includes("constructor"));
+    assert.ok(!keys.includes("prototype"));
+    assert.equal(sig.argShape.ok, "<=10");
+    // prototype not polluted
+    assert.equal(({} as Record<string, unknown>).p, undefined);
+  });
+
   it("is deterministic", () => {
     const a = deriveSignature("query_logs", { source: "s", service: "v", limit: 5, window: "5m" });
     const b = deriveSignature("query_logs", { window: "5m", limit: 5, service: "v", source: "s" });
