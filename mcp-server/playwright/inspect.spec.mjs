@@ -41,6 +41,24 @@ test.describe("Inspect — Flows live graph", () => {
     expect(errors, `console errors: ${errors.join("\n")}`).toEqual([]);
   });
 
+  test("clicking a node drills into the real calls behind it", async ({ page }) => {
+    const errors = [];
+    page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
+    page.on("pageerror", (e) => errors.push(String(e)));
+
+    await page.goto(BASE, { waitUntil: "networkidle" });
+    await page.locator('[data-page="inspect"]').click();
+    await page.waitForTimeout(800);
+    const node = page.locator("#inspect-graph-svg .inode-g").first();
+    if ((await node.count()) === 0) test.skip(true, "no flow traffic in this run");
+    await node.click();
+    // The drill panel resolves to a recent-calls list or an honest empty note.
+    const drill = page.locator("#inspect-drill");
+    await expect(drill).toBeVisible();
+    await expect(drill).toContainText(/Recent calls|No calls|Unavailable/, { timeout: 10_000 });
+    expect(errors, `console errors: ${errors.join("\n")}`).toEqual([]);
+  });
+
   test("Reset view restores the world transform", async ({ page }) => {
     await page.goto(BASE, { waitUntil: "networkidle" });
     await page.locator('[data-page="inspect"]').click();

@@ -2404,6 +2404,14 @@ async function main() {
       limit: qstr(req.query.limit) ? parseInt(qstr(req.query.limit)!, 10) : undefined,
     });
     if (tenant) events = events.filter((e) => e.tenant === tenant);
+    // Backend drill-down (G1): narrow to one backend (the most-specific
+    // resource dim — service|source|namespace, matching the flow graph's
+    // backend node). Applied client-of-store side so the ring filters stay
+    // generic.
+    const backend = qstr(req.query.backend);
+    if (backend) {
+      events = events.filter((e) => (e.service || e.source || e.namespace || "(unrouted)") === backend);
+    }
     res.json({ events, mode: inspectMode.get(), persisted: inspectStore.persisted, scopedTo: tenant });
   });
 

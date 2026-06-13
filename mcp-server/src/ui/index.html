@@ -7854,6 +7854,42 @@ function highlightInspect(id){
 
 function inspectNodeById(id){ return (inspectData.nodes||[]).find(n=>n.id===id); }
 
+// G1 drill-down: map a flow node id (kind:label) to an events filter.
+function inspectNodeFilter(id){
+  const i=id.indexOf(':'); const kind=id.slice(0,i), val=id.slice(i+1);
+  if(kind==='identity') return { principal: val };
+  if(kind==='tool') return { tool: val };
+  if(kind==='backend') return { backend: val };
+  return {};
+}
+function inspectArgShapeStr(sh){
+  const e=Object.entries(sh||{}); if(!e.length) return '<span class="muted">—</span>';
+  return e.map(([k,v])=>esc(k)+'=<b>'+esc(String(v))+'</b>').join(' · ');
+}
+// Fetch + render the real calls behind a node/edge selection (the "look into
+// the calls" drill). Filters: {principal?, tool?, backend?}. All cells escaped.
+async function inspectRenderDrill(filters, win){
+  const el=document.getElementById('inspect-drill'); if(!el) return;
+  el.innerHTML='<div class="muted t-xs">Loading calls…</div>';
+  try{
+    const qs=new URLSearchParams(); for(const k in filters){ if(filters[k]) qs.set(k, filters[k]); }
+    qs.set('from', new Date(Date.now()-(inspectWinMs(win))).toISOString()); qs.set('limit','30');
+    const r=await fetch('/api/inspect/events?'+qs.toString());
+    if(!r.ok){ el.innerHTML='<div class="muted t-xs">'+(r.status===403?'No permission.':'Unavailable.')+'</div>'; return; }
+    const evs=(await r.json()).events||[];
+    if(!evs.length){ el.innerHTML='<div class="muted t-xs">No calls in window.</div>'; return; }
+    el.innerHTML='<div class="muted t-xs" style="margin:10px 0 4px;">Recent calls ('+evs.length+')</div>'
+      +evs.map(o=>{ const dec=o.decision==='blocked'?'<span class="stchip bad">blocked</span>':o.decision==='would-block'?'<span class="stchip warn">would-block</span>':(o.outcome==='error'?'<span class="stchip warn">error</span>':'<span class="stchip ok">ok</span>');
+        const backend=o.service||o.source||o.namespace||'—';
+        return '<div style="padding:6px 0;border-top:1px solid var(--border);">'
+          +'<div style="display:flex;justify-content:space-between;gap:8px;"><span class="t-xs">'+esc(o.principal)+' <span class="muted">→</span> '+esc(o.tool)+'</span>'+dec+'</div>'
+          +'<div class="muted t-xs" style="margin-top:2px;">'+esc((o.ts||'').replace('T',' ').replace(/\..*/,''))+' · '+esc(backend)+'</div>'
+          +'<div class="t-xs" style="margin-top:2px;">'+inspectArgShapeStr(o.argShape)+'</div>'
+          +'</div>'; }).join('');
+  }catch(e){ el.innerHTML='<div class="muted t-xs">Unavailable.</div>'; }
+}
+function inspectWinMs(win){ const w=win||((document.getElementById('inspect-window')||{}).value)||'1h'; return {'5m':3e5,'1h':36e5,'24h':864e5}[w]||36e5; }
+
 function selectInspectNode(id){
   inspectSel=id; highlightInspect(id);
   const n=inspectNodeById(id); if(!n) return;
@@ -7867,7 +7903,9 @@ function selectInspectNode(id){
     +'<div class="muted t-xs" style="margin-bottom:10px;text-transform:uppercase;letter-spacing:.06em;">'+n.kind+'</div>'
     +'<dl class="inspect-kv"><dt>calls</dt><dd>'+n.calls+'</dd><dt>errors</dt><dd>'+n.errors+'</dd><dt>deviations</dt><dd>'+n.deviations+'</dd></dl>'
     +'<div class="muted t-xs" style="margin:10px 0 4px;">Incoming</div>'+rows(ins,'in')
-    +'<div class="muted t-xs" style="margin:10px 0 4px;">Outgoing</div>'+rows(outs,'out');
+    +'<div class="muted t-xs" style="margin:10px 0 4px;">Outgoing</div>'+rows(outs,'out')
+    +'<div id="inspect-drill"></div>';
+  inspectRenderDrill(inspectNodeFilter(id));
 }
 
 function selectInspectEdge(idx){
@@ -7878,7 +7916,9 @@ function selectInspectEdge(idx){
   empty.style.display='none'; body.style.display='block';
   body.innerHTML='<div style="font-size:var(--fs-lg);font-weight:600;margin-bottom:2px;">'+esc(from)+' → '+esc(to)+'</div>'
     +'<div class="muted t-xs" style="margin-bottom:10px;">flow edge</div>'
-    +'<dl class="inspect-kv"><dt>calls</dt><dd>'+e.count+'</dd><dt>allowed</dt><dd>'+e.allow+'</dd><dt>deviation</dt><dd>'+e.deviation+'</dd><dt>blocked</dt><dd>'+e.denied+'</dd></dl>';
+    +'<dl class="inspect-kv"><dt>calls</dt><dd>'+e.count+'</dd><dt>allowed</dt><dd>'+e.allow+'</dd><dt>deviation</dt><dd>'+e.deviation+'</dd><dt>blocked</dt><dd>'+e.denied+'</dd></dl>'
+    +'<div id="inspect-drill"></div>';
+  inspectRenderDrill({ ...inspectNodeFilter(e.from), ...inspectNodeFilter(e.to) });
 }
 
 function wireInspectGraph(){
