@@ -62,6 +62,7 @@ type GateState =
       mode: "active";
       claims: Record<string, unknown>;
       accessControl: boolean;
+      inspectEnforce: boolean;
       enforceRbac?: (policy: unknown, ctx: unknown, req: unknown) => unknown;
       enforceCatalog?: (catalog: unknown, ctx: unknown, req: unknown) => unknown;
       rbacPolicy?: unknown;
@@ -149,6 +150,7 @@ async function buildGate(): Promise<GateState> {
     mode: "active",
     claims,
     accessControl: has("access-control"),
+    inspectEnforce: has("inspect-enforce"),
   };
 
   // Audit (best-effort; only if entitled and the module loads). The log
@@ -179,6 +181,18 @@ async function buildGate(): Promise<GateState> {
 /** Reset memoised state (tests only). */
 export function _resetEnterpriseGate(): void {
   gatePromise = null;
+}
+
+/**
+ * Is the Inspect ENFORCE control entitled? Inspect observe/dry-run are free
+ * (OSS); only blocking enforcement requires the "inspect-enforce" feature on a
+ * valid entitlement token. Default-OFF (no token) → false, so OSS deployments
+ * keep observe/dry-run and simply can't switch to blocking enforce.
+ */
+export async function inspectEnforceEntitled(): Promise<boolean> {
+  if (!gatePromise) gatePromise = buildGate();
+  const g = await gatePromise;
+  return g.mode === "active" && g.inspectEnforce === true;
 }
 
 /** Gate mode — for diagnostics (/api/info). */

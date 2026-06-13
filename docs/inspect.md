@@ -41,7 +41,13 @@ changed at runtime from the UI or `PUT /api/inspect/mode`.
 | `off` | – | – | – | disable entirely |
 | `observe` | ✅ | – | – | learn what normal looks like (default, zero risk) |
 | `dryrun` | ✅ | ✅ (logs "would block") | – | prove a profile against live traffic before enforcing |
-| `enforce` | ✅ | ✅ | ✅ | block calls outside the accepted profile |
+| `enforce` | ✅ | ✅ | ✅ | block calls outside the accepted profile **(entitled feature)** |
+
+`observe` and `dry-run` — the live Flows graph, learning a profile, and seeing
+would-block deviations — are free. **`enforce` (active blocking) requires an
+entitlement** (the `inspect-enforce` feature); without it the mode switch is
+refused and the gateway keeps running in dry-run. Visibility is free;
+enforcement is the licensed control.
 
 `observe` is the default and is **completely read-only** — it adds no decision
 to the call path, only a non-blocking recorder. `enforce` is the only mode that

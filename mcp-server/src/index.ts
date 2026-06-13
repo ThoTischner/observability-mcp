@@ -21,6 +21,7 @@ import {
   authorizeAdmin,
   updateRbacPolicy,
   updateCatalog,
+  inspectEnforceEntitled,
 } from "./enterprise-gate.js";
 import {
   loadCredentials,
@@ -1519,7 +1520,15 @@ async function main() {
   // off/dryrun/enforce at boot, and the API can switch it at runtime. Profile
   // evaluation (dry-run/enforce) is wired in a later phase.
   const inspectStore = new InspectStore({ file: process.env.OMCP_INSPECT_FILE?.trim() || undefined });
-  const inspectMode = new ModeController(bootMode(process.env.OMCP_INSPECT));
+  // Inspect ENFORCE (active blocking) is an entitled control; observe/dry-run
+  // are free (OSS). Resolve the entitlement once at boot.
+  const inspectEnforceAllowed = await inspectEnforceEntitled();
+  let inspectBootMode = bootMode(process.env.OMCP_INSPECT);
+  if (inspectBootMode === "enforce" && !inspectEnforceAllowed) {
+    console.warn("[inspect] OMCP_INSPECT=enforce requires an entitlement (inspect-enforce); running in dry-run.");
+    inspectBootMode = "dryrun";
+  }
+  const inspectMode = new ModeController(inspectBootMode);
   // Behavior profile (the learned ruleset). Accepted rules drive the
   // evaluator: in dry-run the recorder records a `would-block` deviation for
   // calls outside the profile (never blocks — enforce blocking is a later
@@ -1536,6 +1545,9 @@ async function main() {
   hookRegistry.register(
     createInspectEnforcer(inspectStore, inspectMode, inspectProfile, {
       onEvent: (e) => recordInspectEvent(e.tool, e.outcome, e.decision),
+      // Belt-and-suspenders: never block without the enforce entitlement, even
+      // if the mode were somehow set to enforce.
+      enforceAllowed: () => inspectEnforceAllowed,
     }),
   );
   if (inspectMode.get() !== "observe") {
@@ -2379,11 +2391,23 @@ async function main() {
       blocking: inspectMode.blocking,
       size: inspectStore.size,
       persisted: inspectStore.persisted,
+      // observe/dry-run are free; enforce (active blocking) is an entitled
+      // control. The UI uses this to lock the Enforce option when unlicensed.
+      enforceEntitled: inspectEnforceAllowed,
     });
   });
 
   app.put("/api/inspect/mode", need("inspection", "write"), audit("inspection", "write"), (req, res) => {
     const body = req.body as { mode?: unknown } | undefined;
+    // Enforce (active blocking) requires the inspect-enforce entitlement;
+    // observe/dry-run are always available. Refuse the switch otherwise.
+    if (typeof body?.mode === "string" && body.mode.trim().toLowerCase() === "enforce" && !inspectEnforceAllowed) {
+      res.status(403).json({
+        error: "Enforce mode requires an entitlement (inspect-enforce). Observe and dry-run are available without a license.",
+        code: "OMCP_ENTITLEMENT_REQUIRED",
+      });
+      return;
+    }
     try {
       const m = inspectMode.set(body?.mode);
       res.json({ mode: m });

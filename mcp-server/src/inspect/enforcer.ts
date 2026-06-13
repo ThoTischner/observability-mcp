@@ -19,6 +19,9 @@ import { authKind, type ProfileEvaluator } from "./recorder.js";
 
 export interface EnforcerOptions {
   onEvent?: (e: { tool: string; outcome: "ok" | "error"; decision: "blocked" }) => void;
+  /** Entitlement gate — when it returns false, the enforcer never blocks (enforce
+   *  is an entitled control; observe/dry-run are free). Defaults to allowed. */
+  enforceAllowed?: () => boolean;
 }
 
 /**
@@ -34,6 +37,8 @@ export function createInspectEnforcer(
   const handler = (ctx: HookContext, payload: HookPayload): HookResult => {
     try {
       if (!mode.blocking) return { allow: true };
+      // Enforce blocking is an entitled control; without it, pass through.
+      if (opts.enforceAllowed && !opts.enforceAllowed()) return { allow: true };
       const red = redactValue((payload as { args?: unknown }).args);
       const sig = deriveSignature(ctx.target, red.value);
       const ev = evaluator.evaluate({

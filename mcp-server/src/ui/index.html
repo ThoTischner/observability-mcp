@@ -1439,6 +1439,7 @@
     .pg-seg button { border:none; background:transparent; color:var(--text-2,var(--text)); font:inherit; font-size:12px; padding:3px 11px; cursor:pointer; }
     .pg-seg button + button { border-left:1px solid var(--border); }
     .pg-seg button.active { background:var(--surface-3); color:var(--text); font-weight:600; }
+    .pg-seg button.locked { color:var(--text-dim); }
     /* JSON: two tones only — keys at full strength, scalars muted. */
     .pg-json { white-space:pre-wrap; font-family:var(--mono); font-size:12px; background:var(--bg); padding:12px; border:1px solid var(--border); border-radius:4px; max-height:540px; overflow:auto; margin:0; color:var(--text-3,#8a93a5); }
     .pg-json .k { color:var(--text); }
@@ -1909,7 +1910,7 @@
           <div id="inspect-enforce-confirm" style="display:none; margin-top:10px; padding:10px 12px; border:1px solid var(--danger); background:var(--danger-soft); border-radius:6px;">
             <div id="inspect-enforce-msg" style="margin-bottom:8px; font-size:var(--fs-sm);"></div>
             <div style="display:flex; gap:8px;">
-              <button class="btn btn-sm btn-danger" onclick="inspectSetMode('enforce', true)">Enforce — block deviations</button>
+              <button class="btn btn-sm btn-danger" id="inspect-enforce-go" onclick="inspectSetMode('enforce', true)">Enforce — block deviations</button>
               <button class="btn btn-sm" onclick="inspectCancelEnforce()">Cancel</button>
             </div>
           </div>
@@ -7598,7 +7599,7 @@ async function inspectSetMode(mode, confirmed){
   inspectCancelEnforce();
   try{
     const r=await fetch('/api/inspect/mode',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({mode})});
-    if(!r.ok){ toast(r.status===403?'Need inspection:write to change mode':'Mode change failed','error'); return; }
+    if(!r.ok){ let msg='Mode change failed'; try{ const e=await r.json(); if(e&&e.error) msg=e.error; }catch(_){} toast(msg,'error'); return; }
     const j=await r.json();
     toast('Inspection mode: '+(j.mode||mode),'ok');
     inspectRefreshMode();
@@ -7607,10 +7608,20 @@ async function inspectSetMode(mode, confirmed){
 }
 
 async function inspectRequestEnforce(){
+  const msg=document.getElementById('inspect-enforce-msg');
+  const go=document.getElementById('inspect-enforce-go');
+  // Enforce (active blocking) is an entitled control — show an Enterprise
+  // notice instead of the confirm action when unlicensed.
+  if(window.__inspectEnforceEntitled===false){
+    msg.innerHTML='🔒 <b>Enforce is an Enterprise feature.</b> Blocking out-of-profile calls requires an entitlement (inspect-enforce). <b>Observe</b> and <b>Dry-run</b> — including the live graph, learning, and would-block deviations — are available without a license.';
+    if(go) go.style.display='none';
+    document.getElementById('inspect-enforce-confirm').style.display='block';
+    return;
+  }
+  if(go) go.style.display='';
   let accepted=0, wouldBlock=0;
   try{ const p=await fetch('/api/inspect/profile'); if(p.ok){ const j=await p.json(); accepted=(j.counts&&j.counts.accepted)||0; } }catch(e){}
   try{ const d=await fetch('/api/inspect/deviations?window=24h'); if(d.ok){ const j=await d.json(); wouldBlock=j.total||0; } }catch(e){}
-  const msg=document.getElementById('inspect-enforce-msg');
   if(accepted===0){
     msg.innerHTML='<b>No accepted rules.</b> Enforcing now would block <b>every</b> call (nothing is allow-listed). Accept some rules first, or continue only if you really intend a default-deny.';
   }else{
@@ -7820,6 +7831,15 @@ function updateInspectModeChip(m){
   if(seg) seg.querySelectorAll('button[data-mode]').forEach(b=>b.classList.toggle('active', b.getAttribute('data-mode')===mode));
   const desc=document.getElementById('inspect-mode-desc');
   if(desc) desc.textContent=(typeof INSPECT_MODE_DESC!=='undefined'&&INSPECT_MODE_DESC[mode])||'';
+  // Enforce is an entitled control — lock the segment when unlicensed.
+  window.__inspectEnforceEntitled = (m.enforceEntitled !== false);
+  const enf=seg&&seg.querySelector('button[data-mode="enforce"]');
+  if(enf){
+    const locked=m.enforceEntitled===false;
+    enf.classList.toggle('locked', locked);
+    enf.textContent=locked?'Enforce 🔒':'Enforce';
+    enf.title=locked?'Enforce (active blocking) is an Enterprise feature — requires an entitlement':'';
+  }
 }
 
 function showInspectGraphMessage(msg){
