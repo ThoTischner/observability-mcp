@@ -48,7 +48,7 @@ describe("createInspectRecorder", () => {
     assert.equal(o.source, "prom-eu");
     assert.equal(o.service, "pay");
     assert.equal(o.argShape.window, "<=1h");
-    assert.equal(o.argShape.query, "present"); // literal never stored
+    assert.match(o.argShape.query, /m:x/); // fingerprint, literal never stored
     assert.equal(o.decision, "allow");
     assert.equal(o.outcome, "ok");
   });
