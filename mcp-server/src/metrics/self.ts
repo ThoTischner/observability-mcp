@@ -63,6 +63,26 @@ export const auditDlqDepth = new Gauge({
   registers: [selfRegistry],
 });
 
+// Inspect: one counter per recorded tool-call observation, labelled by tool,
+// outcome (ok/error) and decision (allow/would-block/blocked). Lets operators
+// graph deviation/block rates straight from Prometheus alongside the in-app
+// Flows view.
+export const inspectEvents = new Counter({
+  name: "obsmcp_inspect_events_total",
+  help: "Inspect observations by tool, outcome and policy decision.",
+  labelNames: ["tool", "outcome", "decision"] as const,
+  registers: [selfRegistry],
+});
+
+/** Record one inspection observation in the self-metrics registry. Never throws. */
+export function recordInspectEvent(tool: string, outcome: string, decision: string): void {
+  try {
+    inspectEvents.inc({ tool, outcome, decision });
+  } catch {
+    /* metrics must never affect the call path */
+  }
+}
+
 /**
  * Wrap a (potentially async) tool handler to record call count + latency.
  * Outcome is "ok" or "error" — never throws on its own.

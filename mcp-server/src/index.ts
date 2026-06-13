@@ -105,10 +105,12 @@ import {
 } from "./connectors/hub.js";
 import { isValidConnectorName, installTarball } from "./connectors/install.js";
 import { PluginVerificationError } from "./connectors/verify.js";
-import { selfRegistry, withToolMetrics, apiRequests, mcpActiveSessions, auditDlqDepth } from "./metrics/self.js";
+import { selfRegistry, withToolMetrics, apiRequests, mcpActiveSessions, auditDlqDepth, recordInspectEvent } from "./metrics/self.js";
 import { initOtel } from "./observability/otel.js";
 import { WebSocketServerTransport } from "./transport/websocket.js";
 import { HookRegistry } from "./sdk/hooks.js";
+import { InspectStore, ModeController, bootMode, createInspectRecorder, buildFlowGraph, durationToSeconds } from "./inspect/index.js";
+import type { Outcome, Decision } from "./inspect/index.js";
 import { wrapToolHandler, wrapResourceHandler, wrapPromptHandler } from "./sdk/hook-wrappers.js";
 import { UpstreamClient } from "./federation/upstream.js";
 import { FederationRegistry, parseFederationEnv } from "./federation/registry.js";
@@ -1511,6 +1513,22 @@ async function main() {
   // hooks plug into their respective seams as they ship.
   const hookRegistry = new HookRegistry();
 
+  // Inspect (observe/learn/enforce). The recorder registers as a permissive
+  // tool_post_invoke hook so it can never block or slow a tool call. Mode
+  // defaults to "observe" (record-only, zero decision); OMCP_INSPECT can set
+  // off/dryrun/enforce at boot, and the API can switch it at runtime. Profile
+  // evaluation (dry-run/enforce) is wired in a later phase.
+  const inspectStore = new InspectStore({ file: process.env.OMCP_INSPECT_FILE?.trim() || undefined });
+  const inspectMode = new ModeController(bootMode(process.env.OMCP_INSPECT));
+  hookRegistry.register(
+    createInspectRecorder(inspectStore, inspectMode, {
+      onEvent: (e) => recordInspectEvent(e.tool, e.outcome, e.decision),
+    }),
+  );
+  if (inspectMode.get() !== "observe") {
+    console.log(`[inspect] mode=${inspectMode.get()} (store ${inspectStore.persisted ? "persisted" : "in-memory"})`);
+  }
+
   // Phase F15: anomaly-history sink — opt-in via
   // OMCP_ANOMALY_HISTORY_REMOTE_WRITE. When configured, anomaly
   // scores written via anomalyHistory.record() flush to the
@@ -2328,6 +2346,62 @@ async function main() {
       // so a cross-tenant admin sees an explicit "(all tenants)" hint.
       scopedTo: tenantFilter || (isAdmin ? null : callerTenant),
     });
+  });
+
+  // --- /api/inspect — observe/learn/enforce surface (Inspect feature) ---
+  // Reads need inspection:read; the mode switch needs inspection:write and is
+  // audited. Non-admin callers are scoped to their own tenant's observations;
+  // a cross-tenant admin sees all (or ?tenant=acme to filter).
+  const inspectScope = (req: import("express").Request): string | null => {
+    const sess = (req as AuthedRequest).session;
+    const isAdmin = hasPermission(sess?.roles, "users", "delete");
+    return isAdmin ? (qstr(req.query.tenant) || null) : (sess?.tenant || "default");
+  };
+
+  app.get("/api/inspect/mode", need("inspection", "read"), (_req, res) => {
+    res.json({
+      mode: inspectMode.get(),
+      recording: inspectMode.recording,
+      evaluating: inspectMode.evaluating,
+      blocking: inspectMode.blocking,
+      size: inspectStore.size,
+      persisted: inspectStore.persisted,
+    });
+  });
+
+  app.put("/api/inspect/mode", need("inspection", "write"), audit("inspection", "write"), (req, res) => {
+    const body = req.body as { mode?: unknown } | undefined;
+    try {
+      const m = inspectMode.set(body?.mode);
+      res.json({ mode: m });
+    } catch (e) {
+      res.status(400).json({ error: e instanceof Error ? e.message : "invalid mode" });
+    }
+  });
+
+  app.get("/api/inspect/events", need("inspection", "read"), (req, res) => {
+    const tenant = inspectScope(req);
+    let events = inspectStore.list({
+      from: qstr(req.query.from),
+      to: qstr(req.query.to),
+      principal: qstr(req.query.principal),
+      tool: qstr(req.query.tool),
+      outcome: qstr(req.query.outcome) as Outcome | undefined,
+      decision: qstr(req.query.decision) as Decision | undefined,
+      limit: qstr(req.query.limit) ? parseInt(qstr(req.query.limit)!, 10) : undefined,
+    });
+    if (tenant) events = events.filter((e) => e.tenant === tenant);
+    res.json({ events, mode: inspectMode.get(), persisted: inspectStore.persisted, scopedTo: tenant });
+  });
+
+  app.get("/api/inspect/flows", need("inspection", "read"), (req, res) => {
+    const tenant = inspectScope(req);
+    const windowSecs = durationToSeconds(qstr(req.query.window) || "24h") ?? 86400;
+    const sinceMs = Date.now() - windowSecs * 1000;
+    let obs = inspectStore.since(sinceMs);
+    if (tenant) obs = obs.filter((e) => e.tenant === tenant);
+    const graph = buildFlowGraph(obs, { sinceMs });
+    res.json({ ...graph, mode: inspectMode.get(), scopedTo: tenant });
   });
 
   // --- /api/audit/dlq — webhook-sink dead-letter queue surface (P9) ---
