@@ -16,6 +16,8 @@ import {
   authorizeAdmin,
   featureEntitled,
   inspectEnforceEntitled,
+  entitledFeatures,
+  ENTITLEABLE_FEATURES,
   _resetEnterpriseGate,
 } from "./enterprise-gate.js";
 
@@ -86,6 +88,17 @@ describe("enterprise-gate — OFF (no opt-in, published-artifact state)", () => 
       assert.equal(await featureEntitled(feature), false, `feature ${feature} must be locked when OFF`);
     }
     assert.equal(await inspectEnforceEntitled(), false, "inspectEnforceEntitled mirrors featureEntitled");
+  });
+
+  it("entitledFeatures returns the full vocabulary, all false when OFF", async () => {
+    clearEnv();
+    const map = await entitledFeatures();
+    // Every known feature is present as a key (so the UI can render a badge
+    // for each) and false on the OSS default.
+    for (const f of ENTITLEABLE_FEATURES) {
+      assert.equal(map[f], false, `feature ${f} must be false when OFF`);
+    }
+    assert.deepEqual(Object.keys(map).sort(), [...ENTITLEABLE_FEATURES].sort());
   });
 
   it("gate state is memoised across calls", async () => {

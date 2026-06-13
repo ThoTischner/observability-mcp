@@ -208,6 +208,33 @@ export async function featureEntitled(feature: string): Promise<boolean> {
   return g.mode === "active" && g.hasFeature(feature);
 }
 
+/** Every entitlement feature the product knows about — the closed vocabulary
+ *  the UI renders lock badges for. Keep in sync with the gates in index.ts. */
+export const ENTITLEABLE_FEATURES = [
+  "access-control",
+  "audit",
+  "inspect-enforce",
+  "sso",
+  "scim",
+  "tenancy",
+] as const;
+
+/**
+ * Resolve every known feature to whether it is currently entitled — one flat
+ * map for the UI to drive a consistent lock optic. Default-OFF (no token /
+ * enterprise modules absent) → all false; never throws. This is purely
+ * informational (visibility is free); the real enforcement lives in each
+ * feature's own gate.
+ */
+export async function entitledFeatures(): Promise<Record<string, boolean>> {
+  if (!gatePromise) gatePromise = buildGate();
+  const g = await gatePromise;
+  const active = g.mode === "active";
+  const out: Record<string, boolean> = {};
+  for (const f of ENTITLEABLE_FEATURES) out[f] = active && g.hasFeature(f);
+  return out;
+}
+
 /** Gate mode — for diagnostics (/api/info). */
 export async function enterpriseGateStatus(): Promise<{
   active: boolean;
