@@ -1905,6 +1905,9 @@
 
             <h3 style="font-size: var(--fs-md); margin: 20px 0 8px;">Accepted rules <span class="muted t-xs" id="inspect-acc-count"></span></h3>
             <div id="inspect-accepted-rules"><div class="empty" style="margin: 16px 0;">No accepted rules yet. Accept suggestions above to build the enforceable profile.</div></div>
+
+            <h3 style="font-size: var(--fs-md); margin: 20px 0 8px;">Rejected rules <span class="muted t-xs" id="inspect-rej-count"></span></h3>
+            <div id="inspect-rejected-rules"><div class="empty" style="margin: 16px 0;">No rejected rules. Rejected suggestions are kept here (not deleted) and won't reappear in the review queue on re-learn — restore one anytime.</div></div>
           </div>
         </div>
       </div>
@@ -7635,12 +7638,14 @@ async function inspectBulk(status){
 
 function renderInspectProfile(data){
   const rules=data.rules||[]; const c=data.counts||{};
-  document.getElementById('inspect-profile-counts').textContent=(c.suggested||0)+' suggested · '+(c.accepted||0)+' accepted'+(data.persisted?' · persisted':'');
+  document.getElementById('inspect-profile-counts').textContent=(c.suggested||0)+' suggested · '+(c.accepted||0)+' accepted · '+(c.rejected||0)+' rejected'+(data.persisted?' · persisted':'');
   const sugg=rules.filter(r=>r.status==='suggested');
   const acc=rules.filter(r=>r.status==='accepted');
+  const rej=rules.filter(r=>r.status==='rejected');
   window.__inspectSuggestedIds=sugg.map(r=>r.id);
   document.getElementById('inspect-sugg-count').textContent=sugg.length?('('+sugg.length+')'):'';
   document.getElementById('inspect-acc-count').textContent=acc.length?('('+acc.length+')'):'';
+  document.getElementById('inspect-rej-count').textContent=rej.length?('('+rej.length+')'):'';
   document.getElementById('inspect-sugg-bulk').style.display=sugg.length>1?'flex':'none';
 
   const q=document.getElementById('inspect-review-queue');
@@ -7666,6 +7671,15 @@ function renderInspectProfile(data){
     a.innerHTML='<table class="dtable"><thead><tr><th>Subject</th><th>Tool</th><th>Constraints</th><th>Learned</th><th></th></tr></thead><tbody>'
       +acc.map(r=>'<tr><td>'+esc(r.subject)+'</td><td>'+esc(r.tool)+'</td><td class="muted t-xs">'+inspectConstraintSummary(r.constraints)+'</td><td>'+r.provenance.learnedFrom+'</td>'
         +'<td style="text-align:right; white-space:nowrap;"><button class="btn btn-sm btn-ghost" data-rule="'+escHtml(r.id)+'" data-act="suggested" title="Move back to review">Unaccept</button></td></tr>').join('')
+      +'</tbody></table>';
+  }
+
+  const rj=document.getElementById('inspect-rejected-rules');
+  if(!rej.length){ rj.innerHTML='<div class="empty" style="margin:16px 0;">No rejected rules.</div>'; }
+  else{
+    rj.innerHTML='<table class="dtable"><thead><tr><th>Subject</th><th>Tool</th><th>Constraints</th><th>Learned</th><th></th></tr></thead><tbody>'
+      +rej.map(r=>'<tr style="opacity:0.7;"><td>'+esc(r.subject)+'</td><td>'+esc(r.tool)+'</td><td class="muted t-xs">'+inspectConstraintSummary(r.constraints)+'</td><td>'+r.provenance.learnedFrom+'</td>'
+        +'<td style="text-align:right; white-space:nowrap;"><button class="btn btn-sm" data-rule="'+escHtml(r.id)+'" data-act="suggested" title="Restore to the review queue">Restore</button> <button class="btn btn-sm btn-primary" data-rule="'+escHtml(r.id)+'" data-act="accepted" title="Accept directly">Accept</button></td></tr>').join('')
       +'</tbody></table>';
   }
 }

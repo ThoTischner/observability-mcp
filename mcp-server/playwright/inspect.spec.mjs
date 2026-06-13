@@ -92,6 +92,20 @@ test.describe("Inspect — Flows live graph", () => {
       await expect(page.locator("#inspect-accepted-rules table")).toBeVisible();
     }
 
+    // Rejected rules must stay visible (not vanish): reject one, confirm it
+    // shows up in the Rejected section with a Restore action, then restore it.
+    const reject = page.locator('#inspect-review-queue button', { hasText: "Reject" }).first();
+    if (await reject.count()) {
+      await reject.click();
+      await page.waitForTimeout(500);
+      const rejTable = page.locator("#inspect-rejected-rules table");
+      await expect(rejTable).toBeVisible();
+      const restore = rejTable.locator("button", { hasText: "Restore" }).first();
+      await expect(restore).toBeVisible();
+      await restore.click(); // cleanup → back to review queue
+      await page.waitForTimeout(300);
+    }
+
     expect(errors, `console errors: ${errors.join("\n")}`).toEqual([]);
   });
 
