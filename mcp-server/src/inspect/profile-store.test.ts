@@ -44,19 +44,19 @@ describe("ProfileStore", () => {
 
   it("persists via the writer seam and reloads via the reader seam", () => {
     let blob = "";
-    const a = new ProfileStore({ file: "/tmp/p.json", reader: () => { throw new Error("absent"); }, writer: (_f, d) => { blob = d; } });
+    const a = new ProfileStore({ file: "profile-store-test.json", reader: () => { throw new Error("absent"); }, writer: (_f, d) => { blob = d; } });
     a.derive([obs({ principal: "a", tool: "t", service: "s" })]);
     a.setStatus(ruleId("a", "t"), "accepted");
     assert.ok(blob.includes('"accepted"'));
     // a fresh store reads it back
-    const b = new ProfileStore({ file: "/tmp/p.json", reader: () => blob, writer: () => {} });
+    const b = new ProfileStore({ file: "profile-store-test.json", reader: () => blob, writer: () => {} });
     assert.equal(b.accepted().length, 1);
     assert.equal(b.persisted, true);
   });
 
   it("a missing/invalid file starts empty, never throws", () => {
     assert.doesNotThrow(() => {
-      const s = new ProfileStore({ file: "/tmp/nope.json", reader: () => "not json{", writer: () => {} });
+      const s = new ProfileStore({ file: "profile-store-missing.json", reader: () => "not json{", writer: () => {} });
       assert.equal(s.size, 0);
     });
   });

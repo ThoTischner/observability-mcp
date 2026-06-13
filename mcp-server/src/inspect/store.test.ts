@@ -72,14 +72,14 @@ describe("InspectStore", () => {
 
   it("mirrors to the file appender when configured; never throws on append failure", () => {
     const lines: string[] = [];
-    const s = new InspectStore({ file: "/tmp/x.jsonl", appender: async (_f, l) => { lines.push(l); } });
+    const s = new InspectStore({ file: "inspect-store-test.jsonl", appender: async (_f, l) => { lines.push(l); } });
     assert.equal(s.persisted, true);
     s.record(mk({ tool: "logged" }));
     // appender is fire-and-forget; the line is queued synchronously here
     assert.equal(lines.length, 1);
     assert.match(lines[0], /"tool":"logged"/);
 
-    const boom = new InspectStore({ file: "/tmp/x.jsonl", appender: async () => { throw new Error("disk full"); } });
+    const boom = new InspectStore({ file: "inspect-store-test.jsonl", appender: async () => { throw new Error("disk full"); } });
     assert.doesNotThrow(() => boom.record(mk()));
   });
 });
