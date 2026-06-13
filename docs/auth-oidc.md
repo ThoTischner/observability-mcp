@@ -6,6 +6,15 @@ own the user database. Sign-in becomes a single "Sign in with SSO"
 button; the OMCP server only sees identity claims after the IdP has
 verified the user.
 
+> **SSO/OIDC is an entitled control.** The open-source surface —
+> anonymous, [basic (local users)](auth-basic.md), and API-key auth —
+> stays free and unchanged. Delegating identity to an external IdP
+> requires the `sso` entitlement; with `OMCP_AUTH=oidc` set but no valid
+> entitlement, the server refuses to start with a clear message (or, with
+> `OMCP_AUTH_ALLOW_FALLBACK=true`, logs the reason and falls back to
+> anonymous). A deployment that never sets `OMCP_AUTH=oidc` is never
+> affected. See [enterprise-gate.md](enterprise-gate.md).
+
 This page documents the operator-side setup. The two adjacent docs
 that frame it:
 

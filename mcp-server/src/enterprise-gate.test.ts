@@ -14,6 +14,8 @@ import {
   validatePolicyShape,
   validateCatalogShape,
   authorizeAdmin,
+  featureEntitled,
+  inspectEnforceEntitled,
   _resetEnterpriseGate,
 } from "./enterprise-gate.js";
 
@@ -73,6 +75,17 @@ describe("enterprise-gate — OFF (no opt-in, published-artifact state)", () => 
     ]) {
       await assert.doesNotReject(enforceEntitledAccess(defaultContext(), { tool }));
     }
+  });
+
+  it("featureEntitled is false for every feature when OFF (OSS default)", async () => {
+    clearEnv();
+    // Default-OFF means no entitled feature is active — SSO/SCIM/tenancy/
+    // inspect-enforce all stay locked, so the OSS surface is unchanged and
+    // a feature only ever gates when the operator has actively licensed it.
+    for (const feature of ["sso", "scim", "tenancy", "inspect-enforce", "anything"]) {
+      assert.equal(await featureEntitled(feature), false, `feature ${feature} must be locked when OFF`);
+    }
+    assert.equal(await inspectEnforceEntitled(), false, "inspectEnforceEntitled mirrors featureEntitled");
   });
 
   it("gate state is memoised across calls", async () => {

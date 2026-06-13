@@ -22,6 +22,7 @@ import {
   updateRbacPolicy,
   updateCatalog,
   inspectEnforceEntitled,
+  featureEntitled,
 } from "./enterprise-gate.js";
 import {
   loadCredentials,
@@ -1171,8 +1172,19 @@ async function main() {
       }
     }
   } else if (requestedAuthMode === "oidc") {
+    // SSO/OIDC is an entitled control. The OSS surface — anonymous, basic
+    // (local users), and API-key auth — stays free and unchanged; only
+    // delegating identity to an external IdP requires the `sso` entitlement.
+    // Fail-closed when actively requested without it (respects the same
+    // OMCP_AUTH_ALLOW_FALLBACK escape hatch as every other auth misconfig);
+    // a deployment that never sets OMCP_AUTH=oidc is never affected.
     const r = resolveOidcConfig(process.env);
-    if (r.error || !r.config) {
+    if (!(await featureEntitled("sso"))) {
+      authMisconfig(
+        "OMCP_AUTH=oidc (SSO) requires an entitlement (sso feature). " +
+          "Use OMCP_AUTH=basic or api-key for the open-source single-sign-on-free setup",
+      );
+    } else if (r.error || !r.config) {
       authMisconfig(r.error ?? "OIDC misconfigured");
     } else {
       let secret = process.env.OMCP_SESSION_SECRET;

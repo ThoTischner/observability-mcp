@@ -37,9 +37,19 @@ principal). The local `/api/*` management UI is unchanged.
 | `OMCP_CATALOG` | Path to a product-catalog JSON (enables the catalog) |
 | `OMCP_AUDIT_FILE` | Optional path; appends one JSON line per access decision |
 
-Feature gating: the token's `features` must include `access-control`
-for RBAC/catalog enforcement and `audit` for the audit log. A policy
-configured without the matching feature is denied (fail-closed).
+Feature gating: the token's `features` must include the matching claim
+for each entitled control. A control configured without its feature is
+denied / refused (fail-closed):
+
+| Feature | Gates |
+|---------|-------|
+| `access-control` | RBAC + product-catalog enforcement |
+| `audit` | the append-only audit log |
+| `inspect-enforce` | [Inspect](inspect.md) `enforce` mode (active blocking; observe/dry-run stay free) |
+| `sso` | [SSO/OIDC](auth-oidc.md) login (`OMCP_AUTH=oidc`; basic/api-key/anonymous stay free) |
+
+The OSS surface is whatever is left default-OFF: with no entitlement
+token, no control activates and behaviour is unchanged.
 
 ## Quickstart
 
