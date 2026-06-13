@@ -109,7 +109,7 @@ import { selfRegistry, withToolMetrics, apiRequests, mcpActiveSessions, auditDlq
 import { initOtel } from "./observability/otel.js";
 import { WebSocketServerTransport } from "./transport/websocket.js";
 import { HookRegistry } from "./sdk/hooks.js";
-import { InspectStore, ModeController, bootMode, createInspectRecorder, buildFlowGraph, durationToSeconds, ProfileStore } from "./inspect/index.js";
+import { InspectStore, ModeController, bootMode, createInspectRecorder, createInspectEnforcer, buildFlowGraph, durationToSeconds, ProfileStore } from "./inspect/index.js";
 import type { Outcome, Decision, RuleStatus } from "./inspect/index.js";
 import { wrapToolHandler, wrapResourceHandler, wrapPromptHandler } from "./sdk/hook-wrappers.js";
 import { UpstreamClient } from "./federation/upstream.js";
@@ -1529,6 +1529,13 @@ async function main() {
     createInspectRecorder(inspectStore, inspectMode, {
       onEvent: (e) => recordInspectEvent(e.tool, e.outcome, e.decision),
       evaluator: inspectProfile,
+    }),
+  );
+  // Enforcer: pre-invoke gate that blocks (and records) calls outside the
+  // accepted profile — only when mode is `enforce`. Pass-through otherwise.
+  hookRegistry.register(
+    createInspectEnforcer(inspectStore, inspectMode, inspectProfile, {
+      onEvent: (e) => recordInspectEvent(e.tool, e.outcome, e.decision),
     }),
   );
   if (inspectMode.get() !== "observe") {
