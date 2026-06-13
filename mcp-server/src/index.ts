@@ -10,7 +10,7 @@ import { loadConfig, saveConfig, DEFAULT_HEALTH_THRESHOLDS, DEFAULT_SETTINGS } f
 import { ConnectorRegistry, getSupportedTypes } from "./connectors/registry.js";
 import { isTopologyProvider } from "./connectors/interface.js";
 import { defaultContext, principalContext, sessionContext, allowsTool, type RequestContext } from "./context.js";
-import { parseKeyTenants } from "./tenancy/context.js";
+import { parseKeyTenants, isMultiTenantConfigured } from "./tenancy/context.js";
 import {
   enforceEntitledAccess,
   enterpriseGateStatus,
@@ -1144,6 +1144,9 @@ async function main() {
   let usersStore: LocalUsersFile | null = null;
   let secretEphemeral = false;
   let oidcRuntime: ReturnType<typeof buildOidcRuntime> | undefined;
+  // Captured so the multi-tenancy entitlement gate below can tell whether
+  // OIDC is configured to read a tenant claim (non-empty → tenant'd logins).
+  let oidcTenantClaim = "";
   if (requestedAuthMode === "basic") {
     const usersPath = process.env.OMCP_USERS_FILE;
     if (!usersPath) {
@@ -1200,11 +1203,38 @@ async function main() {
       sessionCfg = { secret };
       authMode = "oidc";
       oidcRuntime = buildOidcRuntime(r.config);
+      oidcTenantClaim = r.config.tenantClaim ?? "";
       console.log(`[auth] OIDC mode active — issuer=${r.config.issuer} clientId=${r.config.clientId} rolesClaim=${r.config.rolesClaim} mappedRoles=${Object.keys(r.config.roleMap).length}`);
     }
   } else if (requestedAuthMode !== "anonymous") {
     authMisconfig(`unknown OMCP_AUTH=${requestedAuthMode}`);
   }
+
+  // Multi-tenancy is an entitled control. The gateway is ALWAYS tenant-scoped,
+  // but every principal lands in DEFAULT_TENANT unless the operator actively
+  // maps identities to NON-default tenants — so the single-tenant default (the
+  // OSS path: anonymous, basic, api-key, or OIDC without a tenant claim) is
+  // free and bit-for-bit unchanged. It becomes "actively multi-tenant" only
+  // when an OIDC tenant claim is configured, or OMCP_KEY_TENANTS maps a
+  // credential to a non-default tenant. That configuration requires the
+  // `tenancy` entitlement; without it we fail closed and refuse to start,
+  // rather than silently collapsing isolated tenants into one (which could
+  // merge data across tenant boundaries). Single-tenant deployments never hit
+  // this branch.
+  const tenancyConfigured = isMultiTenantConfigured(oidcTenantClaim, process.env.OMCP_KEY_TENANTS);
+  if (tenancyConfigured && !(await featureEntitled("tenancy"))) {
+    const which = oidcTenantClaim
+      ? `an OIDC tenant claim (${oidcTenantClaim})`
+      : "OMCP_KEY_TENANTS with non-default tenants";
+    console.error(
+      `[tenancy] ${which} configures multi-tenant isolation, which requires an ` +
+        "entitlement (tenancy feature) — refusing to start (fail-closed). " +
+        "For the open-source single-tenant setup, omit OMCP_OIDC_TENANT_CLAIM and " +
+        "keep OMCP_KEY_TENANTS at the default tenant.",
+    );
+    process.exit(1);
+  }
+
   // Session revocation blocklist (Q17). Only meaningful when sessions
   // exist (basic / oidc); anonymous mode leaves it undefined so the
   // middleware check is a pure no-op. OMCP_AUTH_REVOCATION_FILE persists
@@ -1932,6 +1962,10 @@ async function main() {
         pluginsVerified: !/^(0|false|no|off)$/i.test(process.env.VERIFY_PLUGINS ?? "true"),
         scimEnabled: scimEntitled,
         scimConfigured,
+        // Active multi-tenancy (non-default tenants configured). When true the
+        // server is running, so the `tenancy` entitlement is necessarily
+        // present — an unentitled multi-tenant config fails closed at boot.
+        multiTenant: tenancyConfigured,
         federationUpstreams: (process.env.OMCP_FEDERATION_UPSTREAMS ?? "")
           .split(",").map((s) => s.trim()).filter(Boolean).length,
       },

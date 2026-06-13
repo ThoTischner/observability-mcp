@@ -7,6 +7,7 @@ import {
   normaliseTenant,
   tenantFromClaim,
   parseKeyTenants,
+  isMultiTenantConfigured,
 } from "./context.js";
 
 test("normaliseTenant — happy paths", () => {
@@ -88,4 +89,23 @@ test("parseKeyTenants — malformed entries skipped, doesn't crash", () => {
 test("parseKeyTenants — undefined / empty returns empty map", () => {
   assert.equal(parseKeyTenants(undefined).size, 0);
   assert.equal(parseKeyTenants("").size, 0);
+});
+
+test("isMultiTenantConfigured — single-tenant default is false (OSS path stays free)", () => {
+  // No OIDC tenant claim, no key-tenant mapping → single-tenant.
+  assert.equal(isMultiTenantConfigured(undefined, undefined), false);
+  assert.equal(isMultiTenantConfigured("", ""), false);
+  // Mappings that only ever resolve to `default` are NOT multi-tenant.
+  assert.equal(isMultiTenantConfigured("", "agent=default;ci=default"), false);
+  // Invalid tenant strings normalise to `default`, so they don't trip it.
+  assert.equal(isMultiTenantConfigured("", "agent=!!!bad!!!"), false);
+});
+
+test("isMultiTenantConfigured — true once a non-default tenant is configured", () => {
+  // An OIDC tenant claim alone activates multi-tenancy.
+  assert.equal(isMultiTenantConfigured("tid", undefined), true);
+  assert.equal(isMultiTenantConfigured("  tenant  ", undefined), true);
+  // A non-default key→tenant mapping activates it.
+  assert.equal(isMultiTenantConfigured("", "agent=acme"), true);
+  assert.equal(isMultiTenantConfigured("", "agent=default;ci=bigco"), true);
 });
