@@ -65,4 +65,33 @@ test.describe("Inspect — Flows live graph", () => {
     await expect(btn).toHaveText(/Paused/);
     await expect(page.locator("#inspect-graph-svg")).toHaveClass(/paused/);
   });
+
+  test("Profile tab learns from traffic and renders the review queue", async ({ page }) => {
+    const errors = [];
+    page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
+    page.on("pageerror", (e) => errors.push(String(e)));
+
+    await page.goto(BASE, { waitUntil: "networkidle" });
+    await page.locator('[data-page="inspect"]').click();
+    await page.locator('#page-inspect .tab-btn', { hasText: "Profile" }).click();
+    await expect(page.locator("#inspect-tab-profile")).toHaveClass(/active/);
+
+    // Learn from the observed window.
+    await page.locator('#inspect-tab-profile button', { hasText: "Learn from traffic" }).click();
+    await page.waitForTimeout(800);
+
+    // The review queue resolves to either suggestion cards (demo agent traffic)
+    // or an honest empty state — never a broken panel. If suggestions appear,
+    // accepting one moves it into the accepted-rules table.
+    const queue = page.locator("#inspect-review-queue");
+    await expect(queue).toBeVisible();
+    const accept = page.locator('#inspect-review-queue button', { hasText: "Accept" }).first();
+    if (await accept.count()) {
+      await accept.click();
+      await page.waitForTimeout(500);
+      await expect(page.locator("#inspect-accepted-rules table")).toBeVisible();
+    }
+
+    expect(errors, `console errors: ${errors.join("\n")}`).toEqual([]);
+  });
 });

@@ -9,3 +9,5 @@ export * from "./store.js";
 export * from "./mode.js";
 export * from "./graph.js";
 export * from "./recorder.js";
+export * from "./profile.js";
+export * from "./profile-store.js";
