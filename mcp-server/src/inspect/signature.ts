@@ -69,6 +69,77 @@ export function numBucket(n: number): string {
 /** Keys whose string value should be treated as a duration when parseable. */
 const DURATION_KEY = /window|range|lookback|step|interval|since|duration|period|timeout/i;
 
+/** Arg keys carrying a PromQL/LogQL expression — fingerprinted, not kept literal. */
+const QUERY_KEY = /^(query|expr|promql|logql)$/i;
+
+const PROMQL_KEYWORDS = new Set([
+  "by", "without", "on", "ignoring", "group_left", "group_right", "offset",
+  "bool", "and", "or", "unless", "keep_metric_names", "start", "end", "inf", "nan",
+]);
+
+// Aggregation operators can appear as `sum by (x) (expr)` — i.e. NOT immediately
+// before "(" — so they need recognising by name, not just by a trailing paren.
+const PROMQL_AGG = new Set([
+  "sum", "min", "max", "avg", "group", "stddev", "stdvar",
+  "count", "count_values", "bottomk", "topk", "quantile",
+]);
+
+/**
+ * Structural fingerprint of a PromQL/LogQL query — a deterministic, bounded
+ * signal of *which* metric(s), function(s) and label key(s) it touches, WITHOUT
+ * keeping the literal query. Lets a profile rule distinguish "query_metrics on
+ * metric X" from "...on metric Y". Heuristic (not a full parser) but stable.
+ * Returns "present" when nothing structural is extractable, "empty" for blank.
+ */
+export function queryFingerprint(q: string): string {
+  if (!q || !q.trim()) return "empty";
+  // Bound the input first — query args are attacker-controlled and run on the
+  // recorder/enforcer hot path; a huge string must not cost real CPU. 4 KB is
+  // ample for a structural signal; truncation stays deterministic.
+  const capped = q.length > 4096 ? q.slice(0, 4096) : q;
+  // Drop string literals so label values / quoted text never look like metrics.
+  const s = capped.replace(/"[^"]*"|'[^']*'|`[^`]*`/g, '""');
+  const funcs = new Set<string>();
+  const labels = new Set<string>();
+  const metrics = new Set<string>();
+  const exclude = new Set<string>();
+
+  // Functions: an identifier immediately followed by "(" (excluding keywords
+  // like `by(`), plus any aggregation operator by name (e.g. `sum by (x)`).
+  for (const m of s.matchAll(/([A-Za-z_]\w{0,127})\s*\(/g)) {
+    if (!PROMQL_KEYWORDS.has(m[1].toLowerCase())) funcs.add(m[1]);
+  }
+  for (const m of s.matchAll(/[A-Za-z_]\w*/g)) {
+    if (PROMQL_AGG.has(m[0].toLowerCase())) funcs.add(m[0]);
+  }
+  // Grouping labels: by/without/on/ignoring/group_* ( … ) — not metrics.
+  for (const m of s.matchAll(/\b(?:by|without|on|ignoring|group_left|group_right)\s*\(([^)]*)\)/gi)) {
+    for (const id of m[1].match(/[A-Za-z_]\w*/g) ?? []) { labels.add(id); exclude.add(id); }
+  }
+  // Selector label keys: inside { … } before = / != / =~ / !~.
+  for (const br of s.matchAll(/\{([^}]*)\}/g)) {
+    for (const m of br[1].matchAll(/([A-Za-z_]\w*)\s*(?:=~|!~|=|!=)/g)) { labels.add(m[1]); exclude.add(m[1]); }
+  }
+  // Metrics: identifiers (PromQL allows ':') that aren't funcs/keywords/labels,
+  // not a range-duration fragment ([5m] → "m", preceded by a digit).
+  for (const m of s.matchAll(/([A-Za-z_:][\w:]*)/g)) {
+    const idx = m.index ?? 0;
+    const id = m[1];
+    const prev = idx > 0 ? s[idx - 1] : "";
+    if (/\d/.test(prev)) continue;
+    const nxt = (s.slice(idx + id.length).match(/^\s*(.)/) ?? [])[1] ?? "";
+    if (nxt === "(") continue;
+    if (funcs.has(id) || exclude.has(id) || PROMQL_KEYWORDS.has(id.toLowerCase())) continue;
+    metrics.add(id);
+  }
+  const cap = (set: Set<string>): string => [...set].sort().slice(0, 8).join(",");
+  const parts: string[] = [];
+  if (funcs.size) parts.push("f:" + cap(funcs));
+  if (metrics.size) parts.push("m:" + cap(metrics));
+  if (labels.size) parts.push("l:" + cap(labels));
+  return parts.length ? parts.join(" ") : "present";
+}
+
 /**
  * Derive a Signature from a tool name + its (redacted) arguments.
  * Deterministic and pure — same input always yields the same signature.
@@ -97,9 +168,13 @@ export function deriveSignature(_tool: string, args: unknown): Signature {
     } else if (typeof v === "string") {
       if (DURATION_KEY.test(k) && durationToSeconds(v) !== null) {
         sig.argShape[k] = durationBucket(v);
+      } else if (QUERY_KEY.test(k)) {
+        // Query args get a structural fingerprint (which metric/func/labels),
+        // not the literal — lets rules distinguish queries by shape.
+        sig.argShape[k] = queryFingerprint(v);
       } else {
-        // Free-text values (queries, ids, names) collapse to "present" — we
-        // never persist the literal.
+        // Other free-text values (ids, names) collapse to "present" — never
+        // the literal.
         sig.argShape[k] = v.trim() ? "present" : "empty";
       }
     } else if (v && typeof v === "object") {

@@ -6,6 +6,7 @@ import {
   durationToSeconds,
   durationBucket,
   numBucket,
+  queryFingerprint,
 } from "./signature.js";
 
 describe("buckets", () => {
@@ -48,6 +49,63 @@ describe("buckets", () => {
   });
 });
 
+describe("queryFingerprint", () => {
+  it("blank → empty", () => {
+    assert.equal(queryFingerprint(""), "empty");
+    assert.equal(queryFingerprint("   "), "empty");
+  });
+  it("extracts func + metric + label from a PromQL rate query", () => {
+    const fp = queryFingerprint('rate(http_requests_total{job="api"}[5m])');
+    assert.match(fp, /f:rate/);
+    assert.match(fp, /m:http_requests_total/);
+    assert.match(fp, /l:job/);
+    // the range fragment "m" and the quoted value "api" are NOT metrics
+    assert.ok(!/[, ]m[, ]|m:.*\bm\b/.test(fp.replace("http_requests_total", "")));
+    assert.ok(!fp.includes("api"));
+  });
+  it("treats by()-grouping labels as labels, not metrics", () => {
+    const fp = queryFingerprint("sum by (instance) (up)");
+    assert.match(fp, /f:sum/);
+    assert.match(fp, /m:up/);
+    assert.match(fp, /l:instance/);
+  });
+  it("LogQL stream selector → label keys", () => {
+    const fp = queryFingerprint('{service_name="payment", level="error"} |= "boom"');
+    assert.match(fp, /l:level,service_name/);
+    assert.ok(!fp.includes("payment") && !fp.includes("boom"));
+  });
+  it("is deterministic + sorted + capped", () => {
+    const a = queryFingerprint('sum(rate(a_total[1m])) + avg(b_total)');
+    const b = queryFingerprint('avg(b_total) + sum(rate(a_total[1m]))');
+    assert.equal(a, b);
+    assert.match(a, /f:avg,rate,sum/);
+    assert.match(a, /m:a_total,b_total/);
+  });
+  it("is fast on a huge attacker-supplied query (no ReDoS)", () => {
+    const t0 = Date.now();
+    queryFingerprint("a".repeat(100000));
+    queryFingerprint("(".repeat(50000));
+    queryFingerprint("rate(".repeat(20000));
+    assert.ok(Date.now() - t0 < 100, "fingerprint stays linear/bounded on large input");
+  });
+  it("non-query free text with no structure → present", () => {
+    assert.equal(queryFingerprint("just some words"), "m:just,some,words"); // bare idents count as metrics
+    assert.equal(queryFingerprint("!!!"), "present");
+  });
+});
+
+describe("deriveSignature query fingerprinting", () => {
+  it("query/expr keys get a fingerprint, not 'present'", () => {
+    const sig = deriveSignature("query_metrics", { service: "pay", query: 'rate(http_requests_total[5m])' });
+    assert.match(sig.argShape.query, /m:http_requests_total/);
+    assert.match(sig.argShape.query, /f:rate/);
+  });
+  it("non-query free text still collapses to 'present'", () => {
+    const sig = deriveSignature("x", { note: "hello world" });
+    assert.equal(sig.argShape.note, "present");
+  });
+});
+
 describe("deriveSignature", () => {
   it("lifts source/service/namespace as real resource dimensions", () => {
     const sig = deriveSignature("query_logs", { source: "prom-eu", service: "payment", namespace: "omcp" });
@@ -62,9 +120,10 @@ describe("deriveSignature", () => {
     assert.ok(!("source" in sig));
   });
 
-  it("buckets duration-shaped keys, collapses free text to 'present'", () => {
+  it("buckets duration-shaped keys, fingerprints queries (literal never kept)", () => {
     const sig = deriveSignature("query_metrics", { query: "rate(http_requests_total[5m])", window: "1h", limit: 500 });
-    assert.equal(sig.argShape.query, "present"); // literal never persisted
+    assert.match(sig.argShape.query, /m:http_requests_total/); // structural, not the literal
+    assert.ok(!sig.argShape.query.includes("[5m]"));
     assert.equal(sig.argShape.window, "<=1h");
     assert.equal(sig.argShape.limit, "<=1000");
   });
