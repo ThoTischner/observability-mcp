@@ -53,6 +53,20 @@ describe("createInspectEnforcer", () => {
     }
   });
 
+  it("never blocks when the enforce entitlement is absent (enforceAllowed=false)", async () => {
+    const store = new InspectStore();
+    const reg = createInspectEnforcer(store, new ModeController("enforce"), denyEval, { enforceAllowed: () => false });
+    const r = await reg.handler(ctx(), { args: { service: "novel" } });
+    assert.deepEqual(r, { allow: true }, "unlicensed enforce must not block");
+    assert.equal(store.size, 0, "nothing recorded as blocked when unlicensed");
+  });
+
+  it("blocks when the enforce entitlement is present (enforceAllowed=true)", async () => {
+    const reg = createInspectEnforcer(new InspectStore(), new ModeController("enforce"), denyEval, { enforceAllowed: () => true });
+    const r = await reg.handler(ctx(), { args: {} });
+    assert.equal(r.allow, false);
+  });
+
   it("fails OPEN — an evaluator that throws never blocks the call", async () => {
     const store = new InspectStore();
     const boom = { evaluate: () => { throw new Error("inspector bug"); } };
