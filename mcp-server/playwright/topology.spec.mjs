@@ -12,7 +12,7 @@ test.describe("Topology graph affordances", () => {
     await graphBtn.click();
 
     // Zoom toolbar visible with all three buttons.
-    const toolbar = page.locator(".topo-controls");
+    const toolbar = page.locator("#topology-graph-host .topo-controls");
     await expect(toolbar).toBeVisible({ timeout: 10_000 });
     await expect(toolbar.locator("button", { hasText: "+" })).toBeVisible();
     await expect(toolbar.locator("button", { hasText: "−" })).toBeVisible();
@@ -37,12 +37,12 @@ test.describe("Topology graph affordances", () => {
     const topoG = page.locator("#topo-g");
     if ((await topoG.count()) === 0) test.skip(true, "no topology data in this run");
 
-    await page.locator('.topo-controls button[aria-label="Zoom in"]').click();
-    await page.locator('.topo-controls button[aria-label="Zoom in"]').click();
+    await page.locator('#topology-graph-host .topo-controls button[aria-label="Zoom in"]').click();
+    await page.locator('#topology-graph-host .topo-controls button[aria-label="Zoom in"]').click();
     const zoomed = await topoG.getAttribute("transform");
     expect(zoomed).toMatch(/scale\([^)]+\)/);
 
-    await page.locator('.topo-controls button[aria-label="Reset view"]').click();
+    await page.locator('#topology-graph-host .topo-controls button[aria-label="Reset view"]').click();
     const reset = await topoG.getAttribute("transform");
     // After reset: translate(0 0) scale(1)
     expect(reset).toContain("scale(1)");

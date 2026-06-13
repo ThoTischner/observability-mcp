@@ -1392,6 +1392,33 @@
       filter: drop-shadow(0 0 4px var(--accent-soft));
     }
 
+    /* ===== Inspect — flow graph ===== */
+    #inspect-graph-svg:focus { outline: none; }
+    #inspect-graph-svg g[data-id]:focus { outline: none; }
+    #inspect-graph-svg g[data-id]:focus-visible .inode {
+      stroke: var(--accent); stroke-width: 3;
+      filter: drop-shadow(0 0 5px var(--accent-soft));
+    }
+    #inspect-graph-svg .iedge { fill: none; transition: opacity var(--t-fast); }
+    /* Animated traffic dash — a subtle "flow" along live (allowed) edges.
+       Disabled under reduced-motion + when the graph is paused. */
+    #inspect-graph-svg .iedge.flow {
+      stroke-dasharray: 2 6;
+      animation: inspect-flow 1s linear infinite;
+    }
+    #inspect-graph-svg.paused .iedge.flow { animation: none; }
+    @keyframes inspect-flow { to { stroke-dashoffset: -8; } }
+    @media (prefers-reduced-motion: reduce) {
+      #inspect-graph-svg .iedge.flow { animation: none; }
+    }
+    #inspect-graph-svg .inode { cursor: pointer; transition: opacity var(--t-fast); }
+    #inspect-graph-svg .ilabel { font-size: 11px; fill: var(--text-muted); pointer-events: none; user-select: none; }
+    #inspect-graph-svg .icol-label { font-size: 10px; fill: var(--text-dim); text-transform: uppercase; letter-spacing: 0.08em; pointer-events: none; }
+    #inspect-graph-svg .dim { opacity: 0.18; }
+    .inspect-kv { display:grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin: 8px 0; }
+    .inspect-kv dt { color: var(--text-dim); }
+    .inspect-kv dd { margin: 0; color: var(--text); font-family: var(--font-mono, monospace); }
+
     /* ===== Playground (Q13) — restrained, monochrome ===== */
     .pg-seg { display:inline-flex; gap:0; border:1px solid var(--border); border-radius:6px; overflow:hidden; }
     .pg-seg button { border:none; background:transparent; color:var(--text-2,var(--text)); font:inherit; font-size:12px; padding:3px 11px; cursor:pointer; }
@@ -1467,6 +1494,7 @@
           <button class="nav-btn" data-page="access" title="Access Control" onclick="showPage('access')"><span class="nav-ico">⛨</span><span class="nav-label">Access Control</span></button>
           <button class="nav-btn" data-page="policies" title="Policies" onclick="showPage('policies')" data-rbac="users:delete"><span class="nav-ico">≣</span><span class="nav-label">Policies</span></button>
           <button class="nav-btn" data-page="audit" title="Audit Log" onclick="showPage('audit')"><span class="nav-ico">❒</span><span class="nav-label">Audit Log</span></button>
+          <button class="nav-btn" data-page="inspect" title="Inspect" onclick="showPage('inspect')"><span class="nav-ico">◉</span><span class="nav-label">Inspect</span></button>
         </div>
       </div>
       <div class="rail-grp" data-grp="system">
@@ -1779,6 +1807,57 @@
             <aside id="topology-inspector" style="background: var(--surface); padding: 16px; overflow-y: auto; font-size: var(--fs-sm);">
               <div id="topology-inspector-empty" class="empty" style="margin: 24px 0;">Select a resource on the left to inspect its labels, attributes and neighbours.</div>
               <div id="topology-inspector-body" style="display:none;"></div>
+            </aside>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== Inspect ===== -->
+    <div class="page" id="page-inspect">
+      <div class="page-head">
+        <div class="ph-left">
+          <div class="breadcrumb">Console / Governance / <b>Inspect</b></div>
+          <h1>Inspect — agent activity</h1>
+        </div>
+        <div class="ph-actions">
+          <span id="inspect-mode-chip" class="stchip" title="Current inspection mode">…</span>
+          <label class="muted" style="display:flex; gap:6px; align-items:center; font-size: var(--fs-sm);">
+            Window
+            <select id="inspect-window" onchange="loadInspectFlows(true)" style="background:var(--surface); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:4px 8px;">
+              <option value="5m">5m</option>
+              <option value="1h" selected>1h</option>
+              <option value="24h">24h</option>
+            </select>
+          </label>
+          <button id="inspect-live-btn" class="btn btn-sm" onclick="toggleInspectLive()" title="Pause / resume live updates">⏸ Live</button>
+          <button class="btn btn-sm" onclick="loadInspectFlows(true)">Refresh</button>
+        </div>
+      </div>
+      <div class="tabs">
+        <button class="tab-btn active" onclick="showInspectTab('flows')">Flows</button>
+      </div>
+      <div id="inspect-tab-flows" class="tab-content active">
+        <div class="card">
+          <div class="card-header">
+            <h2>Flows <span class="muted t-xs" style="font-weight:400;">identities → tools → backends · edge width = call volume · colour = allowed / deviation / blocked</span></h2>
+            <span id="inspect-flow-stat" class="muted t-xs"></span>
+          </div>
+          <div style="display:grid; grid-template-columns: 1fr 340px; gap: 0; border-top: 1px solid var(--border); height: 660px;">
+            <div id="inspect-graph-host" style="position:relative; overflow:hidden; background: var(--surface-2); border-right: 1px solid var(--border);">
+              <svg id="inspect-graph-svg" style="position:absolute; inset:0; width:100%; height:100%; cursor: grab;" tabindex="0" role="application" aria-label="Flow graph — Tab through nodes, Enter to inspect, Esc to clear"></svg>
+              <div class="topo-controls" role="toolbar" aria-label="Graph zoom">
+                <button class="btn-icon" title="Zoom in (or wheel up)" aria-label="Zoom in" onclick="inspectZoom(1.2)">+</button>
+                <button class="btn-icon" title="Zoom out (or wheel down)" aria-label="Zoom out" onclick="inspectZoom(1/1.2)">−</button>
+                <button class="btn-icon" title="Reset view" aria-label="Reset view" onclick="inspectResetView()">⤾</button>
+              </div>
+              <div class="topo-hint">Tab to focus · Enter to inspect · arrows to move focus · Esc to clear</div>
+              <div id="inspect-graph-legend" style="position:absolute; bottom:10px; left:10px; font-size: var(--fs-xs); padding:8px 10px; background: var(--surface); border:1px solid var(--border); border-radius: 6px;"></div>
+              <div id="inspect-graph-empty" class="empty" style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center; padding:24px;">Loading flows…</div>
+            </div>
+            <aside id="inspect-inspector" style="background: var(--surface); padding: 16px; overflow-y: auto; font-size: var(--fs-sm);">
+              <div id="inspect-inspector-empty" class="empty" style="margin: 24px 0;">Select a node or edge on the left to inspect its calls, argument shapes and posture.</div>
+              <div id="inspect-inspector-body" style="display:none;"></div>
             </aside>
           </div>
         </div>
@@ -2705,6 +2784,7 @@ function showPage(name) {
   if(name==='policies') loadPolicies();
   if(name==='postmortems') pmLoadList();
   if(name==='playground') pgInit();
+  if(name==='inspect') inspectInit();
 }
 
 // --- Playground tab (Q13 / v3.1) ---------------------------------------
@@ -7364,6 +7444,223 @@ async function loadInfo(){
 // Show the endpoint the user is actually reaching the server through
 // (localhost, a port-forward, or an ingress) — not a hardcoded host.
 document.getElementById('mcp-url').textContent = window.location.origin + '/mcp';
+// ===== Inspect — Flows live graph =====
+let inspectStarted=false, inspectLive=true, inspectTimer=null, inspectData=null, inspectRev='', inspectSel=null;
+const inspectView={tx:0,ty:0,scale:1};
+const INSPECT_COL={identity:170,tool:500,backend:830};
+const INSPECT_NODE_W=150, INSPECT_ROW_H=46, INSPECT_PAD_TOP=46;
+
+function inspectInit(){
+  if(!inspectStarted){
+    inspectStarted=true;
+    wireInspectGraph();
+    // Self-checking poll: only refreshes while the tab is active AND live.
+    inspectTimer=setInterval(()=>{
+      if(document.getElementById('page-inspect').classList.contains('active') && inspectLive) loadInspectFlows(false);
+    }, 2500);
+  }
+  loadInspectFlows(true);
+}
+
+function showInspectTab(name){
+  document.querySelectorAll('#page-inspect .tab-btn').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('#page-inspect .tab-content').forEach(c=>c.classList.remove('active'));
+  const btn=[...document.querySelectorAll('#page-inspect .tab-btn')].find(b=>b.textContent.trim().toLowerCase()===name);
+  if(btn) btn.classList.add('active');
+  const c=document.getElementById('inspect-tab-'+name); if(c) c.classList.add('active');
+}
+
+function toggleInspectLive(){
+  inspectLive=!inspectLive;
+  const b=document.getElementById('inspect-live-btn');
+  if(b) b.textContent=inspectLive?'⏸ Live':'▶ Paused';
+  const svg=document.getElementById('inspect-graph-svg'); if(svg) svg.classList.toggle('paused',!inspectLive);
+  if(inspectLive) loadInspectFlows(true);
+}
+
+async function loadInspectFlows(force){
+  try{
+    const win=(document.getElementById('inspect-window')||{}).value||'1h';
+    const [fRes,mRes]=await Promise.all([
+      fetch('/api/inspect/flows?window='+encodeURIComponent(win)),
+      fetch('/api/inspect/mode'),
+    ]);
+    if(mRes.ok){ try{ updateInspectModeChip(await mRes.json()); }catch(e){} }
+    if(!fRes.ok){ showInspectGraphMessage(fRes.status===403?'You don’t have permission to view Inspect (needs inspection:read).':'Inspect is unavailable.'); return; }
+    const data=await fRes.json();
+    inspectData=data;
+    const rev=(data.total||0)+'|'+(data.nodes||[]).map(n=>n.id+':'+n.calls+':'+n.deviations).join(',')+'|'+win;
+    if(!force && rev===inspectRev) return;   // unchanged → keep view + selection
+    inspectRev=rev;
+    renderInspectGraph();
+  }catch(e){ showInspectGraphMessage('Inspect is unavailable.'); }
+}
+
+function updateInspectModeChip(m){
+  const chip=document.getElementById('inspect-mode-chip'); if(!chip||!m) return;
+  const mode=m.mode||'observe';
+  const label={off:'Off',observe:'Observe',dryrun:'Dry-run',enforce:'Enforce'}[mode]||mode;
+  chip.textContent='● '+label;
+  chip.className='stchip '+(mode==='enforce'?'bad':mode==='dryrun'?'warn':mode==='off'?'':'ok');
+  chip.title='Inspection mode: '+label+(m.size!=null?(' · '+m.size+' observations stored'):'');
+}
+
+function showInspectGraphMessage(msg){
+  const e=document.getElementById('inspect-graph-empty'); if(e){ e.style.display='flex'; e.textContent=msg; }
+  const svg=document.getElementById('inspect-graph-svg'); if(svg) svg.innerHTML='';
+}
+
+function inspectEdgePosture(e){
+  if(e.denied>0) return 'denied';
+  if(e.deviation>0) return 'deviation';
+  return 'allow';
+}
+function inspectPostureColor(p){
+  return p==='denied'?'var(--danger)':p==='deviation'?'var(--warning)':'var(--success)';
+}
+
+function renderInspectGraph(){
+  const svg=document.getElementById('inspect-graph-svg');
+  const empty=document.getElementById('inspect-graph-empty');
+  if(!svg||!inspectData) return;
+  const cols={identity:[],tool:[],backend:[]};
+  (inspectData.nodes||[]).forEach(n=>{ if(cols[n.kind]) cols[n.kind].push(n); });
+  Object.values(cols).forEach(a=>a.sort((x,y)=>y.calls-x.calls));
+  if((inspectData.total||0)===0 || (inspectData.nodes||[]).length===0){
+    empty.style.display='flex';
+    empty.textContent='No traffic in this window yet. Make a tool call (e.g. from the Playground) and it appears here live.';
+    svg.innerHTML=''; renderInspectLegend(); updateInspectFlowStat(); return;
+  }
+  empty.style.display='none';
+  const maxRows=Math.max(cols.identity.length,cols.tool.length,cols.backend.length,1);
+  const pos={};
+  for(const kind of ['identity','tool','backend']){
+    const arr=cols[kind]; const colH=arr.length*INSPECT_ROW_H;
+    const start=INSPECT_PAD_TOP+(maxRows*INSPECT_ROW_H-colH)/2;
+    arr.forEach((n,i)=>{ pos[n.id]={x:INSPECT_COL[kind], y:start+i*INSPECT_ROW_H+INSPECT_ROW_H/2, node:n, kind}; });
+  }
+  const maxCount=Math.max(...(inspectData.edges||[]).map(e=>e.count),1);
+  const hw=INSPECT_NODE_W/2;
+  let edgesSvg='';
+  (inspectData.edges||[]).forEach((e,i)=>{
+    const a=pos[e.from], b=pos[e.to]; if(!a||!b) return;
+    const x1=a.x+hw, y1=a.y, x2=b.x-hw, y2=b.y, mx=(x1+x2)/2;
+    const w=(1.4+Math.log2(1+e.count)/Math.log2(1+maxCount)*5).toFixed(2);
+    const posture=inspectEdgePosture(e);
+    const col=inspectPostureColor(posture);
+    const flow=(e.allow>0 && posture==='allow')?' flow':'';
+    edgesSvg+='<path class="iedge'+flow+'" data-edge="'+i+'" d="M '+x1+' '+y1+' C '+mx+' '+y1+', '+mx+' '+y2+', '+x2+' '+y2+'" stroke="'+col+'" stroke-width="'+w+'" opacity="0.55"></path>';
+  });
+  let nodesSvg='';
+  const kindDot={identity:'var(--info)',tool:'var(--accent)',backend:'var(--success)'};
+  for(const id in pos){
+    const p=pos[id], n=p.node;
+    const x=p.x-hw, y=p.y-15;
+    const lbl=esc(n.label.length>20?n.label.slice(0,19)+'…':n.label);
+    const devTag=n.deviations>0?'<text class="ilabel" x="'+(p.x+hw-8)+'" y="'+(p.y+4)+'" text-anchor="end" fill="var(--warning)">⚠'+n.deviations+'</text>':'';
+    nodesSvg+='<g class="inode-g" data-id="'+escHtml(id)+'" tabindex="0" role="button" aria-label="'+escHtml(n.kind+' '+n.label+', '+n.calls+' calls')+'">'
+      +'<rect class="inode" x="'+x+'" y="'+y+'" width="'+INSPECT_NODE_W+'" height="30" rx="7" fill="var(--surface)" stroke="var(--border-strong)" stroke-width="1"></rect>'
+      +'<circle cx="'+(x+12)+'" cy="'+p.y+'" r="4" fill="'+kindDot[p.kind]+'"></circle>'
+      +'<text class="ilabel" x="'+(x+22)+'" y="'+(p.y-2)+'" fill="var(--text)">'+lbl+'</text>'
+      +'<text class="ilabel" x="'+(x+22)+'" y="'+(p.y+10)+'">'+n.calls+' call'+(n.calls===1?'':'s')+(n.errors>0?(' · '+n.errors+' err'):'')+'</text>'
+      +devTag+'</g>';
+  }
+  const colLabels='<text class="icol-label" x="'+INSPECT_COL.identity+'" y="22" text-anchor="middle">Identities</text>'
+    +'<text class="icol-label" x="'+INSPECT_COL.tool+'" y="22" text-anchor="middle">Tools</text>'
+    +'<text class="icol-label" x="'+INSPECT_COL.backend+'" y="22" text-anchor="middle">Backends</text>';
+  svg.innerHTML='<g id="inspect-root">'+colLabels+edgesSvg+nodesSvg+'</g>';
+  applyInspectTransform();
+  renderInspectLegend();
+  updateInspectFlowStat();
+  // Re-assert selection highlight if a node is still present.
+  if(inspectSel) highlightInspect(inspectSel);
+}
+
+function updateInspectFlowStat(){
+  const s=document.getElementById('inspect-flow-stat'); if(!s||!inspectData) return;
+  const dev=(inspectData.edges||[]).reduce((a,e)=>a+(e.deviation||0)+(e.denied||0),0);
+  s.textContent=(inspectData.total||0)+' calls · '+(inspectData.nodes||[]).length+' nodes'+(dev>0?(' · '+dev+' deviations'):'');
+}
+
+function renderInspectLegend(){
+  const el=document.getElementById('inspect-graph-legend'); if(!el) return;
+  el.innerHTML='<div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">'
+    +'<span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--info);margin-right:4px;"></span>identity</span>'
+    +'<span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--accent);margin-right:4px;"></span>tool</span>'
+    +'<span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--success);margin-right:4px;"></span>backend</span>'
+    +'<span style="color:var(--success);">— allowed</span><span style="color:var(--warning);">— deviation</span><span style="color:var(--danger);">— blocked</span>'
+    +'</div>';
+}
+
+function applyInspectTransform(){
+  const root=document.getElementById('inspect-root'); if(!root) return;
+  root.setAttribute('transform','translate('+inspectView.tx+','+inspectView.ty+') scale('+inspectView.scale+')');
+}
+function inspectZoom(k){ inspectView.scale=Math.min(3,Math.max(0.3,inspectView.scale*k)); applyInspectTransform(); }
+function inspectResetView(){ inspectView.tx=0; inspectView.ty=0; inspectView.scale=1; applyInspectTransform(); }
+
+function highlightInspect(id){
+  const svg=document.getElementById('inspect-graph-svg'); if(!svg) return;
+  if(!id){ svg.querySelectorAll('.dim').forEach(n=>n.classList.remove('dim')); return; }
+  const neighbours=new Set([id]);
+  (inspectData.edges||[]).forEach(e=>{ if(e.from===id) neighbours.add(e.to); if(e.to===id) neighbours.add(e.from); });
+  svg.querySelectorAll('.inode-g').forEach(g=>{ g.classList.toggle('dim', !neighbours.has(g.getAttribute('data-id'))); });
+  svg.querySelectorAll('.iedge').forEach((p,i)=>{ const e=(inspectData.edges||[])[p.getAttribute('data-edge')]; p.classList.toggle('dim', !(e&&(e.from===id||e.to===id))); });
+}
+
+function inspectNodeById(id){ return (inspectData.nodes||[]).find(n=>n.id===id); }
+
+function selectInspectNode(id){
+  inspectSel=id; highlightInspect(id);
+  const n=inspectNodeById(id); if(!n) return;
+  const ins=(inspectData.edges||[]).filter(e=>e.to===id);
+  const outs=(inspectData.edges||[]).filter(e=>e.from===id);
+  const rows=(list,dir)=>list.map(e=>{ const other=dir==='out'?e.to:e.from; const nm=(inspectNodeById(other)||{}).label||other; const p=inspectEdgePosture(e);
+      return '<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0;"><span style="color:'+inspectPostureColor(p)+'">'+(dir==='out'?'→ ':'← ')+esc(nm)+'</span><span class="muted">'+e.count+'</span></div>'; }).join('')||'<span class="muted">none</span>';
+  const body=document.getElementById('inspect-inspector-body'), empty=document.getElementById('inspect-inspector-empty');
+  empty.style.display='none'; body.style.display='block';
+  body.innerHTML='<div style="font-size:var(--fs-lg);font-weight:600;margin-bottom:2px;">'+esc(n.label)+'</div>'
+    +'<div class="muted t-xs" style="margin-bottom:10px;text-transform:uppercase;letter-spacing:.06em;">'+n.kind+'</div>'
+    +'<dl class="inspect-kv"><dt>calls</dt><dd>'+n.calls+'</dd><dt>errors</dt><dd>'+n.errors+'</dd><dt>deviations</dt><dd>'+n.deviations+'</dd></dl>'
+    +'<div class="muted t-xs" style="margin:10px 0 4px;">Incoming</div>'+rows(ins,'in')
+    +'<div class="muted t-xs" style="margin:10px 0 4px;">Outgoing</div>'+rows(outs,'out');
+}
+
+function selectInspectEdge(idx){
+  const e=(inspectData.edges||[])[idx]; if(!e) return;
+  inspectSel=null; highlightInspect(null);
+  const from=(inspectNodeById(e.from)||{}).label||e.from, to=(inspectNodeById(e.to)||{}).label||e.to;
+  const body=document.getElementById('inspect-inspector-body'), empty=document.getElementById('inspect-inspector-empty');
+  empty.style.display='none'; body.style.display='block';
+  body.innerHTML='<div style="font-size:var(--fs-lg);font-weight:600;margin-bottom:2px;">'+esc(from)+' → '+esc(to)+'</div>'
+    +'<div class="muted t-xs" style="margin-bottom:10px;">flow edge</div>'
+    +'<dl class="inspect-kv"><dt>calls</dt><dd>'+e.count+'</dd><dt>allowed</dt><dd>'+e.allow+'</dd><dt>deviation</dt><dd>'+e.deviation+'</dd><dt>blocked</dt><dd>'+e.denied+'</dd></dl>';
+}
+
+function wireInspectGraph(){
+  const svg=document.getElementById('inspect-graph-svg'); const host=document.getElementById('inspect-graph-host'); if(!svg||!host) return;
+  // click select (node or edge), background click clears
+  svg.addEventListener('click',(ev)=>{
+    const g=ev.target.closest('.inode-g'); if(g){ selectInspectNode(g.getAttribute('data-id')); return; }
+    const p=ev.target.closest('.iedge'); if(p){ selectInspectEdge(p.getAttribute('data-edge')); return; }
+    inspectSel=null; highlightInspect(null);
+    document.getElementById('inspect-inspector-body').style.display='none';
+    document.getElementById('inspect-inspector-empty').style.display='block';
+  });
+  // wheel zoom
+  svg.addEventListener('wheel',(ev)=>{ ev.preventDefault(); inspectZoom(ev.deltaY<0?1.12:1/1.12); },{passive:false});
+  // drag to pan
+  let panning=false, sx=0, sy=0, ox=0, oy=0;
+  svg.addEventListener('mousedown',(ev)=>{ if(ev.target.closest('.inode-g')) return; panning=true; sx=ev.clientX; sy=ev.clientY; ox=inspectView.tx; oy=inspectView.ty; svg.style.cursor='grabbing'; });
+  window.addEventListener('mousemove',(ev)=>{ if(!panning) return; inspectView.tx=ox+(ev.clientX-sx); inspectView.ty=oy+(ev.clientY-sy); applyInspectTransform(); });
+  window.addEventListener('mouseup',()=>{ panning=false; svg.style.cursor='grab'; });
+  // keyboard: Enter inspects focused node, Esc clears
+  svg.addEventListener('keydown',(ev)=>{
+    if(ev.key==='Escape'){ inspectSel=null; highlightInspect(null); document.getElementById('inspect-inspector-body').style.display='none'; document.getElementById('inspect-inspector-empty').style.display='block'; }
+    if((ev.key==='Enter'||ev.key===' ')){ const el=document.activeElement; if(el&&el.classList&&el.classList.contains('inode-g')){ ev.preventDefault(); selectInspectNode(el.getAttribute('data-id')); } }
+  });
+}
+
 (async()=>{syncThemeToggle();initNav();await loadTypes();await refresh();await loadInfo();await updateHealthStat();await buildNotifications();setInterval(refresh,15000);setInterval(updateHealthStat,15000);setInterval(buildNotifications,15000);})();
 </script>
 
