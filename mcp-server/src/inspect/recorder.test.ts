@@ -92,6 +92,34 @@ describe("createInspectRecorder", () => {
     assert.deepEqual(r, { allow: true });
   });
 
+  it("dry-run: records would-block + deviation kind for a profile deviation", async () => {
+    const store = new InspectStore();
+    const evaluator = { evaluate: () => ({ verdict: "deviation" as const, kind: "new-resource" }) };
+    const reg = createInspectRecorder(store, new ModeController("dryrun"), { evaluator });
+    await reg.handler(ctx({ target: "query_logs" }), { args: { service: "novel" }, result: {} });
+    const o = store.all()[0];
+    assert.equal(o.decision, "would-block");
+    assert.equal(o.deviation, "new-resource");
+  });
+
+  it("dry-run: records allow when the call is within profile", async () => {
+    const store = new InspectStore();
+    const evaluator = { evaluate: () => ({ verdict: "allow" as const }) };
+    const reg = createInspectRecorder(store, new ModeController("dryrun"), { evaluator });
+    await reg.handler(ctx(), { args: {}, result: {} });
+    assert.equal(store.all()[0].decision, "allow");
+  });
+
+  it("observe mode never consults the evaluator (always allow)", async () => {
+    const store = new InspectStore();
+    let consulted = false;
+    const evaluator = { evaluate: () => { consulted = true; return { verdict: "deviation" as const, kind: "new-tool" }; } };
+    const reg = createInspectRecorder(store, new ModeController("observe"), { evaluator });
+    await reg.handler(ctx(), { args: {}, result: {} });
+    assert.equal(store.all()[0].decision, "allow");
+    assert.equal(consulted, false);
+  });
+
   it("fires the onEvent metrics seam", async () => {
     const seen: Array<{ tool: string; outcome: string; decision: string }> = [];
     const reg = createInspectRecorder(new InspectStore(), new ModeController("observe"), {

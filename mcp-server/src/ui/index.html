@@ -1837,6 +1837,7 @@
       <div class="tabs">
         <button class="tab-btn active" onclick="showInspectTab('flows')">Flows</button>
         <button class="tab-btn" onclick="showInspectTab('profile')">Profile</button>
+        <button class="tab-btn" onclick="showInspectTab('deviations')">Deviations</button>
       </div>
       <div id="inspect-tab-flows" class="tab-content active">
         <div class="card">
@@ -1864,6 +1865,18 @@
         </div>
       </div>
       <div id="inspect-tab-profile" class="tab-content">
+        <div class="card" style="margin-bottom:8px; padding:12px 14px;">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+            <div>
+              <div style="font-weight:600;">Mode</div>
+              <div class="muted t-xs" id="inspect-mode-desc">…</div>
+            </div>
+            <div class="pg-seg" id="inspect-mode-seg" role="group" aria-label="Inspection mode">
+              <button data-mode="observe" onclick="inspectSetMode('observe')">Observe</button>
+              <button data-mode="dryrun" onclick="inspectSetMode('dryrun')">Dry-run</button>
+            </div>
+          </div>
+        </div>
         <div class="card">
           <div class="card-header">
             <h2>Behavior profile <span class="muted t-xs" style="font-weight:400;">learn a baseline from observed traffic, then accept the rules that look right</span></h2>
@@ -1885,6 +1898,18 @@
             <h3 style="font-size: var(--fs-md); margin: 20px 0 8px;">Accepted rules <span class="muted t-xs" id="inspect-acc-count"></span></h3>
             <div id="inspect-accepted-rules"><div class="empty" style="margin: 16px 0;">No accepted rules yet. Accept suggestions above to build the enforceable profile.</div></div>
           </div>
+        </div>
+      </div>
+      <div id="inspect-tab-deviations" class="tab-content">
+        <div class="card">
+          <div class="card-header">
+            <h2>Deviations <span class="muted t-xs" style="font-weight:400;">calls outside the accepted profile — would-block in dry-run, blocked in enforce</span></h2>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <span id="inspect-dev-stat" class="muted t-xs"></span>
+              <button class="btn btn-sm" onclick="inspectLoadDeviations()">Refresh</button>
+            </div>
+          </div>
+          <div id="inspect-deviations" style="padding:0 16px 16px;"><div class="empty" style="margin:16px 0;">Switch to <b>Dry-run</b> and accept some rules — calls that fall outside them show up here as “would-block”, so you can verify the profile before enforcing.</div></div>
         </div>
       </div>
     </div>
@@ -7497,7 +7522,47 @@ function showInspectTab(name){
   const btn=[...document.querySelectorAll('#page-inspect .tab-btn')].find(b=>b.textContent.trim().toLowerCase()===name);
   if(btn) btn.classList.add('active');
   const c=document.getElementById('inspect-tab-'+name); if(c) c.classList.add('active');
-  if(name==='profile') inspectLoadProfile();
+  if(name==='profile'){ inspectRefreshMode(); inspectLoadProfile(); }
+  if(name==='deviations') inspectLoadDeviations();
+}
+
+const INSPECT_MODE_DESC={
+  off:'Disabled — no recording.',
+  observe:'Recording only — every tool call is captured; nothing is evaluated or blocked.',
+  dryrun:'Evaluating against accepted rules — deviations are flagged (see Deviations) but still allowed.',
+  enforce:'Enforcing — calls outside the accepted profile are blocked.'
+};
+
+async function inspectRefreshMode(){
+  try{ const r=await fetch('/api/inspect/mode'); if(r.ok) updateInspectModeChip(await r.json()); }catch(e){}
+}
+
+async function inspectSetMode(mode){
+  try{
+    const r=await fetch('/api/inspect/mode',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({mode})});
+    if(!r.ok){ toast(r.status===403?'Need inspection:write to change mode':'Mode change failed','error'); return; }
+    const j=await r.json();
+    toast('Inspection mode: '+(j.mode||mode),'ok');
+    inspectRefreshMode();
+    if(document.getElementById('inspect-tab-deviations').classList.contains('active')) inspectLoadDeviations();
+  }catch(e){ toast('Mode change failed','error'); }
+}
+
+async function inspectLoadDeviations(){
+  try{
+    const win=(document.getElementById('inspect-window')||{}).value||'24h';
+    const r=await fetch('/api/inspect/deviations?window='+encodeURIComponent(win));
+    const box=document.getElementById('inspect-deviations');
+    if(!r.ok){ box.innerHTML='<div class="empty" style="margin:16px 0;">'+(r.status===403?'You don’t have permission to view deviations.':'Unavailable.')+'</div>'; return; }
+    const j=await r.json();
+    document.getElementById('inspect-dev-stat').textContent=(j.total||0)+' in window · mode '+(j.mode||'');
+    const devs=j.deviations||[];
+    if(!devs.length){ box.innerHTML='<div class="empty" style="margin:16px 0;">No deviations in this window. In <b>Observe</b> mode nothing is evaluated; switch to <b>Dry-run</b> with accepted rules to surface would-block calls.</div>'; return; }
+    box.innerHTML='<table class="dtable"><thead><tr><th>When</th><th>Identity</th><th>Tool</th><th>Backend</th><th>Why</th><th>Decision</th></tr></thead><tbody>'
+      +devs.map(d=>{ const backend=d.service||d.source||d.namespace||'—'; const dec=d.decision==='blocked'?'<span class="stchip bad">blocked</span>':'<span class="stchip warn">would-block</span>';
+        return '<tr><td class="muted t-xs">'+esc((d.ts||'').replace('T',' ').replace(/\..*/,''))+'</td><td>'+esc(d.principal)+'</td><td>'+esc(d.tool)+'</td><td>'+esc(backend)+'</td><td class="t-xs">'+esc(d.deviation||'deviation')+(d.detail?(' · '+esc(d.detail)):'')+'</td><td>'+dec+'</td></tr>'; }).join('')
+      +'</tbody></table>';
+  }catch(e){}
 }
 
 // --- Inspect: behavior profile (learn / review) ---
@@ -7610,6 +7675,11 @@ function updateInspectModeChip(m){
   chip.textContent='● '+label;
   chip.className='stchip '+(mode==='enforce'?'bad':mode==='dryrun'?'warn':mode==='off'?'':'ok');
   chip.title='Inspection mode: '+label+(m.size!=null?(' · '+m.size+' observations stored'):'');
+  // Reflect into the Profile-tab segmented control + description, when present.
+  const seg=document.getElementById('inspect-mode-seg');
+  if(seg) seg.querySelectorAll('button[data-mode]').forEach(b=>b.classList.toggle('active', b.getAttribute('data-mode')===mode));
+  const desc=document.getElementById('inspect-mode-desc');
+  if(desc) desc.textContent=(typeof INSPECT_MODE_DESC!=='undefined'&&INSPECT_MODE_DESC[mode])||'';
 }
 
 function showInspectGraphMessage(msg){

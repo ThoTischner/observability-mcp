@@ -1520,18 +1520,20 @@ async function main() {
   // evaluation (dry-run/enforce) is wired in a later phase.
   const inspectStore = new InspectStore({ file: process.env.OMCP_INSPECT_FILE?.trim() || undefined });
   const inspectMode = new ModeController(bootMode(process.env.OMCP_INSPECT));
+  // Behavior profile (the learned ruleset). Accepted rules drive the
+  // evaluator: in dry-run the recorder records a `would-block` deviation for
+  // calls outside the profile (never blocks — enforce blocking is a later
+  // phase). Persists to OMCP_INSPECT_PROFILE_FILE when set.
+  const inspectProfile = new ProfileStore({ file: process.env.OMCP_INSPECT_PROFILE_FILE?.trim() || undefined });
   hookRegistry.register(
     createInspectRecorder(inspectStore, inspectMode, {
       onEvent: (e) => recordInspectEvent(e.tool, e.outcome, e.decision),
+      evaluator: inspectProfile,
     }),
   );
   if (inspectMode.get() !== "observe") {
     console.log(`[inspect] mode=${inspectMode.get()} (store ${inspectStore.persisted ? "persisted" : "in-memory"})`);
   }
-  // Behavior profile (the learned ruleset). Suggestions are derived from the
-  // observation store on demand; accepted rules drive dry-run/enforce (wired
-  // in a later phase). Persists to OMCP_INSPECT_PROFILE_FILE when set.
-  const inspectProfile = new ProfileStore({ file: process.env.OMCP_INSPECT_PROFILE_FILE?.trim() || undefined });
 
   // Phase F15: anomaly-history sink — opt-in via
   // OMCP_ANOMALY_HISTORY_REMOTE_WRITE. When configured, anomaly
@@ -2462,6 +2464,17 @@ async function main() {
     const ok = inspectProfile.remove(String(req.params.id));
     if (!ok) { res.status(404).json({ error: "rule not found" }); return; }
     res.json({ ok: true });
+  });
+
+  // Deviations: calls in the window that fell outside the accepted profile
+  // (decision != allow). In dry-run these are would-block; in enforce, blocked.
+  app.get("/api/inspect/deviations", need("inspection", "read"), (req, res) => {
+    const tenant = inspectScope(req);
+    const windowSecs = durationToSeconds(qstr(req.query.window) || "24h") ?? 86400;
+    let evs = inspectStore.since(Date.now() - windowSecs * 1000).filter((e) => e.decision !== "allow");
+    if (tenant) evs = evs.filter((e) => e.tenant === tenant);
+    evs.reverse(); // newest first
+    res.json({ deviations: evs, total: evs.length, mode: inspectMode.get(), scopedTo: tenant });
   });
 
   // --- /api/audit/dlq — webhook-sink dead-letter queue surface (P9) ---
