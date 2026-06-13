@@ -1419,6 +1419,16 @@
     .inspect-kv dt { color: var(--text-dim); }
     .inspect-kv dd { margin: 0; color: var(--text); font-family: var(--font-mono, monospace); }
 
+    /* ===== Governance — clarifying subtitles + overview flow ===== */
+    .gov-sub { font-size: var(--fs-sm); color: var(--text-muted); margin-top: 4px; max-width: 70ch; line-height: 1.5; }
+    .gov-sub em { color: var(--text); font-style: normal; font-weight: 600; }
+    .gov-overview { background: var(--surface); }
+    .gov-flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 6px; }
+    .gov-step { display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); min-width: 120px; }
+    .gov-step b { font-size: var(--fs-md); color: var(--text); }
+    .gov-step small { font-size: var(--fs-xs); color: var(--text-muted); }
+    .gov-arrow { align-self: center; color: var(--text-dim); font-size: var(--fs-lg); }
+
     /* ===== Playground (Q13) — restrained, monochrome ===== */
     .pg-seg { display:inline-flex; gap:0; border:1px solid var(--border); border-radius:6px; overflow:hidden; }
     .pg-seg button { border:none; background:transparent; color:var(--text-2,var(--text)); font:inherit; font-size:12px; padding:3px 11px; cursor:pointer; }
@@ -1819,6 +1829,7 @@
         <div class="ph-left">
           <div class="breadcrumb">Console / Governance / <b>Inspect</b></div>
           <h1>Inspect — agent activity</h1>
+          <div class="gov-sub">Whether a call is <em>normal</em> vs. the learned baseline for that identity — behavioral guardrails. Distinct from <b>Policies</b> (allowed at all).</div>
         </div>
         <div class="ph-actions">
           <span id="inspect-mode-chip" class="stchip" title="Current inspection mode">…</span>
@@ -2044,8 +2055,19 @@
         <div class="ph-left">
           <div class="breadcrumb">Console / Governance / <b>Access Control</b></div>
           <h1>Access Control</h1>
+          <div class="gov-sub">Who can sign in and which role they hold — identities, SSO/OIDC, sessions. <em>Authentication.</em></div>
         </div>
         <div class="ph-actions"><button class="btn btn-primary btn-sm" onclick="entEditNew('rbac')">+ New role</button><button class="btn btn-sm" id="ent-rbac-editbtn" onclick="entEditOpen('rbac')">Edit policy</button></div>
+      </div>
+      <div class="card gov-overview">
+        <div class="card-header"><h2>How governance fits together</h2></div>
+        <div class="gov-flow">
+          <span class="gov-step"><b>Access Control</b><small>who you are</small></span><span class="gov-arrow">→</span>
+          <span class="gov-step"><b>Products</b><small>what you're offered</small></span><span class="gov-arrow">→</span>
+          <span class="gov-step"><b>Policies</b><small>what you're allowed</small></span><span class="gov-arrow">→</span>
+          <span class="gov-step"><b>Inspect</b><small>is it normal</small></span>
+        </div>
+        <div class="muted t-xs" style="margin-top:8px;">Each layer answers a different question. <b>Catalog</b> runs alongside, adding resource context (owners, criticality). <b>Audit Log</b> records every change. <b>Policies</b> = allowed at all (static); <b>Inspect</b> = normal vs. the learned baseline (behavioral).</div>
       </div>
       <div class="card">
         <div class="card-header"><h2>Roles &amp; bindings
@@ -2209,6 +2231,7 @@ curl -X PUT http://localhost:3000/api/enterprise/policy \
               onclick="infoPop(this)">?</button>
           </h1>
           <p class="ph-sub">Curated, governed tool bundles you expose to an agent or credential.</p>
+          <div class="gov-sub">Which tools a credential is <em>offered</em> (packaging). Distinct from <b>Policies</b>, which decide what's <em>permitted</em>.</div>
         </div>
       </div>
 
@@ -2304,6 +2327,7 @@ curl -X PUT http://localhost:3000/api/enterprise/catalog \
         <div class="ph-left">
           <div class="breadcrumb">Console / Governance / <b>Policies</b></div>
           <h1>Policies</h1>
+          <div class="gov-sub">What a role is <em>allowed</em> to call at all — coarse RBAC (resource × action). Distinct from <b>Inspect</b>, which judges whether a call is <em>normal</em>.</div>
         </div>
         <div class="ph-actions"><span id="pol-engine" class="badge"></span></div>
       </div>
@@ -2534,6 +2558,7 @@ curl -X PUT http://localhost:3000/api/enterprise/catalog \
         <div class="ph-left">
           <div class="breadcrumb">Console / Governance / <b>Audit Log</b></div>
           <h1>Audit Log</h1>
+          <div class="gov-sub">An append-only, tamper-evident record of every mutating action — who did what, when.</div>
         </div>
         <div class="ph-actions"><span id="ent-chain"></span></div>
       </div>
