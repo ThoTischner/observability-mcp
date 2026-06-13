@@ -94,4 +94,32 @@ test.describe("Inspect — Flows live graph", () => {
 
     expect(errors, `console errors: ${errors.join("\n")}`).toEqual([]);
   });
+
+  test("mode segmented control switches to Dry-run; Deviations tab renders", async ({ page }) => {
+    const errors = [];
+    page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
+    page.on("pageerror", (e) => errors.push(String(e)));
+
+    await page.goto(BASE, { waitUntil: "networkidle" });
+    await page.locator('[data-page="inspect"]').click();
+    await page.locator('#page-inspect .tab-btn', { hasText: "Profile" }).click();
+
+    // Flip Observe → Dry-run via the segmented control; the masthead chip and
+    // the description update to reflect the new mode.
+    await page.locator('#inspect-mode-seg button[data-mode="dryrun"]').click();
+    await expect(page.locator("#inspect-mode-chip")).toHaveText(/Dry-run/, { timeout: 10_000 });
+    await expect(page.locator('#inspect-mode-seg button[data-mode="dryrun"]')).toHaveClass(/active/);
+
+    // Deviations tab renders a table or an honest empty state.
+    await page.locator('#page-inspect .tab-btn', { hasText: "Deviations" }).click();
+    await expect(page.locator("#inspect-tab-deviations")).toHaveClass(/active/);
+    await expect(page.locator("#inspect-deviations")).toBeVisible();
+
+    // Restore observe so the test is idempotent against the shared demo server.
+    await page.locator('#page-inspect .tab-btn', { hasText: "Profile" }).click();
+    await page.locator('#inspect-mode-seg button[data-mode="observe"]').click();
+    await expect(page.locator("#inspect-mode-chip")).toHaveText(/Observe/, { timeout: 10_000 });
+
+    expect(errors, `console errors: ${errors.join("\n")}`).toEqual([]);
+  });
 });

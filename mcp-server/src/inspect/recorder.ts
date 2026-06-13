@@ -21,16 +21,29 @@ export function authKind(principal: string): string {
   return principal === "anonymous" ? "anonymous" : "apikey";
 }
 
+/** A profile evaluation seam — given a derived call signature, returns the
+ *  verdict against the accepted profile. Absent in pure observe mode. */
+export interface ProfileEvaluator {
+  evaluate(call: {
+    principal: string; tool: string; source?: string; service?: string; namespace?: string; argShape: Record<string, string>;
+  }): { verdict: "allow" | "deviation"; kind?: string };
+}
+
 export interface RecorderOptions {
   /** Metrics seam — called once per recorded observation. */
   onEvent?: (e: { tool: string; outcome: Outcome; decision: Decision }) => void;
+  /** Accepted-profile evaluator. Consulted only when mode.evaluating
+   *  (dry-run / enforce). When a call deviates it is recorded `would-block`
+   *  — this post-invoke recorder never blocks (enforce blocking is a separate
+   *  pre-invoke hook). */
+  evaluator?: ProfileEvaluator;
 }
 
 /**
- * Build the observe-mode recorder hook. Records every tool call as an
- * allow-observation when the mode is recording (anything but `off`).
- * Dry-run/enforce decisioning is a separate pre-invoke hook (added later);
- * this one only ever records `decision: "allow"`.
+ * Build the recorder hook (tool_post_invoke, permissive). Records every call
+ * while the mode is recording. In dry-run / enforce it also evaluates the call
+ * against the accepted profile and records a `would-block` decision + deviation
+ * kind for calls outside the profile — but never blocks (it runs post-invoke).
  */
 export function createInspectRecorder(
   store: InspectStore,
@@ -43,6 +56,19 @@ export function createInspectRecorder(
       const red = redactValue((payload as { args?: unknown }).args);
       const sig = deriveSignature(ctx.target, red.value);
       const outcome: Outcome = isErrorResult((payload as { result?: unknown }).result) ? "error" : "ok";
+      let decision: Decision = "allow";
+      let deviation: string | undefined;
+      if (mode.evaluating && opts.evaluator) {
+        const ev = opts.evaluator.evaluate({
+          principal: ctx.principal, tool: ctx.target,
+          source: sig.source, service: sig.service, namespace: sig.namespace,
+          argShape: sig.argShape,
+        });
+        if (ev.verdict === "deviation") {
+          decision = "would-block";
+          deviation = ev.kind;
+        }
+      }
       store.record({
         principal: ctx.principal,
         auth: authKind(ctx.principal),
@@ -53,10 +79,11 @@ export function createInspectRecorder(
         namespace: sig.namespace,
         argShape: sig.argShape,
         outcome,
-        decision: "allow",
+        decision,
+        deviation,
         redactions: red.totalMatches,
       });
-      opts.onEvent?.({ tool: ctx.target, outcome, decision: "allow" });
+      opts.onEvent?.({ tool: ctx.target, outcome, decision });
     } catch {
       // Observation must never affect the call path.
     }
