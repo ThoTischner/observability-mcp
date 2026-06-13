@@ -90,3 +90,20 @@ export function parseKeyTenants(raw: string | undefined): Map<string, string> {
   }
   return out;
 }
+
+/** Is the deployment ACTIVELY multi-tenant — i.e. configured to place any
+ *  identity in a NON-default tenant? True when an OIDC tenant claim is set,
+ *  or OMCP_KEY_TENANTS maps a credential to a tenant other than `default`.
+ *  The single-tenant default (no claim, no non-default key mapping) returns
+ *  false, so the open-source path stays free. This is the predicate the boot
+ *  sequence uses to decide whether the `tenancy` entitlement is required. */
+export function isMultiTenantConfigured(
+  oidcTenantClaim: string | undefined,
+  keyTenantsEnv: string | undefined,
+): boolean {
+  if (oidcTenantClaim && oidcTenantClaim.trim().length > 0) return true;
+  for (const t of parseKeyTenants(keyTenantsEnv).values()) {
+    if (t && t !== DEFAULT_TENANT) return true;
+  }
+  return false;
+}

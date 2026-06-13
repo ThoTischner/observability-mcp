@@ -48,6 +48,7 @@ denied / refused (fail-closed):
 | `inspect-enforce` | [Inspect](inspect.md) `enforce` mode (active blocking; observe/dry-run stay free) |
 | `sso` | [SSO/OIDC](auth-oidc.md) login (`OMCP_AUTH=oidc`; basic/api-key/anonymous stay free) |
 | `scim` | [SCIM provisioning](scim-provisioning.md) (`OMCP_SCIM_TOKEN`; local users/api-keys stay free) |
+| `tenancy` | [Multi-tenant isolation](tenancy.md) (non-default tenants via OIDC tenant claim / `OMCP_KEY_TENANTS`; single-tenant stays free) |
 
 The OSS surface is whatever is left default-OFF: with no entitlement
 token, no control activates and behaviour is unchanged.

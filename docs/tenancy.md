@@ -13,6 +13,22 @@ audit entries, and catalog enrichments all scope by tenant. Cross-
 tenant data is invisible to non-admins through both the `/api/*`
 surface and the MCP tool layer.
 
+> **Active multi-tenancy is an entitled control.** The single-tenant
+> default — anonymous, basic, api-key, or OIDC without a tenant claim,
+> everyone in `default` — is open-source and bit-for-bit unchanged.
+> Configuring **non-default** tenants (an OIDC tenant claim, or
+> `OMCP_KEY_TENANTS` mapping a credential to a non-default tenant)
+> requires the `tenancy` entitlement. Without it the gateway **refuses
+> to start (fail-closed)** with a clear message — rather than silently
+> collapsing isolated tenants into one, which could merge data across
+> tenant boundaries. See [enterprise-gate.md](enterprise-gate.md).
+>
+> Note: the `google` and `microsoft-entra` OIDC profiles ship a built-in
+> tenant claim (`hd` / `tid`), so they count as actively multi-tenant even
+> with `OMCP_OIDC_TENANT_CLAIM` unset. To run single-tenant on those
+> profiles, set `OMCP_OIDC_TENANT_CLAIM=""` explicitly (or use the
+> `generic` profile).
+
 ## How identities resolve to a tenant
 
 | Identity path | Tenant comes from | Default when unset |
