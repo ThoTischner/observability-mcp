@@ -166,6 +166,10 @@ test.describe("Inspect — Flows live graph", () => {
     await page.locator('#page-inspect .tab-btn', { hasText: "Deviations" }).click();
     await expect(page.locator("#inspect-tab-deviations")).toHaveClass(/active/);
     await expect(page.locator("#inspect-deviations")).toBeVisible();
+    // If deviations are present, each offers a one-click "Add to profile".
+    if (await page.locator("#inspect-deviations table tbody tr").count()) {
+      await expect(page.locator('#inspect-deviations button', { hasText: "Add to profile" }).first()).toBeVisible();
+    }
 
     // Restore observe so the test is idempotent against the shared demo server.
     await page.locator('#page-inspect .tab-btn', { hasText: "Profile" }).click();

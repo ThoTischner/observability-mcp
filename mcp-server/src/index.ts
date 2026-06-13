@@ -2481,6 +2481,34 @@ async function main() {
     res.json({ ok: true });
   });
 
+  // Deviation → rule (one click): absorb exactly this observed call shape into
+  // the accepted profile (widen the matching rule, or create a tight one).
+  app.post("/api/inspect/profile/from-deviation", need("inspection", "write"), audit("inspection", "write"), (req, res) => {
+    const b = (req.body || {}) as Record<string, unknown>;
+    const principal = typeof b.principal === "string" ? b.principal : "";
+    const tool = typeof b.tool === "string" ? b.tool : "";
+    if (!principal || !tool) { res.status(400).json({ error: "principal and tool are required" }); return; }
+    const str = (v: unknown) => (typeof v === "string" && v ? v : undefined);
+    const argShape: Record<string, string> = {};
+    if (b.argShape && typeof b.argShape === "object") {
+      // The arg-shape KEY is remote input. Accept only a conservative
+      // identifier charset (arg names are simple tokens) and never the
+      // prototype-polluting names — barrier for js/remote-property-injection
+      // and prototype pollution.
+      const SAFE_ARG_KEY = /^[A-Za-z0-9_.-]{1,64}$/;
+      for (const [k, v] of Object.entries(b.argShape as Record<string, unknown>)) {
+        if (!SAFE_ARG_KEY.test(k) || k === "__proto__" || k === "constructor" || k === "prototype") continue;
+        if (typeof v === "string") argShape[k] = v;
+      }
+    }
+    const rule = inspectProfile.absorb({
+      principal, tool,
+      source: str(b.source), service: str(b.service), namespace: str(b.namespace),
+      argShape,
+    });
+    res.json({ rule });
+  });
+
   // Deviations: calls in the window that fell outside the accepted profile
   // (decision != allow). In dry-run these are would-block; in enforce, blocked.
   app.get("/api/inspect/deviations", need("inspection", "read"), (req, res) => {

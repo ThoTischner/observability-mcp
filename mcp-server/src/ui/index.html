@@ -7631,12 +7631,23 @@ async function inspectLoadDeviations(){
     const j=await r.json();
     document.getElementById('inspect-dev-stat').textContent=(j.total||0)+' in window · mode '+(j.mode||'');
     const devs=j.deviations||[];
+    window.__inspectDeviations=devs;
     if(!devs.length){ box.innerHTML='<div class="empty" style="margin:16px 0;">No deviations in this window. In <b>Observe</b> mode nothing is evaluated; switch to <b>Dry-run</b> with accepted rules to surface would-block calls.</div>'; return; }
-    box.innerHTML='<table class="dtable"><thead><tr><th>When</th><th>Identity</th><th>Tool</th><th>Backend</th><th>Why</th><th>Decision</th></tr></thead><tbody>'
-      +devs.map(d=>{ const backend=d.service||d.source||d.namespace||'—'; const dec=d.decision==='blocked'?'<span class="stchip bad">blocked</span>':'<span class="stchip warn">would-block</span>';
-        return '<tr><td class="muted t-xs">'+esc((d.ts||'').replace('T',' ').replace(/\..*/,''))+'</td><td>'+esc(d.principal)+'</td><td>'+esc(d.tool)+'</td><td>'+esc(backend)+'</td><td class="t-xs">'+esc(d.deviation||'deviation')+(d.detail?(' · '+esc(d.detail)):'')+'</td><td>'+dec+'</td></tr>'; }).join('')
+    box.innerHTML='<table class="dtable"><thead><tr><th>When</th><th>Identity</th><th>Tool</th><th>Backend</th><th>Why</th><th>Decision</th><th></th></tr></thead><tbody>'
+      +devs.map((d,i)=>{ const backend=d.service||d.source||d.namespace||'—'; const dec=d.decision==='blocked'?'<span class="stchip bad">blocked</span>':'<span class="stchip warn">would-block</span>';
+        return '<tr><td class="muted t-xs">'+esc((d.ts||'').replace('T',' ').replace(/\..*/,''))+'</td><td>'+esc(d.principal)+'</td><td>'+esc(d.tool)+'</td><td>'+esc(backend)+'</td><td class="t-xs">'+esc(d.deviation||'deviation')+(d.detail?(' · '+esc(d.detail)):'')+'</td><td>'+dec+'</td>'
+          +'<td style="text-align:right;white-space:nowrap;"><button class="btn btn-sm" onclick="inspectAddDeviation('+i+')" title="Add exactly this call shape to the accepted profile">Add to profile</button></td></tr>'; }).join('')
       +'</tbody></table>';
   }catch(e){}
+}
+
+async function inspectAddDeviation(i){
+  const d=(window.__inspectDeviations||[])[i]; if(!d) return;
+  try{
+    const r=await fetch('/api/inspect/profile/from-deviation',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({principal:d.principal,tool:d.tool,source:d.source,service:d.service,namespace:d.namespace,argShape:d.argShape||{}})});
+    if(!r.ok){ toast(r.status===403?'Need inspection:write':'Failed','error'); return; }
+    toast('Added '+d.principal+' → '+d.tool+' to profile','ok');
+  }catch(e){ toast('Failed','error'); }
 }
 
 // --- Inspect: behavior profile (learn / review) ---
