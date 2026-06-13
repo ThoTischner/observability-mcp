@@ -124,6 +124,26 @@ test.describe("Inspect — Flows live graph", () => {
       await page.waitForTimeout(300);
     }
 
+    // Granular editor: Edit on a suggestion opens the rule editor modal.
+    const edit = page.locator('#inspect-review-queue button', { hasText: "Edit" }).first();
+    if (await edit.count()) {
+      await edit.click();
+      const modal = page.locator("#inspect-rule-modal");
+      await expect(modal).toHaveClass(/open/);
+      await expect(page.locator("#inspect-rule-modal-title")).toContainText(/Edit rule/);
+      // Regression guard: if the rule has constraint chips, each checkbox must
+      // carry the REAL value (not the default "on"), so Save persists the
+      // actual allow-list rather than corrupting it.
+      const chip = modal.locator(".rule-chip input").first();
+      if (await chip.count()) {
+        const v = await chip.getAttribute("value");
+        expect(v, "chip carries a real constraint value").toBeTruthy();
+        expect(v).not.toBe("on");
+      }
+      await modal.locator("button", { hasText: "Cancel" }).click();
+      await expect(modal).not.toHaveClass(/open/);
+    }
+
     expect(errors, `console errors: ${errors.join("\n")}`).toEqual([]);
   });
 
