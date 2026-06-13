@@ -1836,6 +1836,7 @@
       </div>
       <div class="tabs">
         <button class="tab-btn active" onclick="showInspectTab('flows')">Flows</button>
+        <button class="tab-btn" onclick="showInspectTab('profile')">Profile</button>
       </div>
       <div id="inspect-tab-flows" class="tab-content active">
         <div class="card">
@@ -1859,6 +1860,30 @@
               <div id="inspect-inspector-empty" class="empty" style="margin: 24px 0;">Select a node or edge on the left to inspect its calls, argument shapes and posture.</div>
               <div id="inspect-inspector-body" style="display:none;"></div>
             </aside>
+          </div>
+        </div>
+      </div>
+      <div id="inspect-tab-profile" class="tab-content">
+        <div class="card">
+          <div class="card-header">
+            <h2>Behavior profile <span class="muted t-xs" style="font-weight:400;">learn a baseline from observed traffic, then accept the rules that look right</span></h2>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <span id="inspect-profile-counts" class="muted t-xs"></span>
+              <button class="btn btn-sm btn-primary" onclick="inspectDerive()" title="Derive suggested rules from the observed window">Learn from traffic</button>
+            </div>
+          </div>
+          <div style="padding: 0 16px 16px;">
+            <div style="margin: 4px 0 8px; display:flex; align-items:center; justify-content:space-between; gap:8px;">
+              <h3 style="font-size: var(--fs-md); margin:0;">Review queue <span class="muted t-xs" id="inspect-sugg-count"></span></h3>
+              <div id="inspect-sugg-bulk" style="display:none; gap:6px;">
+                <button class="btn btn-sm" onclick="inspectBulk('accepted')">Accept all</button>
+                <button class="btn btn-sm btn-ghost" onclick="inspectBulk('rejected')">Reject all</button>
+              </div>
+            </div>
+            <div id="inspect-review-queue"><div class="empty" style="margin: 16px 0;">No suggestions yet. Click <b>Learn from traffic</b> to derive rules from what agents have actually done.</div></div>
+
+            <h3 style="font-size: var(--fs-md); margin: 20px 0 8px;">Accepted rules <span class="muted t-xs" id="inspect-acc-count"></span></h3>
+            <div id="inspect-accepted-rules"><div class="empty" style="margin: 16px 0;">No accepted rules yet. Accept suggestions above to build the enforceable profile.</div></div>
           </div>
         </div>
       </div>
@@ -7454,6 +7479,10 @@ function inspectInit(){
   if(!inspectStarted){
     inspectStarted=true;
     wireInspectGraph();
+    // Delegated handler for profile rule actions (data-rule + data-act) — keeps
+    // user-derived rule ids out of inline onclick (XSS-safe).
+    const ptab=document.getElementById('inspect-tab-profile');
+    if(ptab) ptab.addEventListener('click',(ev)=>{ const b=ev.target.closest('button[data-rule]'); if(b) inspectRuleAction(b.getAttribute('data-rule'), b.getAttribute('data-act')); });
     // Self-checking poll: only refreshes while the tab is active AND live.
     inspectTimer=setInterval(()=>{
       if(document.getElementById('page-inspect').classList.contains('active') && inspectLive) loadInspectFlows(false);
@@ -7468,6 +7497,84 @@ function showInspectTab(name){
   const btn=[...document.querySelectorAll('#page-inspect .tab-btn')].find(b=>b.textContent.trim().toLowerCase()===name);
   if(btn) btn.classList.add('active');
   const c=document.getElementById('inspect-tab-'+name); if(c) c.classList.add('active');
+  if(name==='profile') inspectLoadProfile();
+}
+
+// --- Inspect: behavior profile (learn / review) ---
+function inspectConstraintSummary(c){
+  const parts=[];
+  ['source','service','namespace'].forEach(k=>{ if(c[k]&&c[k].length) parts.push(k+'∈{'+c[k].map(esc).join(', ')+'}'); });
+  if(c.argShape){ for(const k in c.argShape){ parts.push(esc(k)+'∈{'+c.argShape[k].map(esc).join(', ')+'}'); } }
+  return parts.length?parts.join(' · '):'<span class="muted">any (no constraints observed)</span>';
+}
+
+async function inspectLoadProfile(){
+  try{
+    const r=await fetch('/api/inspect/profile');
+    if(!r.ok){ document.getElementById('inspect-review-queue').innerHTML='<div class="empty" style="margin:16px 0;">'+(r.status===403?'You don’t have permission to view the profile.':'Profile unavailable.')+'</div>'; return; }
+    renderInspectProfile(await r.json());
+  }catch(e){}
+}
+
+async function inspectDerive(){
+  try{
+    const win=(document.getElementById('inspect-window')||{}).value||'24h';
+    const r=await fetch('/api/inspect/profile/derive?window='+encodeURIComponent(win),{method:'POST'});
+    if(!r.ok){ toast(r.status===403?'Need inspection:write to learn':'Learn failed', 'error'); return; }
+    const j=await r.json();
+    toast('Learned from '+j.learnedFrom+' calls · '+j.suggested+' suggestions', 'ok');
+    inspectLoadProfile();
+  }catch(e){ toast('Learn failed','error'); }
+}
+
+async function inspectRuleAction(id,status){
+  try{
+    const r=await fetch('/api/inspect/profile/rules/'+encodeURIComponent(id),{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({status})});
+    if(!r.ok){ toast(r.status===403?'Need inspection:write':'Update failed','error'); return; }
+    inspectLoadProfile();
+  }catch(e){ toast('Update failed','error'); }
+}
+
+async function inspectBulk(status){
+  const ids=(window.__inspectSuggestedIds||[]);
+  for(const id of ids){ await inspectRuleAction(id,status); }
+}
+
+function renderInspectProfile(data){
+  const rules=data.rules||[]; const c=data.counts||{};
+  document.getElementById('inspect-profile-counts').textContent=(c.suggested||0)+' suggested · '+(c.accepted||0)+' accepted'+(data.persisted?' · persisted':'');
+  const sugg=rules.filter(r=>r.status==='suggested');
+  const acc=rules.filter(r=>r.status==='accepted');
+  window.__inspectSuggestedIds=sugg.map(r=>r.id);
+  document.getElementById('inspect-sugg-count').textContent=sugg.length?('('+sugg.length+')'):'';
+  document.getElementById('inspect-acc-count').textContent=acc.length?('('+acc.length+')'):'';
+  document.getElementById('inspect-sugg-bulk').style.display=sugg.length>1?'flex':'none';
+
+  const q=document.getElementById('inspect-review-queue');
+  if(!sugg.length){ q.innerHTML='<div class="empty" style="margin:16px 0;">No pending suggestions. Click <b>Learn from traffic</b> to (re-)derive from the selected window.</div>'; }
+  else{
+    q.innerHTML=sugg.map(r=>'<div class="card" style="margin:0 0 8px; padding:12px 14px;">'
+      +'<div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start;">'
+        +'<div style="min-width:0;">'
+          +'<div style="font-weight:600;">'+esc(r.subject)+' <span class="muted">→</span> <span style="color:var(--accent)">'+esc(r.tool)+'</span></div>'
+          +'<div class="muted t-xs" style="margin:4px 0;">'+inspectConstraintSummary(r.constraints)+'</div>'
+          +'<div class="muted t-xs">learned from '+r.provenance.learnedFrom+' call'+(r.provenance.learnedFrom===1?'':'s')+'</div>'
+        +'</div>'
+        +'<div style="display:flex; gap:6px; flex-shrink:0;">'
+          +'<button class="btn btn-sm btn-primary" data-rule="'+escHtml(r.id)+'" data-act="accepted">Accept</button>'
+          +'<button class="btn btn-sm btn-ghost" data-rule="'+escHtml(r.id)+'" data-act="rejected">Reject</button>'
+        +'</div>'
+      +'</div></div>').join('');
+  }
+
+  const a=document.getElementById('inspect-accepted-rules');
+  if(!acc.length){ a.innerHTML='<div class="empty" style="margin:16px 0;">No accepted rules yet.</div>'; }
+  else{
+    a.innerHTML='<table class="dtable"><thead><tr><th>Subject</th><th>Tool</th><th>Constraints</th><th>Learned</th><th></th></tr></thead><tbody>'
+      +acc.map(r=>'<tr><td>'+esc(r.subject)+'</td><td>'+esc(r.tool)+'</td><td class="muted t-xs">'+inspectConstraintSummary(r.constraints)+'</td><td>'+r.provenance.learnedFrom+'</td>'
+        +'<td style="text-align:right; white-space:nowrap;"><button class="btn btn-sm btn-ghost" data-rule="'+escHtml(r.id)+'" data-act="suggested" title="Move back to review">Unaccept</button></td></tr>').join('')
+      +'</tbody></table>';
+  }
 }
 
 function toggleInspectLive(){

@@ -109,8 +109,8 @@ import { selfRegistry, withToolMetrics, apiRequests, mcpActiveSessions, auditDlq
 import { initOtel } from "./observability/otel.js";
 import { WebSocketServerTransport } from "./transport/websocket.js";
 import { HookRegistry } from "./sdk/hooks.js";
-import { InspectStore, ModeController, bootMode, createInspectRecorder, buildFlowGraph, durationToSeconds } from "./inspect/index.js";
-import type { Outcome, Decision } from "./inspect/index.js";
+import { InspectStore, ModeController, bootMode, createInspectRecorder, buildFlowGraph, durationToSeconds, ProfileStore } from "./inspect/index.js";
+import type { Outcome, Decision, RuleStatus } from "./inspect/index.js";
 import { wrapToolHandler, wrapResourceHandler, wrapPromptHandler } from "./sdk/hook-wrappers.js";
 import { UpstreamClient } from "./federation/upstream.js";
 import { FederationRegistry, parseFederationEnv } from "./federation/registry.js";
@@ -1528,6 +1528,10 @@ async function main() {
   if (inspectMode.get() !== "observe") {
     console.log(`[inspect] mode=${inspectMode.get()} (store ${inspectStore.persisted ? "persisted" : "in-memory"})`);
   }
+  // Behavior profile (the learned ruleset). Suggestions are derived from the
+  // observation store on demand; accepted rules drive dry-run/enforce (wired
+  // in a later phase). Persists to OMCP_INSPECT_PROFILE_FILE when set.
+  const inspectProfile = new ProfileStore({ file: process.env.OMCP_INSPECT_PROFILE_FILE?.trim() || undefined });
 
   // Phase F15: anomaly-history sink — opt-in via
   // OMCP_ANOMALY_HISTORY_REMOTE_WRITE. When configured, anomaly
@@ -2402,6 +2406,62 @@ async function main() {
     if (tenant) obs = obs.filter((e) => e.tenant === tenant);
     const graph = buildFlowGraph(obs, { sinceMs });
     res.json({ ...graph, mode: inspectMode.get(), scopedTo: tenant });
+  });
+
+  app.get("/api/inspect/profile", need("inspection", "read"), (_req, res) => {
+    const rules = inspectProfile.list();
+    res.json({
+      rules,
+      counts: {
+        total: rules.length,
+        suggested: rules.filter((r) => r.status === "suggested").length,
+        accepted: rules.filter((r) => r.status === "accepted").length,
+        rejected: rules.filter((r) => r.status === "rejected").length,
+      },
+      persisted: inspectProfile.persisted,
+    });
+  });
+
+  // Learn: derive suggested rules from the observed window. Mutating (writes
+  // the suggested set) → inspection:write + audited.
+  app.post("/api/inspect/profile/derive", need("inspection", "write"), audit("inspection", "write"), (req, res) => {
+    const windowSecs = durationToSeconds(qstr(req.query.window) || "24h") ?? 86400;
+    const obs = inspectStore.since(Date.now() - windowSecs * 1000);
+    const rules = inspectProfile.derive(obs);
+    res.json({ rules, learnedFrom: obs.length, suggested: inspectProfile.suggested().length });
+  });
+
+  // Accept / reject / reset a rule, or edit its constraints.
+  app.patch("/api/inspect/profile/rules/:id", need("inspection", "write"), audit("inspection", "write"), (req, res) => {
+    const id = String(req.params.id);
+    const body = (req.body || {}) as { status?: unknown; constraints?: unknown; subject?: unknown };
+    if (body.status != null) {
+      const status = String(body.status);
+      if (!["suggested", "accepted", "rejected"].includes(status)) {
+        res.status(400).json({ error: "status must be suggested|accepted|rejected" });
+        return;
+      }
+      const r = inspectProfile.setStatus(id, status as RuleStatus);
+      if (!r) { res.status(404).json({ error: "rule not found" }); return; }
+      res.json({ rule: r });
+      return;
+    }
+    if (body.constraints != null || body.subject != null) {
+      const r = inspectProfile.update(id, {
+        constraints: body.constraints as never,
+        subject: typeof body.subject === "string" ? body.subject : undefined,
+      });
+      if (!r) { res.status(404).json({ error: "rule not found" }); return; }
+      res.json({ rule: r });
+      return;
+    }
+    res.status(400).json({ error: "provide status or constraints/subject" });
+  });
+
+  app.delete("/api/inspect/profile/rules/:id", need("inspection", "write"), audit("inspection", "write"), (req, res) => {
+    const ok = inspectProfile.remove(String(req.params.id));
+    if (!ok) { res.status(404).json({ error: "rule not found" }); return; }
+    res.json({ ok: true });
   });
 
   // --- /api/audit/dlq — webhook-sink dead-letter queue surface (P9) ---
