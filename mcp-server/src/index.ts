@@ -2491,10 +2491,13 @@ async function main() {
     const str = (v: unknown) => (typeof v === "string" && v ? v : undefined);
     const argShape: Record<string, string> = {};
     if (b.argShape && typeof b.argShape === "object") {
+      // The arg-shape KEY is remote input. Accept only a conservative
+      // identifier charset (arg names are simple tokens) and never the
+      // prototype-polluting names — barrier for js/remote-property-injection
+      // and prototype pollution.
+      const SAFE_ARG_KEY = /^[A-Za-z0-9_.-]{1,64}$/;
       for (const [k, v] of Object.entries(b.argShape as Record<string, unknown>)) {
-        // Guard prototype-polluting keys from the request body (the key is
-        // remote input — js/remote-property-injection).
-        if (k === "__proto__" || k === "constructor" || k === "prototype") continue;
+        if (!SAFE_ARG_KEY.test(k) || k === "__proto__" || k === "constructor" || k === "prototype") continue;
         if (typeof v === "string") argShape[k] = v;
       }
     }
