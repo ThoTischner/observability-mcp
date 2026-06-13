@@ -169,6 +169,7 @@ Every observability vendor ships its own MCP server — Prometheus, Grafana, Dat
 
 ## Features
 
+- **🔍 Inspect — see, learn & enforce agent behavior** — a live service-mesh-style graph of every MCP tool call, an AppArmor-style learning workflow that derives a behavior profile from real traffic, and an enforce mode that blocks calls outside the accepted baseline. [Jump to Inspect ↓](#inspect--see-learn--enforce-agent-behavior)
 - **Unified gateway** — Single MCP endpoint for all your observability backends.
 - **Cross-signal analysis** — Correlates metrics and logs automatically. Robust anomaly detection (median/MAD baseline, trend detection for slow ramps, warmup + dwell to suppress flapping) and weighted health scoring.
 - **Web UI** — Sources, services, health monitoring, configuration. Real-time, dark theme.
@@ -177,6 +178,46 @@ Every observability vendor ships its own MCP server — Prometheus, Grafana, Dat
 - **Pluggable connectors** — One interface, any query language (PromQL, LogQL, Flux, KQL...). See [docs/connectors.md](docs/connectors.md).
 - **Auth & TLS** — Basic, Bearer, custom CA, mTLS. See [docs/auth-and-tls.md](docs/auth-and-tls.md).
 - **Multi-backend** — Multiple instances of the same type, no problem.
+
+## Inspect — see, learn & enforce agent behavior
+
+You handed an agent (or a CI bot, or a leaked credential) a key to your
+observability backends. **Inspect** answers the question RBAC can't: *is this
+call **normal** for this identity, compared to what it has actually been doing?*
+
+[![Inspect — live flow graph of agent tool calls](docs/screenshots/inspect-flows.png)](docs/screenshots/inspect-flows.png)
+
+It borrows AppArmor's learning workflow and a service-mesh traffic view (think
+Kiali, for agent tool calls):
+
+```
+   OFF  ──▶  OBSERVE  ──▶  DRY-RUN (complain)  ──▶  ENFORCE
+              │              │                        │
+        record calls    compute what WOULD be     block calls that
+        only (zero      blocked, but still allow   fall outside the
+        risk, default)  — review before enforcing   accepted profile
+```
+
+- **Flows** — a live **Identities → Tools → Backends** graph. Edge thickness is
+  call volume; colour is allowed / deviation / blocked. Click any node to drill
+  into the real calls, the argument-shape distribution, and turn an observed
+  edge straight into a rule.
+- **Profile** — the learning loop: hit **"Learn from traffic"**, review the
+  suggested rules (`anonymous → query_logs · service ∈ {payment-service}` —
+  learned from N calls), and accept / edit / reject each one. Only accepted
+  rules ever gate traffic.
+- **Deviations** — every call that fell outside the profile: who, which tool,
+  what was unusual — one click to accept into the profile or confirm an anomaly.
+
+Privacy by design: Inspect stores argument **shapes**, never raw payloads, and
+runs everything through the gateway's redaction layer first. It makes **no
+outbound calls** — the air-gapped guarantee is unchanged.
+
+**OSS vs. licensed:** `observe` and `dry-run` — the live graph, learning a
+profile, seeing would-block deviations — are **free**. Active **`enforce`**
+blocking is an entitled control (shown with a 🔒 in the UI). Visibility is free;
+enforcement is the licensed capability. Full design:
+[docs/inspect.md](docs/inspect.md).
 
 ## Detection quality
 
@@ -202,6 +243,10 @@ docker run --rm -w /app -v "$(pwd)/mcp-server:/app" node:20-alpine \
 
 ## Screenshots
 
+| Inspect — flow graph | Inspect — learn a profile |
+|---|---|
+| [![Inspect flows](docs/screenshots/inspect-flows.png)](docs/screenshots/inspect-flows.png) | [![Inspect profile](docs/screenshots/inspect-profile.png)](docs/screenshots/inspect-profile.png) |
+
 | Dashboard | Service health | Connector hub |
 |---|---|---|
 | [![Dashboard](docs/screenshots/dashboard.png)](docs/screenshots/dashboard.png) | [![Service health](docs/screenshots/health.png)](docs/screenshots/health.png) | [![Connector hub](docs/screenshots/connectors.png)](docs/screenshots/connectors.png) |
@@ -213,7 +258,7 @@ graph TB
     Agent["AI Agent<br/><small>Claude, Ollama, etc.</small>"]
 
     subgraph MCP ["observability-mcp :3000"]
-        Tools["8 MCP Tools"]
+        Tools["12 MCP Tools"]
         Analysis["Analysis Engine<br/><small>Robust stats, Health Scoring, Correlation</small>"]
         UI["Web UI"]
     end

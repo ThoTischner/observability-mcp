@@ -6,6 +6,53 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.8.0] — 2026-06-13
+
+Feature release. Additive / non-breaking — every new control is **default-OFF**,
+so an existing deployment behaves exactly as before and the air-gapped guarantee
+is unchanged.
+
+### Added
+
+- **Inspect — see, learn & enforce agent behavior.** A new governance surface
+  that records the MCP tool calls flowing through the gateway, derives an
+  AppArmor-style behavior profile from real traffic, and can block calls that
+  fall outside the accepted baseline. Borrows the `complain → genprof → enforce`
+  loop and a service-mesh traffic view (Kiali for agent tool calls).
+  - **Three sub-tabs:** **Flows** (a live Identities → Tools → Backends graph
+    with call-volume edges and allowed/deviation/blocked colouring, drill-down
+    into the real calls + argument-shape distribution, and turn-an-edge-into-a-rule),
+    **Profile** (the learning loop — "Learn from traffic", review/accept/edit/reject
+    suggested rules), and **Deviations** (every call outside the profile).
+  - **Four modes** via `OMCP_INSPECT` (default `observe`): `off` / `observe`
+    (record only, zero risk) / `dryrun` (compute would-block, still allow) /
+    `enforce` (block). Argument **shapes** are stored, never raw payloads, and
+    everything runs through the redaction layer first. No outbound calls.
+  - API under `/api/inspect/*`; persists to `OMCP_INSPECT_FILE` /
+    `OMCP_INSPECT_PROFILE_FILE` (in-memory when unset). See
+    [docs/inspect.md](docs/inspect.md).
+- **Entitlement model for enterprise controls.** Each entitled feature gates on
+  an Ed25519-signed entitlement token (`featureEntitled(name)`); **all are
+  default-OFF = free** and only fail-closed when actively configured without the
+  claim:
+  - **`inspect-enforce`** — Inspect `enforce` blocking (observe/dry-run stay free).
+  - **`sso`** — `OMCP_AUTH=oidc` login (anonymous / basic / api-key stay free).
+  - **`scim`** — SCIM 2.0 provisioning (`OMCP_SCIM_TOKEN`; local users/api-keys free).
+  - **`tenancy`** — active multi-tenancy (non-default tenants; single-tenant free).
+  - `/api/info` → `governance.entitlements` surfaces the per-feature map.
+- **Consistent lock optic in the Web UI.** Entitled features read as *visible but
+  locked* without a license — a 🔒 badge on the nav item and an explanatory
+  banner naming the required entitlement (Access Control, Policies, Products,
+  Audit, SCIM Provisioning; Inspect keeps its enforce lock). Visibility is free;
+  enforcement is the licensed capability.
+
+### Fixed
+
+- **Demo agent made zero MCP calls (#510).** The example agent derived its HTTP
+  base with `MCP_URL.replace("/mcp", …)`, which matched the `/mcp` inside the
+  host `//mcp-server` and produced an unresolvable URL — so it never connected
+  and the Inspect Flows graph stayed empty. Now uses an end-anchored strip.
+
 ## [3.7.0] — 2026-06-12
 
 Feature release. Additive / non-breaking — the air-gapped default is unchanged.
