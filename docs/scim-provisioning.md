@@ -5,6 +5,14 @@ your IdP (Microsoft Entra ID, Okta) can push directory state
 directly into the gateway — no manual `OMCP_API_KEYS` rotation, no
 per-user `OMCP_USERS_FILE` editing.
 
+> **SCIM provisioning is an entitled control.** It is OFF by default
+> (no `OMCP_SCIM_TOKEN`), so the open-source surface is unchanged — local
+> `OMCP_USERS_FILE` and `OMCP_API_KEYS` auth stay free. Pushing directory
+> state from an IdP over SCIM requires the `scim` entitlement; with
+> `OMCP_SCIM_TOKEN` set but no valid entitlement the gateway keeps running
+> but **refuses to mount `/scim/v2/*` (fail-closed)** and logs the reason.
+> See [enterprise-gate.md](enterprise-gate.md).
+
 ## Enable
 
 ```bash

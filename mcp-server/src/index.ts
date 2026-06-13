@@ -1535,6 +1535,11 @@ async function main() {
   // Inspect ENFORCE (active blocking) is an entitled control; observe/dry-run
   // are free (OSS). Resolve the entitlement once at boot.
   const inspectEnforceAllowed = await inspectEnforceEntitled();
+  // SCIM provisioning is likewise an entitled control. OFF by default (no
+  // OMCP_SCIM_TOKEN) so the OSS surface is unchanged; resolve the entitlement
+  // once here so both /api/info and the route-mount block agree.
+  const scimConfigured = !!process.env.OMCP_SCIM_TOKEN?.trim();
+  const scimEntitled = scimConfigured && (await featureEntitled("scim"));
   let inspectBootMode = bootMode(process.env.OMCP_INSPECT);
   if (inspectBootMode === "enforce" && !inspectEnforceAllowed) {
     console.warn("[inspect] OMCP_INSPECT=enforce requires an entitlement (inspect-enforce); running in dry-run.");
@@ -1925,7 +1930,8 @@ async function main() {
           .getAll()
           .filter((c) => typeof c.queryTraces === "function").length,
         pluginsVerified: !/^(0|false|no|off)$/i.test(process.env.VERIFY_PLUGINS ?? "true"),
-        scimEnabled: !!process.env.OMCP_SCIM_TOKEN,
+        scimEnabled: scimEntitled,
+        scimConfigured,
         federationUpstreams: (process.env.OMCP_FEDERATION_UPSTREAMS ?? "")
           .split(",").map((s) => s.trim()).filter(Boolean).length,
       },
@@ -2841,7 +2847,20 @@ async function main() {
   // multi-replica deployments stay coherent (Q6); the redis client is
   // built from OMCP_SCIM_REDIS_URL here, mirroring the session store.
   const scimToken = process.env.OMCP_SCIM_TOKEN?.trim();
-  if (scimToken) {
+  // SCIM provisioning is an entitled control (entitlement resolved at boot as
+  // `scimEntitled`). OFF by default (no OMCP_SCIM_TOKEN) → OSS surface
+  // unchanged. Configured without the `scim` entitlement → fail closed: the
+  // /scim/v2/* routes are NOT mounted and the dashboard store stays empty, so
+  // no unentitled provisioning can happen — and the gateway keeps running (a
+  // missing IdP integration must not take the whole server down).
+  if (scimToken && !scimEntitled) {
+    console.error(
+      "[scim] OMCP_SCIM_TOKEN is set but SCIM provisioning requires an entitlement " +
+        "(scim feature) — refusing to mount /scim/v2/* (fail-closed). " +
+        "Unset OMCP_SCIM_TOKEN to silence this, or provision an entitlement.",
+    );
+  }
+  if (scimToken && scimEntitled) {
     try {
       const scimBackend = (process.env.OMCP_SCIM_BACKEND?.trim() || "file") as "file" | "redis";
       let scimRedis: import("./scim/redis-store.js").RedisLike | undefined;
