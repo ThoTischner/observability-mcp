@@ -122,4 +122,25 @@ test.describe("Inspect — Flows live graph", () => {
 
     expect(errors, `console errors: ${errors.join("\n")}`).toEqual([]);
   });
+
+  test("Enforce is gated behind a confirmation (Cancel does not enforce)", async ({ page }) => {
+    // This test deliberately only opens + cancels the confirm — it must NOT
+    // actually switch the shared demo server into enforce mode.
+    await page.goto(BASE, { waitUntil: "networkidle" });
+    await page.locator('[data-page="inspect"]').click();
+    await page.locator('#page-inspect .tab-btn', { hasText: "Profile" }).click();
+
+    // Clicking Enforce reveals a confirmation with an impact warning — it does
+    // not change the mode yet.
+    await page.locator('#inspect-mode-seg button[data-mode="enforce"]').click();
+    const confirm = page.locator("#inspect-enforce-confirm");
+    await expect(confirm).toBeVisible();
+    await expect(confirm).toContainText(/block/i);
+    await expect(page.locator("#inspect-mode-chip")).not.toHaveText(/Enforce/);
+
+    // Cancel dismisses it; mode stays unchanged.
+    await confirm.locator("button", { hasText: "Cancel" }).click();
+    await expect(confirm).toBeHidden();
+    await expect(page.locator("#inspect-mode-chip")).not.toHaveText(/Enforce/);
+  });
 });

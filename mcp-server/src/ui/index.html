@@ -1874,6 +1874,14 @@
             <div class="pg-seg" id="inspect-mode-seg" role="group" aria-label="Inspection mode">
               <button data-mode="observe" onclick="inspectSetMode('observe')">Observe</button>
               <button data-mode="dryrun" onclick="inspectSetMode('dryrun')">Dry-run</button>
+              <button data-mode="enforce" onclick="inspectRequestEnforce()">Enforce</button>
+            </div>
+          </div>
+          <div id="inspect-enforce-confirm" style="display:none; margin-top:10px; padding:10px 12px; border:1px solid var(--danger); background:var(--danger-soft); border-radius:6px;">
+            <div id="inspect-enforce-msg" style="margin-bottom:8px; font-size:var(--fs-sm);"></div>
+            <div style="display:flex; gap:8px;">
+              <button class="btn btn-sm btn-danger" onclick="inspectSetMode('enforce', true)">Enforce — block deviations</button>
+              <button class="btn btn-sm" onclick="inspectCancelEnforce()">Cancel</button>
             </div>
           </div>
         </div>
@@ -7537,7 +7545,11 @@ async function inspectRefreshMode(){
   try{ const r=await fetch('/api/inspect/mode'); if(r.ok) updateInspectModeChip(await r.json()); }catch(e){}
 }
 
-async function inspectSetMode(mode){
+async function inspectSetMode(mode, confirmed){
+  // Enforce is destructive (it blocks live tool calls) — gate behind a confirm
+  // that shows how many calls would have been blocked recently.
+  if(mode==='enforce' && !confirmed){ inspectRequestEnforce(); return; }
+  inspectCancelEnforce();
   try{
     const r=await fetch('/api/inspect/mode',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({mode})});
     if(!r.ok){ toast(r.status===403?'Need inspection:write to change mode':'Mode change failed','error'); return; }
@@ -7546,6 +7558,22 @@ async function inspectSetMode(mode){
     inspectRefreshMode();
     if(document.getElementById('inspect-tab-deviations').classList.contains('active')) inspectLoadDeviations();
   }catch(e){ toast('Mode change failed','error'); }
+}
+
+async function inspectRequestEnforce(){
+  let accepted=0, wouldBlock=0;
+  try{ const p=await fetch('/api/inspect/profile'); if(p.ok){ const j=await p.json(); accepted=(j.counts&&j.counts.accepted)||0; } }catch(e){}
+  try{ const d=await fetch('/api/inspect/deviations?window=24h'); if(d.ok){ const j=await d.json(); wouldBlock=j.total||0; } }catch(e){}
+  const msg=document.getElementById('inspect-enforce-msg');
+  if(accepted===0){
+    msg.innerHTML='<b>No accepted rules.</b> Enforcing now would block <b>every</b> call (nothing is allow-listed). Accept some rules first, or continue only if you really intend a default-deny.';
+  }else{
+    msg.innerHTML='Enforce will <b>block</b> any call outside the <b>'+accepted+'</b> accepted rule'+(accepted===1?'':'s')+'. In the last 24h, <b>'+wouldBlock+'</b> call'+(wouldBlock===1?'':'s')+' would have been blocked. Review them under Deviations first.';
+  }
+  document.getElementById('inspect-enforce-confirm').style.display='block';
+}
+function inspectCancelEnforce(){
+  const c=document.getElementById('inspect-enforce-confirm'); if(c) c.style.display='none';
 }
 
 async function inspectLoadDeviations(){

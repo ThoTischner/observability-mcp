@@ -80,3 +80,51 @@ test("/api/inspect/mode reports a recording mode", opts, async () => {
   const m = (await res.json()) as { mode: string; recording: boolean };
   assert.ok(["off", "observe", "dryrun", "enforce"].includes(m.mode));
 });
+
+test("enforce: an out-of-profile tool call is blocked end-to-end", opts, async () => {
+  // CSRF double-submit: grab the issued token, echo it on every mutation.
+  const probe = await fetch(`${base}/api/inspect/mode`);
+  const sc = probe.headers.get("set-cookie") || "";
+  const tok = (sc.match(/omcp-csrf=([^;]+)/) || [])[1];
+  const csrf: Record<string, string> = tok ? { "x-csrf-token": decodeURIComponent(tok), cookie: `omcp-csrf=${tok}` } : {};
+  const write = (path: string, method: string, body: unknown) =>
+    fetch(`${base}${path}`, { method, headers: { "content-type": "application/json", ...csrf }, body: JSON.stringify(body) });
+
+  // MCP session + an observed list_sources call (gives us a rule to accept).
+  const init = await rpc("initialize", { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "inspect-e2e", version: "0" } });
+  const session = init.session!;
+  await fetch(URL_ENV!, { method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-session-id": session }, body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized", params: {} }) });
+  await rpc("tools/call", { name: "list_sources", arguments: {} }, session);
+  await new Promise((r) => setTimeout(r, 250));
+
+  try {
+    // Learn, then accept ONLY the list_sources rule — so list_sources is
+    // allow-listed but every other tool deviates, regardless of demo traffic.
+    await write("/api/inspect/profile/derive?window=24h", "POST", {});
+    const prof = (await (await fetch(`${base}/api/inspect/profile`)).json()) as { rules: Array<{ id: string; tool: string; status: string }> };
+    const lsRule = prof.rules.find((r) => r.tool === "list_sources");
+    assert.ok(lsRule, "a list_sources rule was derived");
+    const acc = await write(`/api/inspect/profile/rules/${encodeURIComponent(lsRule!.id)}`, "PATCH", { status: "accepted" });
+    assert.equal(acc.status, 200, "rule accepted (CSRF + inspection:write OK)");
+
+    // Switch to enforce.
+    const setRes = await write("/api/inspect/mode", "PUT", { mode: "enforce" });
+    assert.equal(setRes.status, 200, "mode set to enforce");
+
+    // list_sources is within the accepted rule → NOT blocked.
+    const okCall = await rpc("tools/call", { name: "list_sources", arguments: {} }, session);
+    assert.doesNotMatch(okCall.text, /Blocked by the inspection profile/, "accepted tool allowed under enforce");
+
+    // list_services has no accepted rule → blocked by the enforcer.
+    const blocked = await rpc("tools/call", { name: "list_services", arguments: {} }, session);
+    assert.match(blocked.text, /Blocked by the inspection profile/, "out-of-profile tool blocked under enforce");
+
+    // The block is recorded as a deviation.
+    await new Promise((r) => setTimeout(r, 200));
+    const devs = (await (await fetch(`${base}/api/inspect/deviations?window=1h`)).json()) as { deviations: Array<{ tool: string; decision: string }> };
+    assert.ok(devs.deviations.some((d) => d.tool === "list_services" && d.decision === "blocked"), "blocked deviation recorded");
+  } finally {
+    // ALWAYS restore observe so we never leave the shared demo server enforcing.
+    await write("/api/inspect/mode", "PUT", { mode: "observe" }).catch(() => {});
+  }
+});
