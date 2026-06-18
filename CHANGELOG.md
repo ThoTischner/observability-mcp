@@ -6,6 +6,26 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.8.1] — 2026-06-18
+
+Security patch release. Dependency-only — no API, behavior, or configuration
+changes. All affected packages are transitive (pulled via the MCP SDK and the
+OpenTelemetry SDK) and are pinned to patched releases via npm `overrides`.
+
+### Security
+
+- Patch transitive dependency advisories surfaced by code scanning / Dependabot:
+  - **hono** 4.12.23 → 4.12.26 — CVE-2026-54286/54287/54288/54289/54290
+    (serve-static path traversal, CORS credential reflection, Lambda adapter
+    header/cookie handling). Not reachable at runtime — the gateway uses Express,
+    not hono — but the tree is moved onto patched releases to clear the alerts.
+  - **form-data** → 4.0.6 — CVE-2026-12143 (CRLF header injection via unescaped
+    field/filename in `Content-Disposition`).
+  - **protobufjs** → 7.6.4 — CVE-2026-54269 (schema-derived name shadowing,
+    potential DoS on attacker-influenced schemas).
+  - **@opentelemetry/core** → 2.8.0 — CVE-2026-54285 (unbounded memory
+    allocation parsing inbound W3C Baggage headers).
+
 ## [3.8.0] — 2026-06-13
 
 Feature release. Additive / non-breaking — every new control is **default-OFF**,
