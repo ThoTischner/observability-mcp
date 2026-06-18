@@ -86,10 +86,13 @@
   },
   "overrides": {
     "fast-uri": "^3.1.2",
-    "hono": "^4.12.23",
+    "hono": "^4.12.26",
     "ip-address": "^10.2.0",
     "@hono/node-server": "^2.0.2",
     "uuid": "^11.1.1",
-    "esbuild": "^0.28.1"
+    "esbuild": "^0.28.1",
+    "form-data": "^4.0.6",
+    "protobufjs": "^7.6.4",
+    "@opentelemetry/core": "^2.8.0"
   }
 }
