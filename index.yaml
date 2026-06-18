@@ -5,6 +5,62 @@ entries:
       artifacthub.io/category: monitoring-logging
       artifacthub.io/changes: |
         - kind: changed
+          description: "appVersion → 3.8.1; chart points at the 3.8.1 image"
+        - kind: security
+          description: "Patch transitive dependency CVEs: hono 4.12.26 (CVE-2026-54286/54287/54288/54289/54290), form-data 4.0.6 (CVE-2026-12143), protobufjs 7.6.4 (CVE-2026-54269), @opentelemetry/core 2.8.0 (CVE-2026-54285)"
+      artifacthub.io/containsSecurityUpdates: "true"
+      artifacthub.io/images: |
+        - name: observability-mcp
+          image: ghcr.io/thotischner/observability-mcp:3.8.1
+          platforms:
+            - linux/amd64
+            - linux/arm64
+      artifacthub.io/license: Apache-2.0
+      artifacthub.io/links: |
+        - name: Source
+          url: https://github.com/ThoTischner/observability-mcp
+        - name: Container image
+          url: https://github.com/ThoTischner/observability-mcp/pkgs/container/observability-mcp
+        - name: npm
+          url: https://www.npmjs.com/package/@thotischner/observability-mcp
+        - name: Connector Hub
+          url: https://thotischner.github.io/observability-mcp/hub/
+      artifacthub.io/operator: "false"
+      artifacthub.io/prerelease: "false"
+      artifacthub.io/signKey: |
+        fingerprint: C240A58EC3B9D596C685FB0079826B0CB9A6329F
+        url: https://raw.githubusercontent.com/ThoTischner/observability-mcp/main/docs/helm-signing.pub.asc
+    apiVersion: v2
+    appVersion: 3.8.1
+    created: "2026-06-18T17:12:10.54788305Z"
+    description: Unified observability gateway for AI agents — one MCP server for
+      Prometheus, Loki, and any backend
+    digest: a918f2535c93483275e2dd675cc65bf8e0d79b417d6001cb0e4b94559e2bc40e
+    home: https://github.com/ThoTischner/observability-mcp
+    icon: https://raw.githubusercontent.com/ThoTischner/observability-mcp/main/docs/logo.svg
+    keywords:
+    - mcp
+    - model-context-protocol
+    - observability
+    - prometheus
+    - loki
+    - sre
+    - monitoring
+    - ai-agents
+    maintainers:
+    - name: ThoTischner
+      url: https://github.com/ThoTischner
+    name: observability-mcp
+    sources:
+    - https://github.com/ThoTischner/observability-mcp
+    type: application
+    urls:
+    - https://github.com/ThoTischner/observability-mcp/releases/download/observability-mcp-2.8.1/observability-mcp-2.8.1.tgz
+    version: 2.8.1
+  - annotations:
+      artifacthub.io/category: monitoring-logging
+      artifacthub.io/changes: |
+        - kind: changed
           description: "appVersion → 3.8.0 (Inspect — observe/learn/enforce agent behavior); chart points at the 3.8.0 image"
         - kind: added
           description: "Inspect: live flow graph + AppArmor-style behavior profile + enforce mode for MCP tool calls. Default observe (zero risk); shapes not payloads; no outbound calls (docs/inspect.md)"
@@ -2302,4 +2358,4 @@ entries:
     urls:
     - https://github.com/ThoTischner/observability-mcp/releases/download/observability-mcp-0.3.0/observability-mcp-0.3.0.tgz
     version: 0.3.0
-generated: "2026-06-13T18:55:29.317417893Z"
+generated: "2026-06-18T17:12:10.54824206Z"
