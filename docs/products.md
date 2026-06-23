@@ -149,6 +149,37 @@ Product's `tools` list and re-saving the file takes effect on the
 **next** `/mcp` session, no server restart needed. Live sessions
 keep the snapshot they were created with.
 
+## Per-credential tool allow-list (`OMCP_KEY_TOOLS`)
+
+When you only need to scope one API key to a handful of tools — without
+authoring a whole Product — set `OMCP_KEY_TOOLS`. It is the tool-axis
+counterpart to the per-credential source allow-list `OMCP_KEY_SOURCES`
+and shares its grammar (`name=tool1|tool2;name2=tool3`):
+
+```bash
+OMCP_API_KEYS="agent:tok_a,ci:tok_b"
+# agent may only call these two tools; ci only list_services.
+OMCP_KEY_TOOLS="agent=query_logs|get_service_health;ci=list_services"
+```
+
+The credential's `/mcp` `tools/list` (and dispatch) is scoped to exactly
+the named tools; unknown names are skipped at registration like the
+Product path. A credential not listed in `OMCP_KEY_TOOLS` sees every
+registered tool — the back-compat default.
+
+**Composition with Products.** The per-credential list and a bound
+Product's `tools` list are two **independent** allow-list axes. A tool
+must pass **both** to be registered, so they compose by intersection —
+the more restrictive wins. If the two are disjoint, the credential can
+call *nothing* (each axis denies what the other allows), which is the
+intended fail-closed behaviour for a mis-scoped binding. An unset axis
+imposes no restriction on its own.
+
+`OMCP_KEY_TOOLS` is read at startup (like the rest of the credential
+config); change it and restart. The secret-free `GET /api/subjects`
+admin view surfaces each key's `allowedTools` alongside `allowedSources`
+and `productId`.
+
 ## UI
 
 The Products tab on the Web UI hosts a live table driven by

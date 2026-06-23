@@ -9,7 +9,7 @@ import { z } from "zod";
 import { loadConfig, saveConfig, DEFAULT_HEALTH_THRESHOLDS, DEFAULT_SETTINGS } from "./config/loader.js";
 import { ConnectorRegistry, getSupportedTypes } from "./connectors/registry.js";
 import { isTopologyProvider } from "./connectors/interface.js";
-import { defaultContext, principalContext, sessionContext, allowsTool, type RequestContext } from "./context.js";
+import { defaultContext, principalContext, sessionContext, allowsTool, intersectAllowed, type RequestContext } from "./context.js";
 import { parseKeyTenants, isMultiTenantConfigured } from "./tenancy/context.js";
 import {
   enforceEntitledAccess,
@@ -475,7 +475,13 @@ async function main() {
   // reaches the caller. When no hooks are registered (the default in
   // the OSS demo) the wrapper is a thin pass-through.
   const registerTool = ((name: string, ...rest: unknown[]) => {
-    if (!allowsTool(ctx.allowedTools, name)) return undefined as never;
+    // Two independent allow-list axes must BOTH pass: the Product binding
+    // (ctx.allowedTools, OMCP_KEY_PRODUCTS) and the per-credential list
+    // (ctx.credentialTools, OMCP_KEY_TOOLS). Either undefined = no restriction
+    // on that axis; disjoint non-empty lists therefore deny every tool.
+    if (!allowsTool(ctx.allowedTools, name) || !allowsTool(ctx.credentialTools, name)) {
+      return undefined as never;
+    }
     if (rest.length > 0 && typeof rest[rest.length - 1] === "function") {
       const originalHandler = rest[rest.length - 1] as (args: unknown, extra: unknown) => unknown;
       const wrappedHandler = wrapToolHandler(
@@ -2186,6 +2192,7 @@ async function main() {
       productId?: string;
       bypassRedaction: boolean;
       allowedSources?: string[];
+      allowedTools?: string[];
     }> = [];
     for (const c of loadCredentials()) {
       apiKeysOut.push({
@@ -2194,6 +2201,7 @@ async function main() {
         productId: c.productId,
         bypassRedaction: !!c.bypassRedaction,
         allowedSources: c.allowedSources,
+        allowedTools: c.allowedTools,
       });
     }
     // OIDC groups → role mappings.
@@ -4012,6 +4020,11 @@ async function main() {
       allowRawQuery: cred.allowRawQuery,
       tenant: cred.tenant,
       allowedTools,
+      // Per-credential tool allow-list (OMCP_KEY_TOOLS) — a SEPARATE axis from
+      // the Product one. The registration gate requires a tool to pass BOTH,
+      // so disjoint lists deny everything without overloading the empty-list
+      // "allow all" semantics allowsTool uses for the Product axis.
+      credentialTools: cred.allowedTools,
     });
   }
 
@@ -4083,16 +4096,6 @@ async function main() {
   // registerTool gate, so the surface a /mcp/v/<slug> client sees is
   // strictly product.tools (intersected with any pre-existing
   // allowedTools the credential already carries).
-  function intersectAllowed(
-    a: string[] | undefined,
-    b: string[] | undefined,
-  ): string[] | undefined {
-    if (!a) return b;
-    if (!b) return a;
-    const bSet = new Set(b);
-    return a.filter((t) => bSet.has(t));
-  }
-
   async function resolveVirtualProduct(
     req: import("express").Request,
     res: import("express").Response,
@@ -4256,6 +4259,7 @@ async function main() {
         allowRawQuery: cred.allowRawQuery,
         tenant: cred.tenant,
         allowedTools,
+        credentialTools: cred.allowedTools,
       }),
       selectedSubprotocol,
     };
