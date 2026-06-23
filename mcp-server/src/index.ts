@@ -1058,6 +1058,7 @@ async function main() {
       "Resolve a batch of IPv4 or IPv6 addresses to geo (country/city), ASN/org, and a hosting/proxy flag.",
       "When to use: answering 'where are these visitors from?' or 'which of these IPs are bots / datacenter / VPN exit nodes?' over access logs, without an out-of-band geo-API call per IP. Both IPv4 and IPv6 clients are resolved — don't pre-filter v6 out.",
       "Behavior: read-only. By default looks each IP up in a LOCAL offline dataset the operator configured (OMCP_IP_ENRICH_FILE) with NO external network call — safe in air-gapped deployments. Optionally, if the operator enabled OMCP_IP_ENRICH_RDAP, IPs the dataset doesn't cover fall back to an online RDAP query (country/org only) and the result carries via:'rdap'; the offline dataset is always preferred. Returns one row per input IP with found=true/false plus any known fields. If neither is configured it returns a clear notice explaining how to enable them.",
+      "RDAP rate-limits: a row with found=false AND transient:true (error names the cause, e.g. 'rate_limited') is NOT a confirmed negative — the registry throttled or failed the lookup, so the IP may resolve on a later retry or in a smaller batch. Such rows are counted in summary.transient (separate from summary.unmatched) and a top-level `note` is added. Don't treat transient rows as 'unknown/suspicious'; retry them (results are cached, so repeats are cheap).",
       "Related: pull the IPs from `query_logs` (use `labels`/`aggregate` to find the IPs of interest first).",
     ].join(" "),
     {

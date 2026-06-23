@@ -23,7 +23,22 @@ export type FetchLike = (url: string, init?: { signal?: AbortSignal }) => Promis
   ok: boolean;
   status: number;
   json: () => Promise<unknown>;
+  /** Optional — used to honor `Retry-After` on a throttle response. */
+  headers?: { get(name: string): string | null };
 }>;
+
+/** Why a lookup failed in a way that is NOT a stable property of the address —
+ *  retrying later (or in a smaller batch) may succeed. Issue #523. */
+export type RdapTransientReason = "rate_limited" | "timeout" | "upstream_error" | "network_error";
+
+/** Outcome of a single RDAP lookup. `not_found` is a genuine negative (the
+ *  address is not in any registry / carries no enrichment) and is safe to
+ *  cache; `transient` is an upstream failure (throttle, timeout, 5xx) that must
+ *  NOT be conflated with a negative and is never cached. */
+export type RdapOutcome =
+  | { status: "ok"; value: IpEnrichment }
+  | { status: "not_found" }
+  | { status: "transient"; reason: RdapTransientReason };
 
 export interface RdapResolverOptions {
   /** Bootstrap base; rdap.org redirects to the authoritative RIR. */
@@ -36,6 +51,14 @@ export interface RdapResolverOptions {
   fetch?: FetchLike;
   /** Max cache entries (LRU-ish trim). */
   maxCache?: number;
+  /** Retries on a TRANSIENT failure (throttle/timeout/5xx). Default 2. A true
+   *  negative (404 / no-data) is never retried. */
+  maxRetries?: number;
+  /** Base backoff in ms; attempt N waits min(base * 2^N, 5000), unless the
+   *  throttle response carries a usable `Retry-After`. Default 250. */
+  backoffMs?: number;
+  /** Injected sleep (tests pass a no-op to stay fast). Defaults to setTimeout. */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 interface CacheEntry {
@@ -92,6 +115,9 @@ export class RdapResolver {
   private readonly timeoutMs: number;
   private readonly fetch: FetchLike;
   private readonly maxCache: number;
+  private readonly maxRetries: number;
+  private readonly backoffMs: number;
+  private readonly sleep: (ms: number) => Promise<void>;
   private cache = new Map<string, CacheEntry>();
   /** Monotonic clock injected for tests; defaults to Date.now via a getter. */
   now: () => number;
@@ -103,32 +129,73 @@ export class RdapResolver {
     this.timeoutMs = opts.timeoutMs ?? 4000;
     this.fetch = opts.fetch ?? ((globalThis as { fetch?: FetchLike }).fetch as FetchLike);
     this.maxCache = opts.maxCache ?? 10_000;
+    this.maxRetries = opts.maxRetries ?? 2;
+    this.backoffMs = opts.backoffMs ?? 250;
+    this.sleep = opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
     this.now = () => Date.now();
   }
 
-  /** Look up one IP via RDAP. Returns null on miss/error (never throws —
-   *  a flaky RIR must not fail the batch). Cached by IP with a TTL. */
+  /** Look up one IP via RDAP. Returns the enrichment on a hit, or null on a
+   *  miss OR a transient failure (never throws). Back-compat shim — callers
+   *  that need to tell a true negative from a throttle should use {@link resolve}. */
   async lookup(ip: string): Promise<IpEnrichment | null> {
-    if (ipv4ToInt(ip) === null && ipv6ToBigInt(ip) === null) return null;
-    const cached = this.cache.get(ip);
-    if (cached && cached.expiresAt > this.now()) return cached.value;
+    const o = await this.resolve(ip);
+    return o.status === "ok" ? o.value : null;
+  }
 
-    let value: IpEnrichment | null = null;
-    try {
-      const ac = new AbortController();
-      const timer = setTimeout(() => ac.abort(), this.timeoutMs);
-      try {
-        const res = await this.fetch(`${this.baseUrl}/ip/${encodeURIComponent(ip)}`, { signal: ac.signal });
-        if (res.ok) value = parseRdapResponse(await res.json());
-      } finally {
-        clearTimeout(timer);
-      }
-    } catch {
-      value = null; // network/timeout/parse — treat as a miss
+  /** Look up one IP via RDAP, distinguishing a genuine negative (`not_found`,
+   *  cached) from a transient upstream failure (`transient`, never cached so a
+   *  later retry can succeed). Bounded retry with backoff on transient. Never
+   *  throws — a flaky RIR must not fail the batch (issue #523). */
+  async resolve(ip: string): Promise<RdapOutcome> {
+    if (ipv4ToInt(ip) === null && ipv6ToBigInt(ip) === null) return { status: "not_found" };
+    const cached = this.cache.get(ip);
+    if (cached && cached.expiresAt > this.now()) {
+      return cached.value ? { status: "ok", value: cached.value } : { status: "not_found" };
     }
 
-    this.put(ip, { value, expiresAt: this.now() + (value ? this.ttlMs : this.negTtlMs) });
-    return value;
+    for (let attempt = 0; ; attempt++) {
+      const { outcome, retryAfterMs } = await this.attempt(ip);
+      if (outcome.status === "ok") {
+        this.put(ip, { value: outcome.value, expiresAt: this.now() + this.ttlMs });
+        return outcome;
+      }
+      if (outcome.status === "not_found") {
+        this.put(ip, { value: null, expiresAt: this.now() + this.negTtlMs });
+        return outcome;
+      }
+      // transient — retry with backoff, but never cache it as a negative.
+      if (attempt >= this.maxRetries) return outcome;
+      const backoff = retryAfterMs ?? Math.min(this.backoffMs * 2 ** attempt, 5000);
+      await this.sleep(backoff);
+    }
+  }
+
+  /** One RDAP HTTP attempt mapped to an outcome (+ a Retry-After hint). */
+  private async attempt(ip: string): Promise<{ outcome: RdapOutcome; retryAfterMs?: number }> {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), this.timeoutMs);
+    try {
+      const res = await this.fetch(`${this.baseUrl}/ip/${encodeURIComponent(ip)}`, { signal: ac.signal });
+      if (res.ok) {
+        const parsed = parseRdapResponse(await res.json());
+        // A 2xx with no country/org is a genuine "no enrichment for this IP".
+        return { outcome: parsed ? { status: "ok", value: parsed } : { status: "not_found" } };
+      }
+      // 429/403 are the throttle responses RIRs use; 5xx is upstream trouble —
+      // both are transient. 404 (and other malformed-query 4xx) is a genuine
+      // negative for this address.
+      if (res.status === 429 || res.status === 403) {
+        return { outcome: { status: "transient", reason: "rate_limited" }, retryAfterMs: retryAfter(res) };
+      }
+      if (res.status >= 500) return { outcome: { status: "transient", reason: "upstream_error" } };
+      return { outcome: { status: "not_found" } };
+    } catch {
+      // AbortController fired → our own timeout; otherwise a network error.
+      return { outcome: { status: "transient", reason: ac.signal.aborted ? "timeout" : "network_error" } };
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private put(ip: string, entry: CacheEntry): void {
@@ -139,4 +206,14 @@ export class RdapResolver {
     }
     this.cache.set(ip, entry);
   }
+}
+
+/** Parse a `Retry-After` header (delta-seconds form) into ms, capped at 5s so a
+ *  hostile/huge value can't stall a batch. Ignores the HTTP-date form. */
+function retryAfter(res: { headers?: { get(name: string): string | null } }): number | undefined {
+  const raw = res.headers?.get?.("retry-after");
+  if (!raw) return undefined;
+  const secs = Number(raw.trim());
+  if (!Number.isFinite(secs) || secs < 0) return undefined;
+  return Math.min(secs * 1000, 5000);
 }
