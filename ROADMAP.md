@@ -130,11 +130,11 @@ single deployment is a complete MCP control plane. See
 ## Next
 
 - **Sovereign quickstart.** One-command, fully on-prem demo running next to a local model (no external calls), showing analyzed context vs raw queries end to end.
-- **Per-credential access control (RBAC).** Scope a given MCP connection to specific sources, specific tools, read-only, and optional service/metric allow-lists and look-back caps — replacing today's "every session sees everything". (The tenancy layer already isolates per-tenant; this is finer-grained per-credential scoping. First slice: per-credential gating for `raw_query`, today a global `OMCP_RAW_QUERY` flag.)
+- **Per-credential access control (RBAC).** Scope a given MCP connection to specific sources, specific tools, read-only, and optional service/metric allow-lists and look-back caps — replacing today's "every session sees everything". (The tenancy layer already isolates per-tenant; this is finer-grained per-credential scoping.) Shipped so far: per-credential `raw_query` gating (`OMCP_KEY_RAW_QUERY`), source allow-list (`OMCP_KEY_SOURCES`), and tool allow-list (`OMCP_KEY_TOOLS`, v3.9.0). Still open: read-only mode, service/metric allow-lists, and look-back caps.
 - **More built-in connectors.** Grafana Mimir / Cortex, VictoriaMetrics, OpenSearch / Elasticsearch logs, OpenTelemetry, **Datadog** (read-only). Driven by user demand — see [discussion #97](https://github.com/ThoTischner/observability-mcp/discussions/97).
 - **Framework adapters.** Thin wrappers so users on LangChain / LlamaIndex can register the tools without learning the MCP transport directly.
 - **Claude Skill.** Publish observability-mcp as an [Anthropic Skill](https://docs.anthropic.com/en/docs/build-with-claude/skills).
-- **Plugin signature verification at load.** A `PLUGIN_REQUIRE_SIGNATURE=true` mode rejecting unsigned tarballs at load time (Sigstore keyless OIDC) — building on the default-on signing already shipped.
+- ✅ **Plugin signature verification at load (strict mode).** Shipped in v3.9.0: `PLUGIN_REQUIRE_SIGNATURE=true` (Helm `plugins.verify.requireSignature`) turns the default fail-closed *silent skip* of an unverifiable filesystem plugin into a hard startup failure, against the local offline trust root. (Sigstore keyless OIDC stays out by design — an air-gapped site can't reach a transparency log; see [`docs/plugin-architecture.md`](docs/plugin-architecture.md).)
 
 ## Later
 

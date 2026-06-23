@@ -6,6 +6,31 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.9.0] — 2026-06-23
+
+Feature release. Additive / non-breaking — both new controls are **default-OFF**,
+so an existing deployment behaves exactly as before.
+
+### Added
+
+- **Per-credential tool allow-list (`OMCP_KEY_TOOLS`).** Scope a single MCP API
+  key to specific tools without authoring a Product —
+  `OMCP_KEY_TOOLS="agent=query_logs|get_service_health;ci=list_services"` (same
+  grammar as `OMCP_KEY_SOURCES`). Enforced as a second, independent allow-list
+  axis: a tool must pass **both** the credential list and any bound Product's
+  `tools` list, so the two compose by intersection and disjoint lists deny
+  everything (fail-closed). Covers `tools/list` and dispatch across `/mcp`,
+  `/mcp/ws`, and `/mcp/v/<product>`. `GET /api/subjects` surfaces each key's
+  `allowedTools`. Unlisted credentials see every tool (back-compat).
+- **Strict plugin signatures (`PLUGIN_REQUIRE_SIGNATURE`).** A hard-fail variant
+  of `VERIFY_PLUGINS`: when on, a filesystem plugin that is present but cannot be
+  verified (no manifest, malformed/invalid manifest, name mismatch, missing or
+  invalid signature, integrity mismatch) or a missing/unloadable
+  `PLUGIN_TRUST_ROOT` **aborts startup** instead of being silently skipped — so a
+  high-assurance deployment never quietly runs a reduced connector set. Implies
+  `VERIFY_PLUGINS`; builtins are never gated. Wired in Helm via
+  `plugins.verify.requireSignature`. Default-OFF.
+
 ## [3.8.3] — 2026-06-23
 
 Bug-fix release. No API or configuration changes.
