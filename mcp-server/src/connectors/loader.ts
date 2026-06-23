@@ -271,25 +271,30 @@ export class PluginLoader {
       manifestPath = resolve(pluginRoot, marker.manifest);
       if (existsSync(manifestPath)) {
         manifestBytes = readFileSync(manifestPath);
-        const raw = JSON.parse(manifestBytes.toString("utf8"));
+        // A present-but-malformed manifest (corrupt JSON / schema-invalid /
+        // name mismatch) is "present but cannot be verified" — under strict
+        // mode gateFailure() aborts startup, so the connector can't silently
+        // go missing; otherwise it warns + skips as before.
+        let raw: unknown;
+        try {
+          raw = JSON.parse(manifestBytes.toString("utf8"));
+        } catch (err) {
+          this.gateFailure(marker.name, `has unparseable manifest.json (${String(err)})`);
+          return;
+        }
         const parsed = manifestSchema.safeParse(raw);
         if (!parsed.success) {
           const issues = parsed.error.issues
             .map((i) => `${i.path.join(".")}: ${i.message}`)
             .join("; ");
-          console.warn(
-            "Plugin %s has invalid manifest.json — %s; skipping",
-            sanitizeForLog(marker.name),
-            sanitizeForLog(issues)
-          );
+          this.gateFailure(marker.name, `has invalid manifest.json — ${issues}`);
           return;
         }
         manifest = parsed.data;
         if (manifest.name !== marker.name) {
-          console.warn(
-            "Plugin %s package.json marker name does not match manifest.json (%s); skipping",
-            sanitizeForLog(marker.name),
-            sanitizeForLog(manifest.name)
+          this.gateFailure(
+            marker.name,
+            `package.json marker name does not match manifest.json (${manifest.name})`,
           );
           return;
         }

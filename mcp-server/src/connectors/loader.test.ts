@@ -29,7 +29,15 @@ function makeTrustRoot(): { path: string; privateKey: import("node:crypto").KeyO
 function makePlugin(
   pluginsDir: string,
   name: string,
-  opts: { manifest?: boolean; sign?: import("node:crypto").KeyObject } = {},
+  opts: {
+    manifest?: boolean;
+    sign?: import("node:crypto").KeyObject;
+    /** Write this raw string AS the manifest (e.g. "{ not json" or a name
+     *  mismatch) instead of the structured one — for malformed-manifest tests. */
+    rawManifest?: string;
+    /** Override the integrity field to force a verifyIntegrity mismatch. */
+    integrity?: string;
+  } = {},
 ): void {
   const root = join(pluginsDir, name);
   mkdirSync(root, { recursive: true });
@@ -39,17 +47,21 @@ function makePlugin(
     JSON.stringify({ main: "index.js", observabilityMcp: { kind: "connector", name, manifest: "manifest.json" } }),
   );
   if (opts.manifest === false) return;
-  const manifest = {
-    schemaVersion: 1,
-    name,
-    displayName: name,
-    version: "1.0.0",
-    description: `${name} test connector`,
-    signalTypes: ["metrics"],
-    integrity: sha256Integrity(Buffer.from(ENTRY_SRC)),
-  };
-  const manifestBytes = Buffer.from(JSON.stringify(manifest));
   const manifestPath = join(root, "manifest.json");
+  const manifestBytes =
+    opts.rawManifest !== undefined
+      ? Buffer.from(opts.rawManifest)
+      : Buffer.from(
+          JSON.stringify({
+            schemaVersion: 1,
+            name,
+            displayName: name,
+            version: "1.0.0",
+            description: `${name} test connector`,
+            signalTypes: ["metrics"],
+            integrity: opts.integrity ?? sha256Integrity(Buffer.from(ENTRY_SRC)),
+          }),
+        );
   writeFileSync(manifestPath, manifestBytes);
   if (opts.sign) writeFileSync(manifestPath + ".sig", cryptoSign(null, manifestBytes, opts.sign));
 }
@@ -192,4 +204,42 @@ test("strict mode: a correctly-signed plugin loads without error", async () => {
   const loader = new PluginLoader({ pluginsDir: dir, verify: true, trustRoot: trust.path, requireSignature: true });
   await loader.load(); // valid signature + integrity → no throw
   assert.ok(loader.supportedTypes().includes("good-conn"), "signed plugin registered under strict mode");
+});
+
+// A present-but-malformed manifest is "present but cannot be verified" — strict
+// mode must hard-fail, not silently drop the connector.
+test("strict mode: unparseable manifest.json ABORTS load()", async () => {
+  const dir = tmp();
+  makePlugin(dir, "corrupt-conn", { rawManifest: "{ this is not valid json" });
+  const trust = makeTrustRoot();
+  const loader = new PluginLoader({ pluginsDir: dir, verify: true, trustRoot: trust.path, requireSignature: true });
+  await assert.rejects(() => loader.load(), PluginVerificationError);
+});
+
+test("strict mode: schema-invalid manifest.json ABORTS load()", async () => {
+  const dir = tmp();
+  // Missing required fields (displayName/version/signalTypes/...).
+  makePlugin(dir, "badschema-conn", { rawManifest: JSON.stringify({ schemaVersion: 1, name: "badschema-conn" }) });
+  const trust = makeTrustRoot();
+  const loader = new PluginLoader({ pluginsDir: dir, verify: true, trustRoot: trust.path, requireSignature: true });
+  await assert.rejects(() => loader.load(), PluginVerificationError);
+});
+
+test("strict mode: integrity mismatch ABORTS load() (signed manifest, wrong digest)", async () => {
+  const dir = tmp();
+  const trust = makeTrustRoot();
+  // Validly signed manifest, but its integrity does not match index.js.
+  makePlugin(dir, "tampered-conn", { sign: trust.privateKey, integrity: "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" });
+  const loader = new PluginLoader({ pluginsDir: dir, verify: true, trustRoot: trust.path, requireSignature: true });
+  await assert.rejects(() => loader.load(), PluginVerificationError);
+});
+
+test("NON-strict: a malformed manifest is still skipped (not fatal), builtins load", async () => {
+  const dir = tmp();
+  makePlugin(dir, "corrupt-conn", { rawManifest: "{ nope" });
+  const trust = makeTrustRoot();
+  const loader = new PluginLoader({ pluginsDir: dir, verify: true, trustRoot: trust.path /* non-strict */ });
+  await loader.load(); // must NOT throw
+  assert.ok(loader.supportedTypes().includes("prometheus"), "builtins still load");
+  assert.ok(!loader.supportedTypes().includes("corrupt-conn"), "malformed plugin skipped");
 });
