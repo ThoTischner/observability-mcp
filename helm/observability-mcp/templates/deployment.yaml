@@ -91,6 +91,12 @@ spec:
             # literal string the loader recognises as an opt-out.
             - name: VERIFY_PLUGINS
               value: {{ .Values.plugins.verify.enabled | quote }}
+            {{- if .Values.plugins.verify.requireSignature }}
+            # Strict mode: a present-but-unverifiable filesystem plugin (or a
+            # missing trust root) aborts startup instead of being skipped.
+            - name: PLUGIN_REQUIRE_SIGNATURE
+              value: "true"
+            {{- end }}
             {{- if include "observability-mcp.needsTrustRoot" . }}
             - name: PLUGIN_TRUST_ROOT
               value: /app/trust/trust-root.pem

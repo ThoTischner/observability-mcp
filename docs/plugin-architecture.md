@@ -137,8 +137,11 @@ Because the signature covers the manifest and the manifest pins the entry-file h
 |---------|-----|---------|---------|
 | Verify  | `VERIFY_PLUGINS` | **on** (since v2.0) | When unset, `true/1/yes` filesystem plugins are gated. Set `false/0/no/off` to opt out (loads unsigned filesystem plugins — not recommended in production). |
 | Trust root | `PLUGIN_TRUST_ROOT` | — | Path to the PEM public key. Required when verify is on AND filesystem plugins are present; otherwise the loader logs and skips them. |
+| Strict (require) | `PLUGIN_REQUIRE_SIGNATURE` | **off** | `true/1/yes/on` → a present-but-unverifiable plugin (or a missing/unloadable trust root) is a **hard error that aborts startup** instead of a logged skip. Implies `VERIFY_PLUGINS=true`. |
 
 **Fail-closed.** With verify on and no/invalid trust root, *no* filesystem plugin loads (builtin Prometheus/Loki, part of the trusted image, are never gated, so the server stays functional). Any plugin missing a manifest, signature, or failing either check is skipped with a logged reason — it is never loaded "best effort". To intentionally run unsigned filesystem plugins (dev workflow only), set `VERIFY_PLUGINS=false`.
+
+**Strict mode (`PLUGIN_REQUIRE_SIGNATURE=true`).** The default fail-closed behaviour *silently drops* an unverifiable plugin and keeps booting — useful, but it means a connector the operator expected can quietly go missing (only a log line marks it). In high-assurance deployments set `PLUGIN_REQUIRE_SIGNATURE=true`: now a filesystem plugin that is **present but cannot be verified** — no manifest, missing/invalid `.sig`, or an integrity mismatch — and a missing or unloadable `PLUGIN_TRUST_ROOT` are treated as **fatal**: `load()` throws and the server refuses to start. This turns "drop the bad connector and carry on" into "refuse to run a partially-trusted gateway". It implies verification (you cannot require signatures without checking them), so it works even if `VERIFY_PLUGINS` was left off. Builtins are still never gated. The runtime install paths (Web UI / API) already verify before writing, so they are unaffected; a re-scan that nonetheless trips strict mode returns a `400` rather than crashing the process.
 
 Producing the artifacts (offline, from the connector dir):
 

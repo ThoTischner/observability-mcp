@@ -175,6 +175,7 @@
           "additionalProperties": false,
           "properties": {
             "enabled": { "type": "boolean" },
+            "requireSignature": { "type": "boolean" },
             "trustRootPem": { "type": "string" },
             "existingSecret": { "type": "string" }
           }

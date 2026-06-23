@@ -55,6 +55,16 @@ export class PluginLoader {
   private trustRootPath?: string;
   private trustRoot?: KeyObject;
 
+  // Strict mode (PLUGIN_REQUIRE_SIGNATURE=true). Default OFF. When OFF, a
+  // filesystem plugin that fails the verification gate is silently SKIPPED
+  // (warn + continue) — the server still boots, just without that connector.
+  // When ON, a present-but-unverifiable plugin (missing manifest / missing
+  // or invalid signature / integrity mismatch), or a missing/unloadable trust
+  // root, is a HARD error that aborts load() — so an operator who demands
+  // signed connectors fails to start rather than silently running a reduced
+  // set. Implies verify (you cannot require signatures without verifying).
+  private requireSignature: boolean;
+
   /** Optional HookRegistry — when set, the loader auto-registers
    *  every entry in `manifest.hooks[]` after the plugin loads, and
    *  unregisters them when a same-name plugin replaces it. Hooks
@@ -63,7 +73,7 @@ export class PluginLoader {
   private hookRegistry?: HookRegistry;
 
   constructor(
-    opts: { pluginsDir?: string; disabled?: string[]; verify?: boolean; trustRoot?: string; hookRegistry?: HookRegistry } = {}
+    opts: { pluginsDir?: string; disabled?: string[]; verify?: boolean; trustRoot?: string; hookRegistry?: HookRegistry; requireSignature?: boolean } = {}
   ) {
     this.pluginsDir = opts.pluginsDir
       ?? process.env.PLUGINS_DIR
@@ -77,12 +87,26 @@ export class PluginLoader {
     this.disabled = new Set([...(opts.disabled ?? []), ...envDisabled]);
     this.verify = opts.verify ?? !/^(0|false|no|off)$/i.test(process.env.VERIFY_PLUGINS ?? "true");
     this.trustRootPath = opts.trustRoot ?? process.env.PLUGIN_TRUST_ROOT;
+    this.requireSignature =
+      opts.requireSignature ?? /^(1|true|yes|on)$/i.test(process.env.PLUGIN_REQUIRE_SIGNATURE ?? "");
+    // Requiring signatures implies verifying them — an operator who sets
+    // PLUGIN_REQUIRE_SIGNATURE=true but left VERIFY_PLUGINS=false meant the
+    // stricter posture; honour it rather than silently no-op.
+    if (this.requireSignature) this.verify = true;
   }
 
   async load(): Promise<void> {
     this.loadBuiltins();
     if (this.verify) {
       if (!this.trustRootPath) {
+        // In strict mode this is a misconfiguration — the operator demanded
+        // signed connectors but gave no way to verify them. Fail hard rather
+        // than silently degrade to builtins-only.
+        if (this.requireSignature) {
+          throw new PluginVerificationError(
+            "PLUGIN_REQUIRE_SIGNATURE is on but PLUGIN_TRUST_ROOT is unset — cannot enforce signatures. Set a trust root or unset PLUGIN_REQUIRE_SIGNATURE."
+          );
+        }
         console.warn(
           "VERIFY_PLUGINS is on but PLUGIN_TRUST_ROOT is unset — refusing to load any filesystem plugins (fail-closed). Builtins remain available."
         );
@@ -95,6 +119,11 @@ export class PluginLoader {
           sanitizeForLog(this.trustRootPath)
         );
       } catch (err) {
+        if (this.requireSignature) {
+          throw new PluginVerificationError(
+            `PLUGIN_REQUIRE_SIGNATURE is on but the trust root failed to load (${String(err)}) — cannot enforce signatures.`
+          );
+        }
         console.warn(
           "VERIFY_PLUGINS is on but trust root failed to load (%s) — refusing to load any filesystem plugins (fail-closed). Builtins remain available.",
           sanitizeForLog(String(err))
@@ -201,9 +230,28 @@ export class PluginLoader {
         if (!statSync(pluginRoot).isDirectory()) continue;
         await this.loadFilesystemPlugin(pluginRoot);
       } catch (err) {
+        // In strict mode a verification failure must abort load() rather than
+        // be swallowed as a per-plugin warning — propagate it.
+        if (this.requireSignature && err instanceof PluginVerificationError) throw err;
         console.warn("Failed to load plugin %s: %s", sanitizeForLog(entry), sanitizeForLog(String(err)));
       }
     }
+  }
+
+  /** A filesystem plugin failed the verification gate. In strict mode
+   *  (PLUGIN_REQUIRE_SIGNATURE) this throws to abort load(); otherwise it
+   *  warns and the caller skips the plugin (fail-closed but non-fatal). */
+  private gateFailure(name: string, reason: string): void {
+    if (this.requireSignature) {
+      throw new PluginVerificationError(
+        `PLUGIN_REQUIRE_SIGNATURE: plugin ${name} ${reason} — refusing to start.`
+      );
+    }
+    console.warn(
+      "VERIFY_PLUGINS: plugin %s %s — skipping (fail-closed)",
+      sanitizeForLog(name),
+      sanitizeForLog(reason)
+    );
   }
 
   private async loadFilesystemPlugin(pluginRoot: string): Promise<void> {
@@ -261,19 +309,12 @@ export class PluginLoader {
     // against the trust root. Everything is local — airgapped-safe.
     if (this.verify) {
       if (!manifest || !manifestPath || !manifestBytes) {
-        console.warn(
-          "VERIFY_PLUGINS: plugin %s has no manifest.json — skipping (fail-closed)",
-          sanitizeForLog(marker.name)
-        );
+        this.gateFailure(marker.name, "has no manifest.json");
         return;
       }
       const sigPath = manifestPath + ".sig";
       if (!existsSync(sigPath)) {
-        console.warn(
-          "VERIFY_PLUGINS: plugin %s missing manifest signature %s — skipping (fail-closed)",
-          sanitizeForLog(marker.name),
-          sanitizeForLog(marker.manifest + ".sig")
-        );
+        this.gateFailure(marker.name, `missing manifest signature ${marker.manifest + ".sig"}`);
         return;
       }
       try {
@@ -282,11 +323,7 @@ export class PluginLoader {
       } catch (err) {
         const detail =
           err instanceof PluginVerificationError ? err.message : String(err);
-        console.warn(
-          "VERIFY_PLUGINS: plugin %s failed verification (%s) — skipping (fail-closed)",
-          sanitizeForLog(marker.name),
-          sanitizeForLog(detail)
-        );
+        this.gateFailure(marker.name, `failed verification (${detail})`);
         return;
       }
       console.log(
