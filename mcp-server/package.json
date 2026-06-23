@@ -71,7 +71,7 @@
     "express-rate-limit": "^8.5.2",
     "js-yaml": "^4.1.0",
     "prom-client": "^15.1.0",
-    "redis": "^4.7.0",
+    "redis": "^6.0.0",
     "ws": "^8.18.0",
     "zod": "^4.4.3"
   },
