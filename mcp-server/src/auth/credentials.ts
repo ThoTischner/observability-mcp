@@ -33,10 +33,21 @@
  *                  # tools list = no restriction). Unlisted keys see
  *                  # every registered tool — back-compat with the
  *                  # pre-Products world. See docs/products.md.
+ *   OMCP_KEY_TOOLS="agent=query_logs|get_service_health;ci=list_services"
+ *                  # optional per-key tool allow-list — same shape as
+ *                  # OMCP_KEY_SOURCES. When set, the credential's /mcp
+ *                  # tools/list (and dispatch) is scoped to exactly these
+ *                  # tool names. Composes with a bound Product by
+ *                  # INTERSECTION (most-restrictive wins). Unlisted keys
+ *                  # see every registered tool — back-compat. This is the
+ *                  # per-credential, source-symmetric counterpart to the
+ *                  # Product bundle: scope one API key to a few tools
+ *                  # without authoring a Product. See docs/products.md
+ *                  # ("Per-credential tool allow-list").
  *
- * Rich role-based access control (tools/services/lookback/read-only, the
- * full governance object) is intentionally NOT here — this is only the
- * authentication + identity + coarse source-scoping primitive.
+ * Rich role-based access control (services/lookback/read-only, the full
+ * governance object) is intentionally NOT here — this is the authentication
+ * + identity + coarse source/tool-scoping primitive.
  */
 
 import { parseKeyTenants } from "../tenancy/context.js";
@@ -61,6 +72,11 @@ export interface Credential {
    *  is filtered to the Product's `tools` allow-list. Resolved against
    *  the credential's tenant so cross-tenant Products don't leak. */
   productId?: string;
+  /** Per-credential tool allow-list (OMCP_KEY_TOOLS). When set, /mcp
+   *  tools/list and dispatch are scoped to these tool names; composes
+   *  with a bound Product by intersection (most-restrictive wins).
+   *  Undefined → no per-credential tool restriction (back-compat). */
+  allowedTools?: string[];
 }
 
 function parseKeySources(raw: string | undefined): Map<string, string[]> {
@@ -107,6 +123,8 @@ export function loadCredentials(env: NodeJS.ProcessEnv = process.env): Credentia
   const rawQueryNames = parseBypassSet(env.OMCP_KEY_RAW_QUERY);
   const keyTenants = parseKeyTenants(env.OMCP_KEY_TENANTS);
   const keyProducts = parseKeyProducts(env.OMCP_KEY_PRODUCTS);
+  // OMCP_KEY_TOOLS shares the OMCP_KEY_SOURCES grammar (`name=a|b;name2=c`).
+  const keyTools = parseKeySources(env.OMCP_KEY_TOOLS);
   const creds: Credential[] = [];
   for (const part of raw.split(",").map((s) => s.trim()).filter(Boolean)) {
     const idx = part.indexOf(":");
@@ -121,6 +139,7 @@ export function loadCredentials(env: NodeJS.ProcessEnv = process.env): Credentia
       allowRawQuery: rawQueryNames.has(name) || undefined,
       tenant: keyTenants.get(name) || undefined,
       productId: keyProducts.get(name) || undefined,
+      allowedTools: keyTools.get(name),
     });
   }
   return creds;

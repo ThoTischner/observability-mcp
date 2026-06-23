@@ -43,6 +43,12 @@ export interface RequestContext {
    *  Anonymous + Product-less credentials leave this unset and see
    *  every registered tool. */
   allowedTools?: string[];
+  /** Per-credential tool allow-list (OMCP_KEY_TOOLS) — a SEPARATE axis from
+   *  the Product `allowedTools`. The registration gate requires a tool to
+   *  pass BOTH (each via allowsTool, undefined = no restriction), so the two
+   *  compose by intersection without overloading the empty-list semantics.
+   *  Unset for anonymous + unscoped credentials. */
+  credentialTools?: string[];
   /** Correlates all tool calls within one transport request/session. */
   correlationId: string;
 }
@@ -69,7 +75,7 @@ export function defaultContext(opts: { allowBypassRedaction?: boolean } = {}): R
 export function principalContext(
   principalId: string,
   allowedSources?: string[],
-  opts: { allowBypassRedaction?: boolean; allowRawQuery?: boolean; tenant?: string; allowedTools?: string[] } = {},
+  opts: { allowBypassRedaction?: boolean; allowRawQuery?: boolean; tenant?: string; allowedTools?: string[]; credentialTools?: string[] } = {},
 ): RequestContext {
   return {
     principalId,
@@ -79,6 +85,7 @@ export function principalContext(
     allowRawQuery: opts.allowRawQuery || undefined,
     tenant: normaliseTenant(opts.tenant),
     allowedTools: opts.allowedTools && opts.allowedTools.length > 0 ? opts.allowedTools : undefined,
+    credentialTools: opts.credentialTools && opts.credentialTools.length > 0 ? opts.credentialTools : undefined,
     correlationId: randomUUID(),
   };
 }
@@ -117,4 +124,24 @@ export function sessionContext(
 export function allowsTool(allowedTools: string[] | undefined, toolName: string): boolean {
   if (!allowedTools || allowedTools.length === 0) return true;
   return allowedTools.includes(toolName);
+}
+
+/** Combine two tool allow-lists into the effective (most-restrictive) one.
+ *  Both lists NARROW access, so the result is their intersection:
+ *    - either side undefined → the other side wins (an absent list means
+ *      "no restriction", so it can't tighten the other).
+ *    - both set → only tools present in BOTH survive (so a per-credential
+ *      OMCP_KEY_TOOLS list and a bound Product's `tools` list compose
+ *      without one silently widening the other; an empty intersection
+ *      means the credential can call nothing through that binding).
+ *  Used to fold the per-credential allow-list together with the Product
+ *  allow-list at request entry. */
+export function intersectAllowed(
+  a: string[] | undefined,
+  b: string[] | undefined,
+): string[] | undefined {
+  if (!a) return b;
+  if (!b) return a;
+  const bSet = new Set(b);
+  return a.filter((t) => bSet.has(t));
 }

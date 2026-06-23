@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { allowsTool, defaultContext, principalContext } from "./context.js";
+import { allowsTool, intersectAllowed, defaultContext, principalContext } from "./context.js";
 
 test("allowsTool — undefined allow-list = no Product binding = every tool allowed", () => {
   assert.equal(allowsTool(undefined, "list_sources"), true);
@@ -18,6 +18,50 @@ test("allowsTool — non-empty allow-list gates by exact match", () => {
   assert.equal(allowsTool(allow, "query_metrics"), true);
   assert.equal(allowsTool(allow, "query_logs"), false);
   assert.equal(allowsTool(allow, "get_topology"), false);
+});
+
+// intersectAllowed folds a per-credential list (OMCP_KEY_TOOLS) with a Product
+// list — most-restrictive wins.
+test("intersectAllowed — either side undefined returns the other (no widening)", () => {
+  assert.equal(intersectAllowed(undefined, undefined), undefined);
+  assert.deepEqual(intersectAllowed(["a", "b"], undefined), ["a", "b"]);
+  assert.deepEqual(intersectAllowed(undefined, ["a", "b"]), ["a", "b"]);
+});
+
+test("intersectAllowed — both set → intersection only", () => {
+  assert.deepEqual(intersectAllowed(["query_logs", "list_services"], ["query_logs", "get_topology"]), ["query_logs"]);
+  // Disjoint → empty list: the credential can call nothing through that binding.
+  assert.deepEqual(intersectAllowed(["query_logs"], ["get_topology"]), []);
+  // Order follows the first (credential) list.
+  assert.deepEqual(intersectAllowed(["b", "a"], ["a", "b"]), ["b", "a"]);
+});
+
+// The registration gate ANDs two independent allowsTool axes (Product +
+// per-credential OMCP_KEY_TOOLS). This is what makes disjoint lists deny
+// everything WITHOUT routing through an overloaded empty intersection — an
+// empty `[]` would be read by allowsTool as "allow all", which is why the two
+// axes are kept separate rather than pre-intersected into one list.
+function passesGate(productTools: string[] | undefined, credTools: string[] | undefined, name: string): boolean {
+  return allowsTool(productTools, name) && allowsTool(credTools, name);
+}
+
+test("two-axis gate — disjoint Product and credential lists deny every tool", () => {
+  // Product allows get_topology; credential allows only query_logs → nothing passes.
+  assert.equal(passesGate(["get_topology"], ["query_logs"], "query_logs"), false);
+  assert.equal(passesGate(["get_topology"], ["query_logs"], "get_topology"), false);
+});
+
+test("two-axis gate — credential list narrows within an unrestricted Product axis", () => {
+  assert.equal(passesGate(undefined, ["query_logs"], "query_logs"), true);
+  assert.equal(passesGate(undefined, ["query_logs"], "get_topology"), false);
+});
+
+test("two-axis gate — overlapping lists allow only the overlap", () => {
+  const product = ["query_logs", "get_topology", "list_services"];
+  const cred = ["query_logs", "list_services"];
+  assert.equal(passesGate(product, cred, "query_logs"), true);
+  assert.equal(passesGate(product, cred, "list_services"), true);
+  assert.equal(passesGate(product, cred, "get_topology"), false); // in Product, not in credential
 });
 
 test("allowsTool — case-sensitive (matches MCP spec)", () => {

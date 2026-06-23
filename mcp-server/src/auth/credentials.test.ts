@@ -20,7 +20,7 @@ describe("single-tenant auth primitive", () => {
     assert.equal(creds.length, 2);
     assert.deepEqual(
       creds[0],
-      { name: "ci", token: "tok_abc", allowedSources: undefined, bypassRedaction: undefined, allowRawQuery: undefined, tenant: undefined, productId: undefined }
+      { name: "ci", token: "tok_abc", allowedSources: undefined, bypassRedaction: undefined, allowRawQuery: undefined, tenant: undefined, productId: undefined, allowedTools: undefined }
     );
     assert.equal(creds[1].name, "key");
     assert.equal(creds[1].token, "tok_bare");
@@ -33,6 +33,17 @@ describe("single-tenant auth primitive", () => {
     });
     assert.deepEqual(creds[0].allowedSources, ["prom-prod", "loki-prod"]);
     assert.deepEqual(creds[1].allowedSources, ["prom-staging"]);
+  });
+
+  it("parses per-key tool allow-list (OMCP_KEY_TOOLS)", () => {
+    const creds = loadCredentials({
+      OMCP_API_KEYS: "agent:tok1,ci:tok2,full:tok3",
+      OMCP_KEY_TOOLS: "agent=query_logs|get_service_health; ci=list_services",
+    });
+    assert.deepEqual(creds.find((c) => c.name === "agent")?.allowedTools, ["query_logs", "get_service_health"]);
+    assert.deepEqual(creds.find((c) => c.name === "ci")?.allowedTools, ["list_services"]);
+    // Unlisted key → undefined (no restriction, back-compat), not [].
+    assert.equal(creds.find((c) => c.name === "full")?.allowedTools, undefined);
   });
 
   it("parses OMCP_KEY_BYPASS_REDACTION → flags only the listed names", () => {
