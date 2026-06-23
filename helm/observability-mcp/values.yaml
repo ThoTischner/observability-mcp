@@ -345,6 +345,13 @@ plugins:
   # for any cluster that did not opt into signed plugin distribution.
   verify:
     enabled: true
+    # Strict mode (PLUGIN_REQUIRE_SIGNATURE). OFF by default. When true, a
+    # present-but-unverifiable filesystem plugin (missing manifest / missing
+    # or invalid signature / integrity mismatch) or a missing trust root is a
+    # HARD error that aborts pod startup instead of a logged skip — so a
+    # high-assurance cluster never silently runs a reduced connector set.
+    # Implies enabled=true. Pair with a trust root below.
+    requireSignature: false
     # PEM public key used as the trust root. Provide it inline (rendered
     # into a Secret) OR point existingSecret at a Secret that has the
     # key `trust-root.pem`.
