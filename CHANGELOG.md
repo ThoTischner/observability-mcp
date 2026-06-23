@@ -6,6 +6,31 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.8.3] — 2026-06-23
+
+Bug-fix release. No API or configuration changes.
+
+### Fixed
+
+- **`enrich_ips` (RDAP): rate-limited lookups no longer masquerade as true
+  negatives (#523).** A burst of lookups gets throttled by the upstream RIRs;
+  previously every throttled lookup returned `found:false` and was cached as a
+  negative — indistinguishable from "this IP is not in any registry", which made
+  the documented triage recipe silently unreliable at realistic batch sizes.
+  RDAP lookups now resolve to an explicit outcome: `ok`, `not_found` (a genuine,
+  cacheable negative — HTTP 404 or a 2xx with no enrichment), or `transient`
+  (throttle/429-403, 5xx, timeout, network error). Transient failures are
+  **never cached** and are retried with bounded exponential backoff (honoring a
+  capped `Retry-After`). A throttled IP is now reported as `found:false` +
+  `transient:true` + `error` (e.g. `"rate_limited"`), counted in
+  `summary.transient` separately from `summary.unmatched`, with a top-level
+  `note` — so an agent can retry rather than treat the IP as unknown/suspicious.
+
+## [3.8.2] — 2026-06-23
+
+Maintenance release. Dependency bumps only (OpenTelemetry SDK and dev
+dependencies via Dependabot); no API, behavior, or configuration changes.
+
 ## [3.8.1] — 2026-06-18
 
 Security patch release. Dependency-only — no API, behavior, or configuration
