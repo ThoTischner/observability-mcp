@@ -36,6 +36,12 @@ export interface IpEnrichmentResult {
   /** Which backend produced the hit — "dataset" (offline CSV) or "rdap"
    *  (online fallback). Absent when not found. */
   via?: "dataset" | "rdap";
+  /** True when `found:false` is NOT a confirmed negative but an RDAP upstream
+   *  failure (throttle/timeout/5xx) — the address may resolve on a later retry.
+   *  Issue #523: never conflate a rate-limit with "not in any registry". */
+  transient?: boolean;
+  /** Machine-readable reason when `transient` — e.g. "rate_limited". */
+  error?: string;
 }
 
 export async function enrichIpsHandler(
@@ -68,6 +74,7 @@ export async function enrichIpsHandler(
   let invalid = 0;
   let matched = 0;
   let viaRdap = 0;
+  let transient = 0;
   for (const ip of ips) {
     if (typeof ip !== "string" || !isValidIp(ip)) {
       invalid++;
@@ -83,16 +90,27 @@ export async function enrichIpsHandler(
       continue;
     }
     if (rdap) {
-      const r = await rdap.lookup(ip);
-      if (r) {
+      const r = await rdap.resolve(ip);
+      if (r.status === "ok") {
         matched++;
         viaRdap++;
-        results.push({ ip, found: true, via: "rdap", ...r });
+        results.push({ ip, found: true, via: "rdap", ...r.value });
+        continue;
+      }
+      if (r.status === "transient") {
+        // NOT a confirmed negative — an RDAP throttle/timeout/5xx. Mark it so an
+        // agent doesn't treat the IP as "unknown" and can retry later (#523).
+        transient++;
+        results.push({ ip, found: false, transient: true, error: r.reason });
         continue;
       }
     }
     results.push({ ip, found: false });
   }
+
+  // unmatched = confirmed negatives only; transient failures are reported
+  // separately so the all-clear can't silently absorb a wall of rate-limits.
+  const unmatched = ips.length - matched - invalid - transient;
 
   return {
     content: [
@@ -104,12 +122,20 @@ export async function enrichIpsHandler(
             summary: {
               total: ips.length,
               matched,
-              unmatched: ips.length - matched - invalid,
+              unmatched,
               invalid,
-              ...(rdap ? { viaRdap } : {}),
+              ...(rdap ? { viaRdap, transient } : {}),
             },
             datasetSize: dataset?.size ?? 0,
             ...(rdap ? { rdapEnabled: true } : {}),
+            ...(transient > 0
+              ? {
+                  note:
+                    `${transient} RDAP lookup(s) failed transiently (e.g. rate-limited by the ` +
+                    `registry) and are marked transient:true — these are NOT confirmed negatives. ` +
+                    `Retry them later or in a smaller batch; results are cached so repeats are cheap.`,
+                }
+              : {}),
           },
           null,
           2,

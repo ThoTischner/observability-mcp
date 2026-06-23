@@ -64,13 +64,23 @@ describe("enrichIpsHandler (R6, issue #415 Gap B)", () => {
 });
 
 describe("enrichIpsHandler — optional RDAP fallback (issue #477)", () => {
-  // Minimal RdapResolver stub: returns a fixed hit for one IP, null otherwise,
-  // and records which IPs it was asked about (to prove CSV-first).
-  function rdapStub(hit: Record<string, { country?: string; org?: string }>) {
+  // Minimal RdapResolver stub: returns a fixed hit for one IP, a true negative
+  // otherwise, and records which IPs it was asked about (to prove CSV-first).
+  // `transient` IPs resolve to a transient outcome (e.g. rate-limited) — #523.
+  function rdapStub(
+    hit: Record<string, { country?: string; org?: string }>,
+    transient: Record<string, "rate_limited" | "timeout" | "upstream_error" | "network_error"> = {},
+  ) {
     const asked: string[] = [];
     return {
       asked,
-      resolver: { lookup: async (ip: string) => { asked.push(ip); return hit[ip] ?? null; } } as any,
+      resolver: {
+        resolve: async (ip: string) => {
+          asked.push(ip);
+          if (transient[ip]) return { status: "transient", reason: transient[ip] };
+          return hit[ip] ? { status: "ok", value: hit[ip] } : { status: "not_found" };
+        },
+      } as any,
     };
   }
 
@@ -109,5 +119,38 @@ describe("enrichIpsHandler — optional RDAP fallback (issue #477)", () => {
     const out = parse(await enrichIpsHandler(null, { ips: ["8.8.8.8"] }));
     assert.match(out.error, /not configured/i);
     assert.match(out.error, /OMCP_IP_ENRICH_RDAP/);
+  });
+
+  // Issue #523: a rate-limited lookup must NOT masquerade as a confirmed negative.
+  it("marks a rate-limited lookup transient (not a confirmed negative)", async () => {
+    const { resolver } = rdapStub(
+      { "8.8.8.8": { country: "US", org: "Google LLC" } },
+      { "203.0.113.10": "rate_limited" },
+    );
+    const out = parse(await enrichIpsHandler(null, { ips: ["8.8.8.8", "203.0.113.10"] }, undefined, resolver));
+
+    const hit = out.results.find((r: any) => r.ip === "8.8.8.8");
+    assert.equal(hit.found, true);
+
+    const throttled = out.results.find((r: any) => r.ip === "203.0.113.10");
+    assert.equal(throttled.found, false);
+    assert.equal(throttled.transient, true);
+    assert.equal(throttled.error, "rate_limited");
+
+    // The throttled IP is counted as transient, NOT folded into `unmatched`.
+    assert.equal(out.summary.matched, 1);
+    assert.equal(out.summary.transient, 1);
+    assert.equal(out.summary.unmatched, 0);
+    assert.match(out.note, /NOT confirmed negatives/i);
+  });
+
+  it("a genuine miss stays a clean negative — no transient marker, no note", async () => {
+    const { resolver } = rdapStub({ "8.8.8.8": { country: "US", org: "Google LLC" } });
+    const out = parse(await enrichIpsHandler(null, { ips: ["8.8.8.8", "203.0.113.9"] }, undefined, resolver));
+    const miss = out.results.find((r: any) => r.ip === "203.0.113.9");
+    assert.equal(miss.found, false);
+    assert.equal(miss.transient, undefined);
+    assert.equal(out.summary.transient, 0);
+    assert.equal(out.note, undefined);
   });
 });
