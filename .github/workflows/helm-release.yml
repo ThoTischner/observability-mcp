@@ -28,12 +28,32 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  # A release commit fires this workflow TWICE: the push to main touches
+  # helm/**, and tag-on-release then pushes the v* tag (path filters don't
+  # apply to tag pushes). Both runs call `cr index`, which pulls, rewrites
+  # and pushes gh-pages/index.yaml; run in parallel, the loser aborts with
+  # "Your local changes to index.yaml would be overwritten by merge".
+  # Serialized, the second run sees the first one's commit and is a
+  # skip_existing no-op.
+  #
+  # Deliberately NOT hub-pages.yml's shared `gh-pages-write` group: GitHub
+  # holds only one *pending* run per group, so a third queued run silently
+  # cancels the pending one. Own group ⇒ at most 2 runs (one active, one
+  # pending) ⇒ nothing is ever dropped. Nothing is lost by not sharing:
+  # hub-pages only ever stages hub/ + .nojekyll, never index.yaml, so its
+  # commits cannot make `cr index`'s merge touch the file cr has dirty.
+  group: helm-release-gh-pages
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pages: write
+      # Dispatching docs.yml (the Pages refresh, last step) needs this.
+      actions: write
       # Required for the OCI publish step: helm push goes to ghcr.io,
       # cosign keyless attest pushes the signature into the same OCI
       # registry alongside the chart artifact.
@@ -118,6 +138,7 @@ jobs:
           wc -l /tmp/rendered.yaml
 
       - name: Run chart-releaser
+        id: cr
         uses: helm/chart-releaser-action@cae68fefc6b5f367a0275617c9f83181ba54714f # v1.7.0
         with:
           charts_dir: helm
@@ -187,6 +208,27 @@ jobs:
             echo "signing ${repo_only}@${digest}"
             cosign sign --yes "${repo_only}@${digest}"
           done
+      - name: Refresh the Pages site (publish the new chart to the helm repo URL)
+        # chart-releaser pushes index.yaml + the .tgz to the gh-pages
+        # BRANCH, but Pages no longer serves that branch — it serves the
+        # artifact docs.yml builds, which mirrors the gh-pages files in at
+        # build time. So a chart is only reachable via
+        #   helm repo add observability-mcp https://thotischner.github.io/observability-mcp
+        # once docs.yml has run AFTER this workflow. Without this dispatch
+        # the published index goes stale until the next unrelated docs
+        # change — which is exactly how 2.9.0/2.9.1/2.9.2 ended up on the
+        # branch but invisible to `helm repo update`.
+        #
+        # always(): by the time the OCI publish + cosign steps above run, cr
+        # has ALREADY pushed to gh-pages. Letting a flaky Fulcio/GHCR step
+        # abort the job before this dispatch would recreate the exact bug
+        # this step exists to prevent. Guarded by changed_charts (empty when
+        # cr released nothing) so the no-op tag run doesn't rebuild the site.
+        if: always() && steps.cr.outputs.changed_charts != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run docs.yml --ref main -R "$GITHUB_REPOSITORY"
+
       - name: Log out of GHCR
         if: always()
         run: helm registry logout ghcr.io || true
