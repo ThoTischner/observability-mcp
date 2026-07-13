@@ -29,6 +29,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # Dispatching docs.yml (the Pages refresh, last step) needs this.
+      actions: write
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
@@ -51,6 +53,7 @@ jobs:
           cp hub/catalog/*.json /tmp/site/catalog/
 
       - name: Publish to gh-pages/hub (rebase-safe)
+        id: publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -81,10 +84,26 @@ jobs:
           # our hub/ is staged, so a rebase merges cleanly. Retry a few
           # times for the rare concurrent push.
           for i in 1 2 3 4 5; do
-            if git push origin gh-pages; then echo "pushed"; exit 0; fi
+            if git push origin gh-pages; then
+              echo "pushed"
+              echo "pushed=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
             echo "push rejected (attempt $i) — rebasing"
             git fetch origin gh-pages
             git rebase origin/gh-pages
           done
           echo "::error::could not push hub site after 5 attempts"
           exit 1
+
+      - name: Refresh the Pages site (serve the new hub catalog)
+        # Pages serves the artifact docs.yml builds, not the gh-pages
+        # branch — docs.yml mirrors hub/ in at build time. Without this
+        # dispatch the catalog sits on the branch but /hub/index.json keeps
+        # serving the previous snapshot until some unrelated docs change.
+        # Only when we actually pushed — the "unchanged" path exits the step
+        # successfully and must not rebuild the site for nothing.
+        if: steps.publish.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run docs.yml --ref main -R "$GITHUB_REPOSITORY"
