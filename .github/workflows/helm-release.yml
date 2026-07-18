@@ -24,6 +24,11 @@ on:
       - '.github/workflows/helm-release.yml'
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      verify_version:
+        description: "Verify-only: poll the published index for this chart version, publish nothing. Empty = normal publish run."
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -31,6 +36,8 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    # Verify-only dispatches exercise the check below without republishing.
+    if: ${{ github.event.inputs.verify_version == '' }}
     concurrency:
       # A release commit fires this workflow TWICE: the push to main touches
       # helm/**, and tag-on-release then pushes the v* tag (path filters don't
@@ -266,7 +273,9 @@ jobs:
     # cancelled release would still burn ~21min polling — and re-cancelling
     # would fight the same condition. A FAILED release still verifies: cr
     # pushes to gh-pages before the OCI/cosign steps that can flake.
-    if: ${{ !cancelled() && needs.release.outputs.changed_charts != '' }}
+    # !cancelled() also lets this run when `release` was SKIPPED, which is
+    # exactly the verify-only dispatch path.
+    if: ${{ !cancelled() && (github.event.inputs.verify_version != '' || needs.release.outputs.changed_charts != '') }}
     runs-on: ubuntu-latest
     # Safety net above the ~21min the poll can legitimately take.
     timeout-minutes: 30
@@ -287,7 +296,8 @@ jobs:
           # Single scalar: helm/ holds exactly one chart today. If a second
           # chart is ever added to charts_dir, this verifies only one of the
           # N versions released — revisit then.
-          CHART_VERSION: ${{ needs.release.outputs.chart_version }}
+          CHART_VERSION: ${{ github.event.inputs.verify_version != '' && github.event.inputs.verify_version || needs.release.outputs.chart_version }}
+          VERIFY_ONLY: ${{ github.event.inputs.verify_version }}
         run: |
           set -uo pipefail
           url="https://thotischner.github.io/observability-mcp/index.yaml"
@@ -304,8 +314,12 @@ jobs:
           # Give docs.yml time to build and deploy BEFORE the first request.
           # Polling immediately would only pull the pre-release index into the
           # edge cache and then wait out its own 600s TTL.
-          echo "waiting 3min for the docs.yml build + Pages deploy before polling"
-          sleep 180
+          if [ -n "${VERIFY_ONLY:-}" ]; then
+            echo "verify-only run — nothing was just deployed, polling immediately"
+          else
+            echo "waiting 3min for the docs.yml build + Pages deploy before polling"
+            sleep 180
+          fi
           deadline=$(( SECONDS + 1080 ))
           attempt=0
           while [ "$SECONDS" -lt "$deadline" ]; do
