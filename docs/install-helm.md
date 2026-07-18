@@ -132,12 +132,9 @@ slate.
   carries both the MkDocs docs AND the Helm repo index at the
   same URL. If your client gets a 404, something's wrong with the
   docs-publish step — open an issue.
-- **`helm repo update` doesn't show the newest chart** — run
-  `helm repo update` first; the index is cached locally. If the version
-  is still missing, the Pages site is serving a stale index (it is
-  rebuilt from the chart repo on each release). Check the
-  [GitHub Releases](https://github.com/ThoTischner/observability-mcp/releases)
-  page — if the `observability-mcp-<chart-version>` release exists but
-  `helm search repo` can't see it, open an issue. Meanwhile you can
-  install straight from OCI:
-  `helm install observability-mcp oci://ghcr.io/thotischner/charts/observability-mcp --version <chart-version>`.
+- **`helm search repo` doesn't show the newest chart** — run
+  `helm repo update` first; Helm caches the index locally. In the first
+  few minutes after a release the published index can also still be
+  propagating, and no amount of `helm repo update` will help until it
+  has — [install from OCI](#install-from-oci-alternative) in the
+  meantime, which is served straight from the registry.

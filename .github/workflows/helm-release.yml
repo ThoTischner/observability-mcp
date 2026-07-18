@@ -28,27 +28,35 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  # A release commit fires this workflow TWICE: the push to main touches
-  # helm/**, and tag-on-release then pushes the v* tag (path filters don't
-  # apply to tag pushes). Both runs call `cr index`, which pulls, rewrites
-  # and pushes gh-pages/index.yaml; run in parallel, the loser aborts with
-  # "Your local changes to index.yaml would be overwritten by merge".
-  # Serialized, the second run sees the first one's commit and is a
-  # skip_existing no-op.
-  #
-  # Deliberately NOT hub-pages.yml's shared `gh-pages-write` group: GitHub
-  # holds only one *pending* run per group, so a third queued run silently
-  # cancels the pending one. Own group ⇒ at most 2 runs (one active, one
-  # pending) ⇒ nothing is ever dropped. Nothing is lost by not sharing:
-  # hub-pages only ever stages hub/ + .nojekyll, never index.yaml, so its
-  # commits cannot make `cr index`'s merge touch the file cr has dirty.
-  group: helm-release-gh-pages
-  cancel-in-progress: false
-
 jobs:
   release:
     runs-on: ubuntu-latest
+    concurrency:
+      # A release commit fires this workflow TWICE: the push to main touches
+      # helm/**, and tag-on-release then pushes the v* tag (path filters don't
+      # apply to tag pushes). Both runs call `cr index`, which pulls, rewrites
+      # and pushes gh-pages/index.yaml; run in parallel, the loser aborts with
+      # "Your local changes to index.yaml would be overwritten by merge".
+      # Serialized, the second run sees the first one's commit and is a
+      # skip_existing no-op.
+      #
+      # Scoped to THIS job, not the workflow: only `cr index` needs
+      # serializing, and the verify-published job below polls for ~18min.
+      # A workflow-level group would hold the lock for that whole time,
+      # widening the window in which a third run silently cancels the
+      # pending one.
+      #
+      # Deliberately NOT hub-pages.yml's shared `gh-pages-write` group: GitHub
+      # holds only one *pending* run per group, so a third queued run silently
+      # cancels the pending one. Own group ⇒ at most 2 runs (one active, one
+      # pending) ⇒ nothing is ever dropped. Nothing is lost by not sharing:
+      # hub-pages only ever stages hub/ + .nojekyll, never index.yaml, so its
+      # commits cannot make `cr index`'s merge touch the file cr has dirty.
+      group: helm-release-gh-pages
+      cancel-in-progress: false
+    outputs:
+      changed_charts: ${{ steps.cr.outputs.changed_charts }}
+      chart_version: ${{ steps.cr.outputs.chart_version }}
     permissions:
       contents: write
       pages: write
@@ -224,7 +232,11 @@ jobs:
         # abort the job before this dispatch would recreate the exact bug
         # this step exists to prevent. Guarded by changed_charts (empty when
         # cr released nothing) so the no-op tag run doesn't rebuild the site.
-        if: always() && steps.cr.outputs.changed_charts != ''
+        # !cancelled() rather than always(): always() is true even on a
+        # cancelled run, so an operator aborting a release could not stop
+        # the follow-up work. Failure (e.g. flaky Fulcio after cr pushed)
+        # still passes, which is the case that matters.
+        if: ${{ !cancelled() && steps.cr.outputs.changed_charts != '' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh workflow run docs.yml --ref main -R "$GITHUB_REPOSITORY"
@@ -239,3 +251,82 @@ jobs:
           shred -u /tmp/helm-passphrase /tmp/secring.gpg /tmp/gpgerr /tmp/cr.yaml 2>/dev/null || \
             rm -f /tmp/helm-passphrase /tmp/secring.gpg /tmp/gpgerr /tmp/cr.yaml
           rm -rf ~/.gnupg
+
+  # Separate job on purpose: the release job holds GPG signing material on
+  # disk until its "Wipe signing material" step, and this check polls for up
+  # to 18 minutes. Keeping it here lets the key be shredded immediately
+  # instead of lingering for the whole poll.
+  verify-published:
+    name: Verify the chart is reachable from the helm repo URL
+    needs: release
+    # always(): cr pushes to gh-pages BEFORE the OCI/cosign steps, so a flaky
+    # Fulcio can fail the release job with the chart already published — that
+    # is precisely a case worth verifying, not skipping.
+    # !cancelled(), not always(): always() stays true on cancellation, so a
+    # cancelled release would still burn ~21min polling — and re-cancelling
+    # would fight the same condition. A FAILED release still verifies: cr
+    # pushes to gh-pages before the OCI/cosign steps that can flake.
+    if: ${{ !cancelled() && needs.release.outputs.changed_charts != '' }}
+    runs-on: ubuntu-latest
+    # Safety net above the ~21min the poll can legitimately take.
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Poll the published index until it serves the new chart
+        # `gh workflow run docs.yml` in the release job is fire-and-forget, so
+        # the dispatch proves nothing on its own. Close the loop against the
+        # surface users actually consume: if `helm repo add` cannot see the
+        # chart, the release did not land, and CI must be what notices.
+        #
+        # Deliberately an end-to-end check of the published URL rather than
+        # "did docs.yml exit 0" — the failure that shipped 2.9.0/2.9.1/2.9.2
+        # into the void was a GREEN pipeline whose artifact never reached the
+        # Pages site.
+        env:
+          # Single scalar: helm/ holds exactly one chart today. If a second
+          # chart is ever added to charts_dir, this verifies only one of the
+          # N versions released — revisit then.
+          CHART_VERSION: ${{ needs.release.outputs.chart_version }}
+        run: |
+          set -uo pipefail
+          url="https://thotischner.github.io/observability-mcp/index.yaml"
+          # BUDGET IS LOAD-BEARING — do not shorten below the CDN max-age.
+          # Pages serves index.yaml through Fastly with `max-age=600`, and the
+          # edge honours NEITHER a `Cache-Control: no-cache` request header NOR
+          # a cache-busting query string (verified: `?cb=<random>` still
+          # returns x-cache: HIT with an unchanged age). There is no way to
+          # force a fresh read, so the only reliable signal is outlasting one
+          # full cache generation: 10min max-age + the mkdocs build and Pages
+          # deploy ⇒ poll ~18min. A shorter budget does not fail faster, it
+          # fails WRONGLY on a release that published perfectly.
+          #
+          # Give docs.yml time to build and deploy BEFORE the first request.
+          # Polling immediately would only pull the pre-release index into the
+          # edge cache and then wait out its own 600s TTL.
+          echo "waiting 3min for the docs.yml build + Pages deploy before polling"
+          sleep 180
+          deadline=$(( SECONDS + 1080 ))
+          attempt=0
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            attempt=$(( attempt + 1 ))
+            # Fetch to a file, then grep the file — never `curl | grep -q`.
+            # A short-circuiting reader can hand the writer an EPIPE, which
+            # under `set -o pipefail` would surface as a failed check on a
+            # successful match. Not observed on this runner, but the whole
+            # failure class is avoidable for free. It also separates "fetch
+            # failed" from "published but not served yet".
+            if curl -fsSL --max-time 30 "$url" -o /tmp/published-index.yaml 2>/dev/null; then
+              if grep -qE "^[[:space:]]+version: ${CHART_VERSION}[[:space:]]*$" /tmp/published-index.yaml; then
+                echo "::notice::chart ${CHART_VERSION} is live at ${url}"
+                exit 0
+              fi
+              age="$(curl -sfI --max-time 15 "$url" 2>/dev/null | awk 'tolower($1)=="age:"{print $2}')"
+              echo "attempt ${attempt}: ${CHART_VERSION} not served yet (cached response age ${age:-unknown}s) — waiting"
+            else
+              echo "attempt ${attempt}: could not fetch ${url} — waiting"
+            fi
+            sleep 20
+          done
+          echo "::error::Chart ${CHART_VERSION} reached gh-pages but is NOT served at ${url} after ~21min (3min settle + 18min polling), so 'helm repo add' users cannot install it. Check the docs.yml run (it mirrors index.yaml into the Pages artifact). Manual unblock: gh workflow run docs.yml --ref main"
+          exit 1
