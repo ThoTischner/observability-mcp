@@ -342,5 +342,5 @@ jobs:
             fi
             sleep 20
           done
-          echo "::error::Chart ${CHART_VERSION} reached gh-pages but is NOT served at ${url} after ~21min (3min settle + 18min polling), so 'helm repo add' users cannot install it. Check the docs.yml run (it mirrors index.yaml into the Pages artifact). Manual unblock: gh workflow run docs.yml --ref main"
+          echo "::error::Chart ${CHART_VERSION} reached gh-pages but is NOT served at ${url} after ${SECONDS}s of polling, so 'helm repo add' users cannot install it. Check the docs.yml run (it mirrors index.yaml into the Pages artifact). Manual unblock: gh workflow run docs.yml --ref main"
           exit 1
