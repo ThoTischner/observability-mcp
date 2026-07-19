@@ -4,11 +4,11 @@ description: Unified observability gateway for AI agents — one MCP server for 
 type: application
 
 # Chart version (this chart). Bumped on chart changes.
-version: 2.9.2
+version: 2.9.3
 
 # App version (the mcp-server image tag the chart defaults to).
 # Update with each release of the mcp-server image.
-appVersion: "3.9.2"
+appVersion: "3.9.3"
 
 home: https://github.com/ThoTischner/observability-mcp
 sources:
@@ -51,7 +51,7 @@ annotations:
     url: https://raw.githubusercontent.com/ThoTischner/observability-mcp/main/docs/helm-signing.pub.asc
   artifacthub.io/images: |
     - name: observability-mcp
-      image: ghcr.io/thotischner/observability-mcp:3.9.2
+      image: ghcr.io/thotischner/observability-mcp:3.9.3
       platforms:
         - linux/amd64
         - linux/arm64
