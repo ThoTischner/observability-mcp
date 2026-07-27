@@ -4,11 +4,11 @@ description: Unified observability gateway for AI agents — one MCP server for 
 type: application
 
 # Chart version (this chart). Bumped on chart changes.
-version: 2.9.3
+version: 2.9.4
 
 # App version (the mcp-server image tag the chart defaults to).
 # Update with each release of the mcp-server image.
-appVersion: "3.9.3"
+appVersion: "3.9.4"
 
 home: https://github.com/ThoTischner/observability-mcp
 sources:
@@ -51,14 +51,14 @@ annotations:
     url: https://raw.githubusercontent.com/ThoTischner/observability-mcp/main/docs/helm-signing.pub.asc
   artifacthub.io/images: |
     - name: observability-mcp
-      image: ghcr.io/thotischner/observability-mcp:3.9.3
+      image: ghcr.io/thotischner/observability-mcp:3.9.4
       platforms:
         - linux/amd64
         - linux/arm64
   artifacthub.io/changes: |
     - kind: changed
-      description: "appVersion → 3.9.0; chart points at the 3.9.0 image"
-    - kind: added
-      description: "Per-credential tool allow-list (OMCP_KEY_TOOLS) — scope an API key to specific MCP tools; composes with Products by intersection. Default-OFF."
-    - kind: added
-      description: "Strict plugin signatures (plugins.verify.requireSignature → PLUGIN_REQUIRE_SIGNATURE): a present-but-unverifiable filesystem plugin or missing trust root aborts startup instead of silently skipping. Default-OFF."
+      description: "appVersion → 3.9.4; chart points at the 3.9.4 image"
+    - kind: security
+      description: "Cleared transitive-dependency advisories: fast-uri 3.1.4, js-yaml 4.3.0, brace-expansion 5.0.8 (all high), plus hono/@hono/node-server/body-parser (moderate). No behaviour change."
+    - kind: fixed
+      description: "Helm chart publish verified end-to-end (post-publish reachability check); no more silently stale repo index (shipped in 3.9.3)."

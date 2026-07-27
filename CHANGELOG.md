@@ -6,6 +6,42 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.9.4] — 2026-07-27
+
+Security-maintenance release. No API or behaviour changes.
+
+### Security
+
+- **Cleared the transitive-dependency advisories that were failing `npm audit`
+  in CI.** Raised the override floors to the patched versions and regenerated
+  both lockfiles: `fast-uri` 3.1.2 → 3.1.4 (high), `js-yaml` → 4.3.0 (high;
+  also the direct dependency), `brace-expansion` → 5.0.8 (high), plus `hono`
+  → 4.12.32, `@hono/node-server` → 2.0.12 and `body-parser` → 2.3.0 (moderate).
+  Lockfiles are regenerated with a full install so the complete esbuild
+  platform matrix is retained (`npm ci` stays correct on arm64 / Apple Silicon).
+
+## [3.9.3] — 2026-07-19
+
+### Fixed
+
+- **Helm chart publish is reliable again.** The release workflow no longer
+  races itself on the `gh-pages` index, and a new post-publish job verifies the
+  chart is actually reachable from the `helm repo add` URL instead of shipping a
+  silently stale index. Dependency and CI-action maintenance bumps included.
+
+## [3.9.2] — 2026-07-12
+
+### Changed
+
+- Dependency maintenance — production and dev dependency group bumps; no
+  runtime behaviour change.
+
+## [3.9.1] — 2026-07-06
+
+### Changed
+
+- CI GitHub Actions maintenance bumps only; no shipped changes.
+
 ## [3.9.0] — 2026-06-23
 
 Feature release. Additive / non-breaking — both new controls are **default-OFF**,
