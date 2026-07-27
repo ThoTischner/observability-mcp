@@ -31,14 +31,17 @@ jobs:
         with:
           node-version: '20'
       - name: Ensure lockfile exists (${{ matrix.path }})
-        # Resolve-only npm pass (--package-lock-only --ignore-scripts)
-        # so the audit step downstream has something to audit even in
-        # the projects that don't commit a lockfile (agent +
-        # connectors are intentionally lockfile-less so consumers
-        # don't inherit our resolution). OpenSSF Scorecard flags the
-        # bare `npm install` invocation; the value of pinning is moot
-        # here because nothing is actually installed (no scripts
-        # run, no files placed in node_modules).
+        # Both mcp-server and examples/agent DO commit a package-lock.json
+        # (the agent's Dockerfile runs `npm ci`, which requires one), so this
+        # audits the exact tree we ship — the honest thing to do. This step
+        # is only a fallback for a hypothetical lockfile-less path: it
+        # resolve-only-generates one (--package-lock-only --ignore-scripts,
+        # nothing installed) so `npm audit` always has something to read.
+        # NOTE: it deliberately does NOT refresh an existing lockfile —
+        # auditing a freshly-reresolved tree would hide the drift between
+        # what we pinned and what's currently vulnerable. When audit fails on
+        # a committed lockfile, the fix is to bump the override floor to the
+        # patched version and regenerate the lockfile, not to auto-refresh here.
         working-directory: ./${{ matrix.path }}
         run: |
           if [ ! -f package-lock.json ]; then
