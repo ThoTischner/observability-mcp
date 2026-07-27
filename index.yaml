@@ -5,6 +5,64 @@ entries:
       artifacthub.io/category: monitoring-logging
       artifacthub.io/changes: |
         - kind: changed
+          description: "appVersion → 3.9.4; chart points at the 3.9.4 image"
+        - kind: security
+          description: "Cleared transitive-dependency advisories: fast-uri 3.1.4, js-yaml 4.3.0, brace-expansion 5.0.8 (all high), plus hono/@hono/node-server/body-parser (moderate). No behaviour change."
+        - kind: fixed
+          description: "Helm chart publish verified end-to-end (post-publish reachability check); no more silently stale repo index (shipped in 3.9.3)."
+      artifacthub.io/containsSecurityUpdates: "true"
+      artifacthub.io/images: |
+        - name: observability-mcp
+          image: ghcr.io/thotischner/observability-mcp:3.9.4
+          platforms:
+            - linux/amd64
+            - linux/arm64
+      artifacthub.io/license: Apache-2.0
+      artifacthub.io/links: |
+        - name: Source
+          url: https://github.com/ThoTischner/observability-mcp
+        - name: Container image
+          url: https://github.com/ThoTischner/observability-mcp/pkgs/container/observability-mcp
+        - name: npm
+          url: https://www.npmjs.com/package/@thotischner/observability-mcp
+        - name: Connector Hub
+          url: https://thotischner.github.io/observability-mcp/hub/
+      artifacthub.io/operator: "false"
+      artifacthub.io/prerelease: "false"
+      artifacthub.io/signKey: |
+        fingerprint: C240A58EC3B9D596C685FB0079826B0CB9A6329F
+        url: https://raw.githubusercontent.com/ThoTischner/observability-mcp/main/docs/helm-signing.pub.asc
+    apiVersion: v2
+    appVersion: 3.9.4
+    created: "2026-07-27T16:32:00.720394267Z"
+    description: Unified observability gateway for AI agents — one MCP server for
+      Prometheus, Loki, and any backend
+    digest: 813ec9ac1121ff5ced3b031c4af9e762bc720c3478748b1a4aa38a8f67f8c390
+    home: https://github.com/ThoTischner/observability-mcp
+    icon: https://raw.githubusercontent.com/ThoTischner/observability-mcp/main/docs/logo.svg
+    keywords:
+    - mcp
+    - model-context-protocol
+    - observability
+    - prometheus
+    - loki
+    - sre
+    - monitoring
+    - ai-agents
+    maintainers:
+    - name: ThoTischner
+      url: https://github.com/ThoTischner
+    name: observability-mcp
+    sources:
+    - https://github.com/ThoTischner/observability-mcp
+    type: application
+    urls:
+    - https://github.com/ThoTischner/observability-mcp/releases/download/observability-mcp-2.9.4/observability-mcp-2.9.4.tgz
+    version: 2.9.4
+  - annotations:
+      artifacthub.io/category: monitoring-logging
+      artifacthub.io/changes: |
+        - kind: changed
           description: "appVersion → 3.9.0; chart points at the 3.9.0 image"
         - kind: added
           description: "Per-credential tool allow-list (OMCP_KEY_TOOLS) — scope an API key to specific MCP tools; composes with Products by intersection. Default-OFF."
@@ -2702,4 +2760,4 @@ entries:
     urls:
     - https://github.com/ThoTischner/observability-mcp/releases/download/observability-mcp-0.3.0/observability-mcp-0.3.0.tgz
     version: 0.3.0
-generated: "2026-07-19T23:57:53.754647835Z"
+generated: "2026-07-27T16:32:00.720811076Z"
