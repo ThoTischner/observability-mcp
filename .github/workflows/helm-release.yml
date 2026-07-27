@@ -63,7 +63,9 @@ jobs:
       cancel-in-progress: false
     outputs:
       changed_charts: ${{ steps.cr.outputs.changed_charts }}
-      chart_version: ${{ steps.cr.outputs.chart_version }}
+      # Chart.yaml version (2.9.4), NOT chart-releaser's chart_version output
+      # (which is the app-version git tag like "v3.9.3") — see the resolve step.
+      chart_version: ${{ steps.chartver.outputs.version }}
     permissions:
       contents: write
       pages: write
@@ -80,6 +82,20 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+
+      - name: Resolve chart version from Chart.yaml
+        id: chartver
+        # THE source of truth for what ends up in index.yaml is Chart.yaml's
+        # `version:` (chart-releaser packages observability-mcp-<version>.tgz
+        # from it). Do NOT use chart-releaser-action's `chart_version` output —
+        # it returns the latest git TAG (the app version, e.g. "v3.9.3"), not
+        # the chart version (2.9.4), so verify-published polled the index for a
+        # string that never appears there and failed every release.
+        run: |
+          v="$(grep -E '^version:' helm/observability-mcp/Chart.yaml | head -1 | awk '{print $2}' | tr -d '"')"
+          [ -n "$v" ] || { echo "::error::could not read version from Chart.yaml"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "chart version = $v"
 
       - name: Configure Git
         run: |
