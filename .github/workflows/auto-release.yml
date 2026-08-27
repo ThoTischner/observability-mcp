@@ -91,6 +91,13 @@ jobs:
           # re-point it at the new tag too, otherwise the security report
           # keeps scanning the old (now superseded) image forever.
           sed -i -E "s|(image: ghcr\.io/thotischner/observability-mcp:)[^[:space:]]+|\1${appver}|" Chart.yaml
+          # The first artifacthub.io/changes entry restates the appVersion,
+          # so it goes stale the moment we bump without touching it — and a
+          # wrong changelog on ArtifactHub is worse than none. Rewrite it
+          # from the same ${appver} that drove the bumps above.
+          sed -i -E "s|appVersion → [0-9]+\.[0-9]+\.[0-9]+; chart points at the [0-9]+\.[0-9]+\.[0-9]+ image|appVersion → ${appver}; chart points at the ${appver} image|" Chart.yaml
+          grep -q "appVersion → ${appver}; chart points at the ${appver} image" Chart.yaml \
+            || { echo "artifacthub.io/changes appVersion line not updated — did its wording drift?"; exit 1; }
           echo "new_chart=${new_chart}" >> "$GITHUB_OUTPUT"
           echo "chart ${cur_chart} -> ${new_chart}, appVersion -> ${appver}"
           grep -E '^(version|appVersion):|image: ghcr\.io' Chart.yaml
