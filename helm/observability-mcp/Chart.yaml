@@ -4,7 +4,7 @@ description: Unified observability gateway for AI agents — one MCP server for 
 type: application
 
 # Chart version (this chart). Bumped on chart changes.
-version: 2.9.6
+version: 2.9.7
 
 # App version (the mcp-server image tag the chart defaults to).
 # Update with each release of the mcp-server image.
@@ -57,8 +57,6 @@ annotations:
         - linux/arm64
   artifacthub.io/changes: |
     - kind: changed
-      description: "appVersion → 3.9.4; chart points at the 3.9.4 image"
+      description: "appVersion → 3.9.6; chart points at the 3.9.6 image"
     - kind: security
-      description: "Cleared transitive-dependency advisories: fast-uri 3.1.4, js-yaml 4.3.0, brace-expansion 5.0.8 (all high), plus hono/@hono/node-server/body-parser (moderate). No behaviour change."
-    - kind: fixed
-      description: "Helm chart publish verified end-to-end (post-publish reachability check); no more silently stale repo index (shipped in 3.9.3)."
+      description: "Cleared all four open advisories by raising override floors: brace-expansion 5.0.9, fast-uri 3.1.5, js-yaml 4.3.2, hono 4.13.5. npm audit reports zero vulnerabilities at every severity, and the 3.9.6 image scans clean (no HIGH/CRITICAL). No behaviour change."
