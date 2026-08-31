@@ -4,11 +4,11 @@ description: Unified observability gateway for AI agents — one MCP server for 
 type: application
 
 # Chart version (this chart). Bumped on chart changes.
-version: 2.9.7
+version: 2.9.8
 
 # App version (the mcp-server image tag the chart defaults to).
 # Update with each release of the mcp-server image.
-appVersion: "3.9.6"
+appVersion: "3.9.7"
 
 home: https://github.com/ThoTischner/observability-mcp
 sources:
@@ -51,12 +51,12 @@ annotations:
     url: https://raw.githubusercontent.com/ThoTischner/observability-mcp/main/docs/helm-signing.pub.asc
   artifacthub.io/images: |
     - name: observability-mcp
-      image: ghcr.io/thotischner/observability-mcp:3.9.6
+      image: ghcr.io/thotischner/observability-mcp:3.9.7
       platforms:
         - linux/amd64
         - linux/arm64
   artifacthub.io/changes: |
     - kind: changed
-      description: "appVersion → 3.9.6; chart points at the 3.9.6 image"
+      description: "appVersion → 3.9.7; chart points at the 3.9.7 image"
     - kind: security
       description: "Cleared all four open advisories by raising override floors: brace-expansion 5.0.9, fast-uri 3.1.5, js-yaml 4.3.2, hono 4.13.5. npm audit reports zero vulnerabilities at every severity, and the 3.9.6 image scans clean (no HIGH/CRITICAL). No behaviour change."
