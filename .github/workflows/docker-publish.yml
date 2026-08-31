@@ -240,7 +240,7 @@ jobs:
       - name: Install Syft
         # Pin label corrected by reviewer: this SHA is the
         # anchore/sbom-action v0.20.4 release.
-        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        uses: anchore/sbom-action/download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
       - name: Generate per-platform SBOMs (Syft)
         # Per-platform pass: Syft handed a manifest-list digest defaults
         # to the host runner's platform (linux/amd64 on GitHub-hosted
