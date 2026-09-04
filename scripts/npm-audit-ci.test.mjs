@@ -143,7 +143,10 @@ test("persistent outage exits 2, distinct from a vulnerability, and says so", as
     assert.equal(r.status, 2, r.stdout + r.stderr);
     assert.match(r.stdout, /FAILED TO REACH the npm advisory endpoint after 3 attempts/);
     assert.match(r.stdout, /NOT a vulnerability in this repository/);
-    assert.match(r.stdout, /status\.npmjs\.org/);
+    // Fixed string, not a regex: an unanchored hostname pattern reads to
+    // CodeQL (js/regex/missing-regexp-anchor) like a URL check that any
+    // host could slip past. It is only an assertion on our own output.
+    assert.ok(r.stdout.includes("https://status.npmjs.org/"), r.stdout);
   });
 });
 
@@ -173,5 +176,54 @@ test("rejects an unknown --level instead of silently auditing at the wrong thres
     });
     assert.equal(r.status, 1);
     assert.match(r.stderr, /unknown --level 'spicy'/);
+  });
+});
+
+// --- Regression: the shape that broke this wrapper on its first CI run ---
+// npm reports an audit failure with the reason in the TOP-LEVEL "message"
+// and a completely blank error object. Reading error.* alone produced an
+// empty string and the useless line "unexpected failure — ", which then
+// exited 1 (a vulnerability!) on what was really an outage.
+
+const outageBlankErrorObject = {
+  stdout: JSON.stringify({
+    message: "503 Service Unavailable - POST https://registry.npmjs.org/-/npm/v1/security/audits/quick",
+    error: { summary: "", detail: "" },
+  }),
+  code: 1,
+};
+
+test("outage with blank error object and reason in top-level message is classified as infrastructure", async () => {
+  await withFakeNpm([outageBlankErrorObject], async ({ binDir, dir }) => {
+    const r = runScript(binDir, dir);
+    assert.equal(r.status, 2, r.stdout + r.stderr);
+    assert.match(r.stdout, /503 Service Unavailable/);
+    assert.doesNotMatch(r.stdout, /unexpected failure/);
+  });
+});
+
+test("a blank error object never yields an empty detail line", async () => {
+  // Same blank-error shape, but a reason that is genuinely not an outage:
+  // must still fail as 'unexpected', and must still say why.
+  const configBug = {
+    stdout: JSON.stringify({
+      message: "minTimeout is greater than maxTimeout",
+      error: { summary: "", detail: "" },
+    }),
+    code: 1,
+  };
+  await withFakeNpm([configBug], async ({ binDir, dir }) => {
+    const r = runScript(binDir, dir);
+    assert.equal(r.status, 1);
+    assert.match(r.stdout, /unexpected failure — minTimeout is greater than maxTimeout/);
+    assert.doesNotMatch(r.stdout, /unexpected failure — *$/m);
+  });
+});
+
+test("totally empty npm output still produces a readable reason", async () => {
+  await withFakeNpm([{ stdout: "", stderr: "", code: 1 }], async ({ binDir, dir }) => {
+    const r = runScript(binDir, dir);
+    assert.equal(r.status, 1);
+    assert.match(r.stdout, /no parseable report \(exit 1\)/);
   });
 });

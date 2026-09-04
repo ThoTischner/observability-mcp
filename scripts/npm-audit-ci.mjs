@@ -96,27 +96,35 @@ export function attemptAudit({ cwd, level, timeoutMs, npmBin = "npm" }) {
     return { kind: "fatal", detail: `could not run ${npmBin}: ${res.error.message}` };
   }
 
-  const report = parseJson(res.stdout ?? "");
+  const stdoutText = res.stdout ?? "";
+  const stderrText = (res.stderr ?? "").trim();
+  const report = parseJson(stdoutText);
 
-  // npm surfaces advisory-endpoint trouble as {"error": {...}} on stdout.
-  if (report?.error) {
-    const detail = report.error.detail ?? report.error.summary ?? report.error.code ?? JSON.stringify(report.error);
-    return ENDPOINT_ERROR_RE.test(String(detail)) || ENDPOINT_ERROR_RE.test(String(report.error.code ?? ""))
-      ? { kind: "endpoint", detail: String(detail).trim() }
-      : { kind: "fatal", detail: String(detail).trim() };
-  }
+  if (report?.metadata?.vulnerabilities) return { kind: "report", report };
 
-  if (!report || !report.metadata?.vulnerabilities) {
-    // No parseable report: decide from stderr whether npm could reach the
-    // endpoint at all. Anything else is a genuine surprise, so surface it
-    // rather than retrying it away.
-    const errText = (res.stderr ?? "").trim();
-    return ENDPOINT_ERROR_RE.test(errText)
-      ? { kind: "endpoint", detail: errText.split("\n").slice(0, 3).join(" | ") }
-      : { kind: "fatal", detail: errText || `npm audit produced no parseable JSON (exit ${res.status})` };
-  }
+  // No usable report. npm describes an audit failure as
+  //   {"message": "<reason>", "error": {"summary": "", "detail": ""}}
+  // — the reason sits in the TOP-LEVEL message and the error object is
+  // often entirely blank, so picking through error.* alone yields an
+  // empty string and an unreadable "unexpected failure —" line (which is
+  // exactly how this wrapper failed on its first CI run). Take the first
+  // field that actually carries text, and match against everything npm
+  // emitted rather than one hand-picked field.
+  const firstNonEmpty = (...vals) => vals.map((v) => (v == null ? "" : String(v).trim())).find((v) => v !== "") ?? "";
+  const detail = firstNonEmpty(
+    report?.message,
+    report?.error?.detail,
+    report?.error?.summary,
+    report?.error?.code,
+    report?.error && Object.keys(report.error).length ? JSON.stringify(report.error) : "",
+    stderrText.split("\n").slice(0, 3).join(" | "),
+    `npm audit produced no parseable report (exit ${res.status})`,
+  );
 
-  return { kind: "report", report };
+  const haystack = [detail, stderrText, stdoutText.slice(0, 4096)].join("\n");
+  return ENDPOINT_ERROR_RE.test(haystack)
+    ? { kind: "endpoint", detail }
+    : { kind: "fatal", detail };
 }
 
 export function runAudit({ cwd, level = "high", attempts = 4, backoffMs = 15000, timeoutMs = 120000, npmBin = "npm", sleep = defaultSleep, log = (m) => stdout.write(m + "\n") }) {
