@@ -48,8 +48,12 @@ jobs:
             npm install --package-lock-only --ignore-scripts --no-audit --no-fund
           fi
       - name: npm audit (${{ matrix.path }})
-        working-directory: ./${{ matrix.path }}
-        run: npm audit --audit-level=high
+        # Wrapper, not bare `npm audit`: it retries a 503 from npmjs.org's
+        # advisory endpoint (which reddened the 2026-09-04 nightly for
+        # 7m11s without a single vulnerability being involved) while still
+        # failing hard on any real advisory. Exit 2 == endpoint unreachable,
+        # exit 1 == vulnerabilities found. See scripts/npm-audit-ci.mjs.
+        run: node scripts/npm-audit-ci.mjs ${{ matrix.path }} --level high
 
   unit-tests:
     runs-on: ubuntu-latest
@@ -70,6 +74,8 @@ jobs:
           node --test hub/build-catalog.test.mjs
       - name: Audit-verifier CLI (end-to-end)
         run: node --test scripts/verify-audit.test.mjs
+      - name: npm-audit CI wrapper (end-to-end)
+        run: node --test scripts/npm-audit-ci.test.mjs
       - name: IP-enrich CSV converter CLI (end-to-end)
         run: node --test scripts/build-ip-enrich-csv.test.mjs
       - name: Connectors (tests + manifest/catalog integrity in sync)
