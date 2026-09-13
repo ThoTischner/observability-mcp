@@ -8,6 +8,8 @@ import {
   buildAggregateLogQL,
   parseDurationSeconds,
   defaultBucketSeconds,
+  lokiApiError,
+  AGGREGATE_NOTE,
 } from "./loki.js";
 
 const proto = LokiConnector.prototype as any;
@@ -412,5 +414,188 @@ describe("LokiConnector", () => {
       const c = withLabelValues({});
       assert.deepEqual(await c.listServices(), []);
     });
+  });
+});
+
+describe("#611: aggregate skips lines that fail | json", () => {
+  async function captureAggregate(params: any): Promise<{ logql: string; res: any }> {
+    const conn = new LokiConnector();
+    await conn.connect({ name: "loki", type: "loki", url: "http://loki:3100", enabled: true } as any);
+    let logql = "";
+    const orig = globalThis.fetch;
+    globalThis.fetch = (async (url: any) => {
+      const u = String(url);
+      if (u.includes("/label/") && u.includes("/values")) return jsonRes({ data: [params.service] });
+      if (u.includes("/query")) {
+        logql = decodeURIComponent((u.match(/query=([^&]+)/) || [])[1] || "");
+        return u.includes("/query_range")
+          ? jsonRes({ data: { resultType: "matrix", result: [] } })
+          : jsonRes({ data: { resultType: "vector", result: [] } });
+      }
+      return jsonRes({ data: [] });
+    }) as any;
+    try {
+      const res = await conn.queryLogAggregate(params);
+      return { logql, res };
+    } finally {
+      globalThis.fetch = orig;
+    }
+  }
+
+  it("produces exactly the LogQL the reporter verified returns HTTP 200", async () => {
+    // Issue #611 repro: topk by status over 48h. Without the __error__ filter
+    // Loki answered 400 JSONParserErr; with it, the same query returned counts.
+    const { logql } = await captureAggregate({
+      service: "web-app", duration: "48h", op: "topk", by: ["status"], k: 20,
+    });
+    assert.equal(
+      logql,
+      'topk(20, sum by (status) (count_over_time({service_name="web-app"} | json | __error__="" [172800s])))',
+    );
+  });
+
+  for (const op of ["sum", "topk", "count_over_time"] as const) {
+    it(`${op}: error filter sits directly after the parser, before label and line filters`, async () => {
+      const { logql } = await captureAggregate({
+        service: "app", duration: "6h", op, by: ["status"], labels: { method: "GET" }, query: "checkout",
+      });
+      assert.ok(
+        logql.includes('{service_name="app"} | json | __error__="" | method="GET" |~ `checkout`'),
+        logql,
+      );
+    });
+  }
+
+  it("result note states that non-JSON lines are excluded", async () => {
+    const { res } = await captureAggregate({ service: "app", duration: "1h", op: "sum", by: ["status"] });
+    assert.equal(res.note, AGGREGATE_NOTE);
+    assert.match(res.note, /JSON-parseable lines only/);
+    assert.match(res.note, /limit/); // the pre-existing guidance is kept
+  });
+
+  it("stream queries (plain query_logs) are left untouched — non-JSON lines stay visible there", async () => {
+    const conn = new LokiConnector();
+    await conn.connect({ name: "loki", type: "loki", url: "http://loki:3100", enabled: true } as any);
+    let logql = "";
+    const orig = globalThis.fetch;
+    globalThis.fetch = (async (url: any) => {
+      const u = String(url);
+      if (u.includes("/label/") && u.includes("/values")) return jsonRes({ data: ["app"] });
+      if (u.includes("/query_range")) {
+        logql = decodeURIComponent((u.match(/query=([^&]+)/) || [])[1] || "");
+        return jsonRes({ data: { result: [] } });
+      }
+      return jsonRes({ data: [] });
+    }) as any;
+    try {
+      await conn.queryLogs({ service: "app", duration: "5m" } as any);
+    } finally {
+      globalThis.fetch = orig;
+    }
+    assert.ok(logql.includes("| json"), `stream query was never issued: ${logql}`);
+    assert.ok(!logql.includes("__error__"), logql);
+  });
+});
+
+describe("#611: Loki error responses keep Loki's explanation", () => {
+  const lokiBody =
+    "pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", " +
+    "__error_details__=\"Value looks like object, but can't find closing '}' symbol\"}'.\n" +
+    "Use a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").";
+
+  it("includes the body excerpt after the status line", () => {
+    const err = lokiApiError(400, "Bad Request", lokiBody);
+    assert.match(err.message, /^Loki API error: 400 Bad Request — pipeline error: 'JSONParserErr'/);
+    assert.match(err.message, /Use a label filter/);
+  });
+
+  it("collapses line breaks and control characters so the message can't forge log lines", () => {
+    const err = lokiApiError(400, "Bad Request", "first\r\nINFO forged line\tx\u0000y");
+    assert.doesNotMatch(err.message, /[\r\n\t\u0000]/);
+    assert.match(err.message, /first INFO forged line x y$/);
+  });
+
+  it("also strips C1 controls that \\s misses (NEL, one-byte CSI)", () => {
+    const err = lokiApiError(400, "Bad Request", "a\u0085FORGED\u009b31mred");
+    assert.doesNotMatch(err.message, /[\u0080-\u009f]/);
+    assert.match(err.message, /— a FORGED 31mred$/);
+  });
+
+  it("caps the excerpt at 300 characters", () => {
+    const err = lokiApiError(500, "Internal Server Error", "x".repeat(5000));
+    const excerpt = err.message.split(" — ")[1];
+    assert.equal(excerpt, "x".repeat(300) + "…");
+  });
+
+  it("empty body keeps the bare status line", () => {
+    assert.equal(lokiApiError(502, "Bad Gateway", "").message, "Loki API error: 502 Bad Gateway");
+    assert.equal(lokiApiError(502, "Bad Gateway", "   \n  ").message, "Loki API error: 502 Bad Gateway");
+  });
+
+  it("queryLogAggregate surfaces Loki's reason instead of a bare 400", async () => {
+    const conn = new LokiConnector();
+    await conn.connect({ name: "loki", type: "loki", url: "http://loki:3100", enabled: true } as any);
+    const orig = globalThis.fetch;
+    globalThis.fetch = (async (url: any) => {
+      const u = String(url);
+      if (u.includes("/label/") && u.includes("/values")) return jsonRes({ data: ["app"] });
+      if (u.includes("/query")) {
+        return { ok: false, status: 400, statusText: "Bad Request", json: async () => ({}), text: async () => lokiBody } as Response;
+      }
+      return jsonRes({ data: [] });
+    }) as any;
+    try {
+      await assert.rejects(
+        conn.queryLogAggregate({ service: "app", duration: "1h", op: "sum", by: ["status"] } as any),
+        /Loki API error: 400 Bad Request — pipeline error: 'JSONParserErr'/,
+      );
+    } finally {
+      globalThis.fetch = orig;
+    }
+  });
+
+  it("an HTML error page from a proxy is not relayed (may name internal upstreams)", async () => {
+    const conn = new LokiConnector();
+    await conn.connect({ name: "loki", type: "loki", url: "http://loki:3100", enabled: true } as any);
+    let bodyRead = false;
+    const orig = globalThis.fetch;
+    globalThis.fetch = (async (url: any) => {
+      const u = String(url);
+      if (u.includes("/label/") && u.includes("/values")) return jsonRes({ data: ["app"] });
+      return {
+        ok: false, status: 502, statusText: "Bad Gateway",
+        headers: new Headers({ "content-type": "text/html; charset=utf-8" }),
+        json: async () => ({}),
+        text: async () => { bodyRead = true; return "<html><body>upstream loki-internal-7.corp:3100 nginx/1.25.3</body></html>"; },
+      } as unknown as Response;
+    }) as any;
+    try {
+      await assert.rejects(
+        conn.queryLogAggregate({ service: "app", duration: "1h", op: "sum", by: ["status"] } as any),
+        (e: Error) => e.message === "Loki API error: 502 Bad Gateway",
+      );
+      assert.equal(bodyRead, false);
+    } finally {
+      globalThis.fetch = orig;
+    }
+  });
+
+  it("a body that cannot be read still yields the status line", async () => {
+    const conn = new LokiConnector();
+    await conn.connect({ name: "loki", type: "loki", url: "http://loki:3100", enabled: true } as any);
+    const orig = globalThis.fetch;
+    globalThis.fetch = (async (url: any) => {
+      const u = String(url);
+      if (u.includes("/label/") && u.includes("/values")) return jsonRes({ data: ["app"] });
+      return { ok: false, status: 503, statusText: "Service Unavailable", json: async () => ({}), text: async () => { throw new Error("stream reset"); } } as unknown as Response;
+    }) as any;
+    try {
+      await assert.rejects(
+        conn.queryLogAggregate({ service: "app", duration: "1h", op: "sum", by: ["status"] } as any),
+        (e: Error) => e.message === "Loki API error: 503 Service Unavailable",
+      );
+    } finally {
+      globalThis.fetch = orig;
+    }
   });
 });

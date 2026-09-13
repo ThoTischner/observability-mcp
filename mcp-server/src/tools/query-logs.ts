@@ -39,7 +39,7 @@ export const queryLogsDefinition = {
       aggregate: {
         type: "object",
         description:
-          "Server-side aggregation — returns grouped counts, not raw rows, so you get a number instead of a haystack. op: 'count_over_time' (time series of counts per bucket), 'sum' (total per group over the window), 'topk' (top-k groups by total). Example: {\"op\":\"topk\",\"by\":[\"url\"],\"k\":10} for the busiest paths. Honours `labels`/`query` filters.",
+          "Server-side aggregation — returns grouped counts, not raw rows, so you get a number instead of a haystack. op: 'count_over_time' (time series of counts per bucket), 'sum' (total per group over the window), 'topk' (top-k groups by total). Example: {\"op\":\"topk\",\"by\":[\"url\"],\"k\":10} for the busiest paths. Honours `labels`/`query` filters. Counts only JSON-parseable lines; plain-text lines (startup output, stack traces) are skipped rather than failing the query.",
         properties: {
           op: { type: "string", enum: ["count_over_time", "sum", "topk"] },
           by: { type: "array", items: { type: "string" }, description: "Group-by label names (required for topk)." },

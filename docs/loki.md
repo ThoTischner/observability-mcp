@@ -93,6 +93,20 @@ aggregate mode (the response says so in its `note`) — results are grouped
 counts, not rows. Validation is fail-closed: a bad `op`, `by` label,
 `k`, or `step` rejects the request.
 
+**Only JSON-parseable lines are counted.** The pipeline is
+`{…} | json | __error__=""`, so lines that fail to parse — a plain-text
+startup banner, a library's `console.log`, a stack trace — are skipped.
+Without that filter Loki rejects the whole metric query with
+`400 … pipeline error: 'JSONParserErr'` as soon as one such line falls
+into the window (stream queries only tag the line, which is why plain
+`query_logs` is unaffected). The response `note` states the exclusion, so
+the counts aren't mistaken for "all lines".
+
+When Loki does reject a query, the error returned by the tool now carries
+the start of Loki's own response body (up to 300 characters) after the
+status, e.g. `Loki API error: 400 Bad Request — pipeline error: …`, instead
+of the bare status line.
+
 ## Docker container label leading slash
 
 Docker's `loki.source.docker` writes container names with a leading `/` (Docker's `Names[0]` convention — `/my-app-1`). The connector handles this transparently:

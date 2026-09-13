@@ -108,6 +108,72 @@ jobs:
           done
           echo "all 8 tools advertised"
 
+      - name: Real E2E — query_logs aggregate survives non-JSON log lines (#611)
+        # Loki rejects a *metric* query over `| json` with HTTP 400 as soon as
+        # one line in the window fails to parse (startup banner, stack trace).
+        # The connector must add `| __error__=""` so aggregate still returns
+        # counts. Nothing exercised `aggregate` against a real Loki before,
+        # which is how #611 shipped.
+        run: |
+          set -euo pipefail
+          svc="ci-issue-611"
+          now=$(date +%s%N)
+          cat > /tmp/push611.json <<EOF
+          {"streams":[{"stream":{"service_name":"$svc"},"values":[
+            ["$((now-5000000000))","Migration: applying 0042_add_index"],
+            ["$((now-4000000000))","{\"status\":\"200\",\"url\":\"/a\"}"],
+            ["$((now-3000000000))","{\"status\":\"200\",\"url\":\"/b\"}"],
+            ["$((now-2000000000))","{\"status\":\"404\",\"url\":\"/missing\"}"]
+          ]}]}
+          EOF
+          curl -fsS -H 'Content-Type: application/json' --data-binary @/tmp/push611.json \
+            http://localhost:3100/loki/api/v1/push
+
+          # Precondition: the fixture really triggers the bug. Replay the
+          # pre-fix LogQL straight against Loki and require the 400 — if Loki
+          # ever stops rejecting it, this test would otherwise pass vacuously.
+          old='sum by (status) (count_over_time({service_name="'"$svc"'"} | json [900s]))'
+          code=""
+          for i in $(seq 1 20); do
+            code=$(curl -s -o /tmp/old611.json -w '%{http_code}' -G http://localhost:3100/loki/api/v1/query \
+              --data-urlencode "query=$old")
+            [ "$code" = "400" ] && break
+            sleep 2
+          done
+          echo "pre-fix LogQL -> HTTP $code: $(head -c 300 /tmp/old611.json)"
+          [ "$code" = "400" ] || { echo "fixture did not reproduce the JSONParserErr 400"; exit 1; }
+          grep -q JSONParserErr /tmp/old611.json
+
+          # The tool call, through MCP like an agent makes it.
+          hdr=/tmp/mcp611-hdr; body=/tmp/mcp611-body
+          curl -sS -D "$hdr" -o "$body" -X POST http://localhost:3000/mcp \
+            -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"ci-611","version":"1.0"}}}'
+          sid=$(grep -i '^mcp-session-id:' "$hdr" | awk '{print $2}' | tr -d '\r\n')
+          [ -n "$sid" ] || { echo "no mcp-session-id"; exit 1; }
+          curl -fsS -X POST http://localhost:3000/mcp -H "Mcp-Session-Id: $sid" \
+            -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+            -d '{"jsonrpc":"2.0","method":"notifications/initialized"}' >/dev/null || true
+
+          call='{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"query_logs","arguments":{"service":"'"$svc"'","duration":"15m","aggregate":{"op":"sum","by":["status"]}}}}'
+          curl -fsS -X POST http://localhost:3000/mcp -H "Mcp-Session-Id: $sid" \
+            -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+            -d "$call" -o "$body"
+          echo "--- tools/call query_logs aggregate ---"; cat "$body"
+
+          # SSE-framed: take the data: line, then the tool's JSON text payload.
+          res=$(grep '^data: ' "$body" | sed 's/^data: //' | jq -c 'select(.id==2) | .result')
+          [ -n "$res" ] || { echo "no tools/call response with id 2"; exit 1; }
+          [ "$(echo "$res" | jq -r '.isError // false')" = "false" ] || { echo "aggregate returned isError"; exit 1; }
+          payload=$(echo "$res" | jq -r '.content[0].text')
+          echo "$payload" | jq .
+          ok200=$(echo "$payload" | jq '[.series[] | select(.labels.status=="200") | .value] | add // 0')
+          ok404=$(echo "$payload" | jq '[.series[] | select(.labels.status=="404") | .value] | add // 0')
+          [ "$ok200" = "2" ] && [ "$ok404" = "1" ] || { echo "wrong counts: 200=$ok200 404=$ok404 (want 2 / 1)"; exit 1; }
+          echo "$payload" | jq -e '.note | test("JSON-parseable lines only")' >/dev/null \
+            || { echo "note does not disclose the non-JSON exclusion"; exit 1; }
+          echo "aggregate over a window with a non-JSON line: 200=2, 404=1, exclusion disclosed"
+
       - name: Trigger a chaos mode and verify it sticks
         run: |
           set -euo pipefail

@@ -19,6 +19,39 @@ import { buildTlsAgent } from "./tls.js";
 const DEFAULT_SERVICE_LABELS = ["service_name", "service", "job", "app", "container"];
 const LABEL_CACHE_TTL_MS = 60_000;
 
+/** Returned with every aggregate result. States the exclusion explicitly so
+ *  counts aren't silently read as "all lines" (#611). */
+export const AGGREGATE_NOTE =
+  "Aggregate mode: `limit` does not apply (results are grouped counts, not raw rows). " +
+  "Counts cover JSON-parseable lines only — lines that fail `| json` (plain-text startup output, stack traces) are excluded.";
+
+/** Maximum characters of a backend error body carried into the error message. */
+const ERROR_BODY_EXCERPT_CHARS = 300;
+
+/**
+ * Build the error for a non-2xx Loki response. Loki's body names the actual
+ * cause and usually the fix (e.g. "pipeline error: 'JSONParserErr' … Use a
+ * label filter to intentionally skip this error"); a bare "400 Bad Request"
+ * sent the #611 reporter chasing window length and label names first.
+ *
+ * The excerpt flows into server logs and back to the calling agent, so
+ * control characters and line breaks are collapsed (no forged log lines)
+ * and it is capped.
+ */
+export function lokiApiError(status: number, statusText: string, body: string): Error {
+  const excerpt = String(body ?? "")
+    // C0, DEL and C1 (incl. NEL \x85 and the one-byte CSI \x9b, neither of
+    // which \s covers) so nothing in the excerpt can break a log line or
+    // drive a terminal.
+    .replace(/[\x00-\x1f\x7f-\x9f]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const clipped = excerpt.length > ERROR_BODY_EXCERPT_CHARS
+    ? `${excerpt.slice(0, ERROR_BODY_EXCERPT_CHARS)}…`
+    : excerpt;
+  return new Error(`Loki API error: ${status} ${statusText}${clipped ? ` — ${clipped}` : ""}`);
+}
+
 /** Escape a value for a double-quoted LogQL string literal. Backslash and
  *  quote first (breakout chars), then control chars — a raw newline/tab in
  *  a Go-style `"..."` literal is a parse error, so emit the escape sequence. */
@@ -309,7 +342,16 @@ export class LokiConnector implements ObservabilityConnector {
 
     // Same stream + pipeline prefix as queryLogs (reuses the Q-LOG1 unit),
     // minus the level filter (aggregation groups, it doesn't level-filter).
-    let pipeline = `{${matchedLabel}="${service}"} | json`;
+    //
+    // `| __error__=""` directly after the parser is required, not cosmetic
+    // (#611): Loki rejects a *metric* query with HTTP 400 as soon as a single
+    // line in the window fails `| json` (startup banner, library
+    // console.log, stack trace), whereas stream queries just tag such lines
+    // with __error__ — which is why plain query_logs kept working and only
+    // aggregate broke. Dropping the unparseable lines is the only sane
+    // reading for grouped counts anyway: they carry none of the extracted
+    // labels being grouped by. The result note tells the caller.
+    let pipeline = `{${matchedLabel}="${service}"} | json | __error__=""`;
     pipeline += logqlLabelFilters(params.labels);
     if (params.query) {
       pipeline += ` |~ \`${this.escapeLogQLRegex(params.query)}\``;
@@ -356,7 +398,7 @@ export class LokiConnector implements ObservabilityConnector {
       step: mode === "range" ? step : undefined,
       mode,
       series,
-      note: "Aggregate mode: `limit` does not apply (results are grouped counts, not raw rows).",
+      note: AGGREGATE_NOTE,
     };
   }
 
@@ -458,7 +500,14 @@ export class LokiConnector implements ObservabilityConnector {
         ...this.fetchOptions(),
         signal: controller.signal,
       });
-      if (!res.ok) throw new Error(`Loki API error: ${res.status} ${res.statusText}`);
+      if (!res.ok) {
+        // Loki answers errors in text/plain. An HTML body is a reverse proxy's
+        // error page — no explanation worth relaying, and it can name internal
+        // upstream hosts or server versions — so keep the bare status line.
+        const isHtml = /text\/html/i.test(res.headers?.get?.("content-type") ?? "");
+        const body = isHtml ? "" : await res.text().catch(() => "");
+        throw lokiApiError(res.status, res.statusText, body);
+      }
       return res.json() as Promise<T>;
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
