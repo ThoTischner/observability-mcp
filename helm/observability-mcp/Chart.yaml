@@ -4,11 +4,11 @@ description: Unified observability gateway for AI agents — one MCP server for 
 type: application
 
 # Chart version (this chart). Bumped on chart changes.
-version: 2.9.9
+version: 2.9.10
 
 # App version (the mcp-server image tag the chart defaults to).
 # Update with each release of the mcp-server image.
-appVersion: "3.9.8"
+appVersion: "3.9.9"
 
 home: https://github.com/ThoTischner/observability-mcp
 sources:
@@ -51,13 +51,13 @@ annotations:
     url: https://raw.githubusercontent.com/ThoTischner/observability-mcp/main/docs/helm-signing.pub.asc
   artifacthub.io/images: |
     - name: observability-mcp
-      image: ghcr.io/thotischner/observability-mcp:3.9.8
+      image: ghcr.io/thotischner/observability-mcp:3.9.9
       platforms:
         - linux/amd64
         - linux/arm64
   artifacthub.io/changes: |
     - kind: changed
-      description: "appVersion → 3.9.8; chart points at the 3.9.8 image"
+      description: "appVersion → 3.9.9; chart points at the 3.9.9 image"
     - kind: fixed
       description: "query_logs aggregate no longer fails with HTTP 400 when a service writes any non-JSON log line (startup banner, stack trace). Unparseable lines are skipped, and the result note says counts cover JSON lines only. Loki errors now carry Loki's own explanation instead of a bare status line."
       links:
