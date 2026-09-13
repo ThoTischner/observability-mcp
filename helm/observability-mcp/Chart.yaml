@@ -58,5 +58,10 @@ annotations:
   artifacthub.io/changes: |
     - kind: changed
       description: "appVersion → 3.9.8; chart points at the 3.9.8 image"
-    - kind: security
-      description: "Cleared all four open advisories by raising override floors: brace-expansion 5.0.9, fast-uri 3.1.5, js-yaml 4.3.2, hono 4.13.5. npm audit reports zero vulnerabilities at every severity, and the 3.9.6 image scans clean (no HIGH/CRITICAL). No behaviour change."
+    - kind: fixed
+      description: "query_logs aggregate no longer fails with HTTP 400 when a service writes any non-JSON log line (startup banner, stack trace). Unparseable lines are skipped, and the result note says counts cover JSON lines only. Loki errors now carry Loki's own explanation instead of a bare status line."
+      links:
+        - name: "Issue #611"
+          url: https://github.com/ThoTischner/observability-mcp/issues/611
+    - kind: changed
+      description: "Routine dependency updates (OpenTelemetry SDK packages, tsx). No behaviour change."
