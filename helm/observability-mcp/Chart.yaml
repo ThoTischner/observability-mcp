@@ -4,11 +4,11 @@ description: Unified observability gateway for AI agents — one MCP server for 
 type: application
 
 # Chart version (this chart). Bumped on chart changes.
-version: 2.9.12
+version: 2.9.13
 
 # App version (the mcp-server image tag the chart defaults to).
 # Update with each release of the mcp-server image.
-appVersion: "3.9.11"
+appVersion: "3.9.12"
 
 home: https://github.com/ThoTischner/observability-mcp
 sources:
@@ -51,17 +51,17 @@ annotations:
     url: https://raw.githubusercontent.com/ThoTischner/observability-mcp/main/docs/helm-signing.pub.asc
   artifacthub.io/images: |
     - name: observability-mcp
-      image: ghcr.io/thotischner/observability-mcp:3.9.11
+      image: ghcr.io/thotischner/observability-mcp:3.9.12
       platforms:
         - linux/amd64
         - linux/arm64
   artifacthub.io/changes: |
     - kind: changed
-      description: "appVersion → 3.9.11; chart points at the 3.9.11 image"
-    - kind: fixed
-      description: "query_logs aggregate no longer fails with HTTP 400 when a service writes any non-JSON log line (startup banner, stack trace). Unparseable lines are skipped, and the result note says counts cover JSON lines only. Loki errors now carry Loki's own explanation instead of a bare status line."
+      description: "appVersion → 3.9.12; chart points at the 3.9.12 image"
+    - kind: security
+      description: "Patched transitive dependencies flagged by npm audit: fast-uri 3.1.8 (GHSA-qw65-cvwx-89v3), @grpc/grpc-js 1.14.5 (GHSA-m9gg-hp2v-232j, GHSA-f596-whhp-79r4), brace-expansion 5.0.12 (GHSA-q2hr-2g5m-vwhr), hono 4.13.13 (GHSA-hxh3-vqpv-xpqv), ip-address 10.7.2 (GHSA-j6r3-76f7-8jcv, GHSA-h3mg-xc3c-68pw)."
       links:
-        - name: "Issue #611"
-          url: https://github.com/ThoTischner/observability-mcp/issues/611
+        - name: "PR #637"
+          url: https://github.com/ThoTischner/observability-mcp/pull/637
     - kind: changed
-      description: "Routine dependency updates (OpenTelemetry SDK packages, tsx). No behaviour change."
+      description: "Routine dependency updates (@modelcontextprotocol/sdk, zod, tsx, GitHub Actions). No behaviour change."
