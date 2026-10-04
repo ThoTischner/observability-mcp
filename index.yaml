@@ -5,6 +5,67 @@ entries:
       artifacthub.io/category: monitoring-logging
       artifacthub.io/changes: |
         - kind: changed
+          description: "appVersion → 3.9.12; chart points at the 3.9.12 image"
+        - kind: security
+          description: "Patched transitive dependencies flagged by npm audit: fast-uri 3.1.8 (GHSA-qw65-cvwx-89v3), @grpc/grpc-js 1.14.5 (GHSA-m9gg-hp2v-232j, GHSA-f596-whhp-79r4), brace-expansion 5.0.12 (GHSA-q2hr-2g5m-vwhr), hono 4.13.13 (GHSA-hxh3-vqpv-xpqv), ip-address 10.7.2 (GHSA-j6r3-76f7-8jcv, GHSA-h3mg-xc3c-68pw)."
+          links:
+            - name: "PR #637"
+              url: https://github.com/ThoTischner/observability-mcp/pull/637
+        - kind: changed
+          description: "Routine dependency updates (@modelcontextprotocol/sdk, zod, tsx, GitHub Actions). No behaviour change."
+      artifacthub.io/containsSecurityUpdates: "true"
+      artifacthub.io/images: |
+        - name: observability-mcp
+          image: ghcr.io/thotischner/observability-mcp:3.9.12
+          platforms:
+            - linux/amd64
+            - linux/arm64
+      artifacthub.io/license: Apache-2.0
+      artifacthub.io/links: |
+        - name: Source
+          url: https://github.com/ThoTischner/observability-mcp
+        - name: Container image
+          url: https://github.com/ThoTischner/observability-mcp/pkgs/container/observability-mcp
+        - name: npm
+          url: https://www.npmjs.com/package/@thotischner/observability-mcp
+        - name: Connector Hub
+          url: https://thotischner.github.io/observability-mcp/hub/
+      artifacthub.io/operator: "false"
+      artifacthub.io/prerelease: "false"
+      artifacthub.io/signKey: |
+        fingerprint: C240A58EC3B9D596C685FB0079826B0CB9A6329F
+        url: https://raw.githubusercontent.com/ThoTischner/observability-mcp/main/docs/helm-signing.pub.asc
+    apiVersion: v2
+    appVersion: 3.9.12
+    created: "2026-10-04T15:39:48.971625318Z"
+    description: Unified observability gateway for AI agents — one MCP server for
+      Prometheus, Loki, and any backend
+    digest: fa0aaf120995d67db64bf947f4f2f21e0d6c767bf15373a0ab8686abcb332921
+    home: https://github.com/ThoTischner/observability-mcp
+    icon: https://raw.githubusercontent.com/ThoTischner/observability-mcp/main/docs/logo.svg
+    keywords:
+    - mcp
+    - model-context-protocol
+    - observability
+    - prometheus
+    - loki
+    - sre
+    - monitoring
+    - ai-agents
+    maintainers:
+    - name: ThoTischner
+      url: https://github.com/ThoTischner
+    name: observability-mcp
+    sources:
+    - https://github.com/ThoTischner/observability-mcp
+    type: application
+    urls:
+    - https://github.com/ThoTischner/observability-mcp/releases/download/observability-mcp-2.9.13/observability-mcp-2.9.13.tgz
+    version: 2.9.13
+  - annotations:
+      artifacthub.io/category: monitoring-logging
+      artifacthub.io/changes: |
+        - kind: changed
           description: "appVersion → 3.9.11; chart points at the 3.9.11 image"
         - kind: fixed
           description: "query_logs aggregate no longer fails with HTTP 400 when a service writes any non-JSON log line (startup banner, stack trace). Unparseable lines are skipped, and the result note says counts cover JSON lines only. Loki errors now carry Loki's own explanation instead of a bare status line."
@@ -3227,4 +3288,4 @@ entries:
     urls:
     - https://github.com/ThoTischner/observability-mcp/releases/download/observability-mcp-0.3.0/observability-mcp-0.3.0.tgz
     version: 0.3.0
-generated: "2026-09-28T01:25:47.265894809Z"
+generated: "2026-10-04T15:39:48.971769916Z"
