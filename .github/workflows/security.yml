@@ -119,7 +119,7 @@ jobs:
           load: true
           tags: observability-mcp:scan
       - name: Run Trivy on image
-        uses: aquasecurity/trivy-action@c03d123cb480c08c69b054af418ea5e69fe6e57e # master
+        uses: aquasecurity/trivy-action@6abccf398f78b4c337599c0656f933d91efb91a0 # master
         with:
           image-ref: observability-mcp:scan
           format: sarif
@@ -127,13 +127,13 @@ jobs:
           severity: CRITICAL,HIGH
           exit-code: '0'
       - name: Upload Trivy SARIF
-        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4
         if: always()
         with:
           sarif_file: trivy-image.sarif
           category: trivy-image
       - name: Trivy filesystem scan
-        uses: aquasecurity/trivy-action@c03d123cb480c08c69b054af418ea5e69fe6e57e # master
+        uses: aquasecurity/trivy-action@6abccf398f78b4c337599c0656f933d91efb91a0 # master
         with:
           scan-type: fs
           scan-ref: .
@@ -142,7 +142,7 @@ jobs:
           severity: CRITICAL,HIGH
           exit-code: '0'
       - name: Upload Trivy FS SARIF
-        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4
         if: always()
         with:
           sarif_file: trivy-fs.sarif
