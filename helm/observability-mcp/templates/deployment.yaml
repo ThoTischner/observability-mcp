@@ -37,8 +37,11 @@ spec:
         - name: extract-plugins
           image: {{ .Values.plugins.image | quote }}
           imagePullPolicy: {{ .Values.plugins.imagePullPolicy }}
+          # Only copies into the plugins emptyDir, never writes its own
+          # filesystem — so it runs read-only regardless of the main
+          # container's setting.
           securityContext:
-            {{- toYaml .Values.securityContext | nindent 12 }}
+            {{- toYaml (merge (dict "readOnlyRootFilesystem" true) (deepCopy .Values.securityContext)) | nindent 12 }}
           command:
             - sh
             - -c

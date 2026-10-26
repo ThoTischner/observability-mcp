@@ -11,8 +11,9 @@ The repo runs a self-driving security pipeline so issues get caught and patched 
 | Mechanism | What it does | Cadence |
 |-----------|--------------|---------|
 | **Dependabot** | Grouped PRs for npm (mcp-server, agent, SDK, connectors, demo services, Playwright), GitHub Actions, and every Docker base image | Weekly, Monday |
-| **CodeQL** | Static analysis with `security-extended` + quality queries; results in the Security tab | PR + weekly |
+| **CodeQL** | Static analysis with `security-extended` + quality queries for the TypeScript code and the GitHub Actions workflows themselves; results in the Security tab | PR + weekly |
 | **Trivy** | Docker image and filesystem scans; all findings go to the Security tab (SARIF), and any CRITICAL/HIGH with an available fix fails CI | PR + daily |
+| **Trivy config** | Misconfiguration scan of Dockerfiles, the Helm chart and k8s manifests; HIGH/CRITICAL in the shipped chart or server/bundle Dockerfiles fails CI unless listed with a reason in `.trivyignore.yaml` | PR + daily |
 | **npm audit** | Fails CI on `--audit-level=high` for every shipped lockfile: server, agent, SDK, and connectors with npm dependencies | PR + daily |
 | **Base-image freshness** | Fails when a digest-pinned `node:` base image ships an older Node than its tag now serves (Trivy can't see the runtime itself) | Daily |
 | **OSSF Scorecard** | Repo posture analysis published to the Security tab | Weekly |
