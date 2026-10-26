@@ -235,6 +235,9 @@ scim:
   # immediately visible to the others. See
   # docs/scim-provisioning.md "Multi-replica" section.
   backend: file
+  # The container's root filesystem is read-only and runs as non-root:
+  # point storePath at a mounted volume (e.g. /app/config/scim.json with
+  # persistence.enabled) or use the redis backend.
   storePath: /var/lib/observability-mcp/scim.json
   # Used when backend == redis. Format: redis://[user:pass@]host:port[/db]
   redisUrl: ""
@@ -436,7 +439,9 @@ securityContext:
   capabilities:
     drop:
       - ALL
-  readOnlyRootFilesystem: false  # node writes to /tmp; switch to true with emptyDir tmp
+  # Everything the server writes lives on volumes: /tmp is an emptyDir and,
+  # without persistence, /app/config is an emptyDir seeded from the image.
+  readOnlyRootFilesystem: true
 
 # Persistent config — if you edit sources via the Web UI you want the
 # updated sources.yaml to survive restarts. Disabled by default; for

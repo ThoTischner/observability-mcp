@@ -59,8 +59,10 @@ The server is built with the following defaults:
 - `npm audit --audit-level=high` is enforced in CI for the server, the SDK and
   the connectors that ship npm dependencies; transitive vulnerabilities
   in the MCP SDK are pinned via `npm overrides` (see [`project_cve_strategy`](docs/plugin-architecture.md) for the strategy).
-- Container runs as a non-root user, no privilege escalation, all capabilities
-  dropped, `seccompProfile: RuntimeDefault` via the Helm chart.
+- Container runs as a non-root user with a read-only root filesystem, no
+  privilege escalation, all capabilities dropped, `seccompProfile:
+  RuntimeDefault` via the Helm chart (writable state lives on volumes:
+  `/tmp`, and `/app/config` — seeded from the image unless persistence is on).
 - npm publish uses `--provenance` so installers can verify build attestation.
 - `tools/list` output is the source of truth; the server does not advertise
   features that aren't actually wired.

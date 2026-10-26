@@ -3,15 +3,6 @@
 # Every entry needs a reason; anything not listed here fails CI.
 
 misconfigurations:
-  - id: KSV-0014
-    paths:
-      - helm/observability-mcp/templates/deployment.yaml
-    statement: >-
-      mcp-server writes to its filesystem by design when persistence is off
-      (Web UI source edits under /app/config, /tmp, audit/profile files), so
-      readOnlyRootFilesystem stays opt-in via values.securityContext. The
-      extract-plugins init container is read-only unconditionally.
-
   - id: KSV-0125
     statement: >-
       "Trusted registries" is a per-cluster admission policy (ghcr.io is the
