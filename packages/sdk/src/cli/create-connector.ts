@@ -9,8 +9,16 @@
 // goal is "you have a compiling, signable plugin in 30 seconds, now
 // fill in the body".
 
-import { writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+
+// Pin the scaffold to the SDK release that generated it. A hand-written
+// range drifts: it said ^2.0.0 while only 3.x was ever published, so
+// `npm install` failed in every fresh skeleton. Resolves to the package
+// root from both src/cli (tsx) and dist/cli (published bin).
+const SDK_VERSION: string = JSON.parse(
+  readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
+).version;
 
 const TEMPLATES: Record<string, (name: string) => string> = {
   "manifest.json": (name) => JSON.stringify(
@@ -37,7 +45,7 @@ const TEMPLATES: Record<string, (name: string) => string> = {
         kind: "connector",
       },
       dependencies: {
-        "@thotischner/observability-mcp-sdk": "^2.0.0",
+        "@thotischner/observability-mcp-sdk": `^${SDK_VERSION}`,
       },
     },
     null,

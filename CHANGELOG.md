@@ -11,7 +11,18 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **SDK `@thotischner/observability-mcp-sdk` 3.2.2:** the `zod` dependency
   floor is raised from `^4.4.3` to `^4.6.6`, so plugin authors can no longer
   resolve a `zod` affected by GHSA-mrhx-c7xc-m3w5 (memory exhaustion on
-  oversized constrained collections). No API change.
+  oversized constrained collections). No API change. The server's own `zod`
+  floor moves to `^4.6.6` as well, so the npm package can't resolve an
+  affected version either.
+
+### Fixed
+
+- **SDK `create-connector` scaffold installs again.** Generated skeletons
+  depended on `@thotischner/observability-mcp-sdk@^2.0.0`, a major that was
+  never published, so `npm install` failed in every new connector. The
+  scaffold now pins the SDK release that generated it, and an end-to-end test
+  of the CLI runs in the PR security scan and against the built bin before
+  every SDK publish.
 
 ## [3.9.15] — 2026-10-26
 
