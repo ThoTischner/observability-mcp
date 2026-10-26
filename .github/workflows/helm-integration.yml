@@ -14,10 +14,13 @@ on:
     branches: [main]
     paths:
       - 'helm/**'
+      # the default install extracts a bundle built from connectors/
+      - 'connectors/**'
       - '.github/workflows/helm-integration.yml'
   pull_request:
     paths:
       - 'helm/**'
+      - 'connectors/**'
       - 'mcp-server/Dockerfile'
       - '.github/workflows/helm-integration.yml'
   workflow_dispatch:
@@ -51,6 +54,25 @@ jobs:
       - name: Load image into kind
         run: kind load docker-image observability-mcp:it --name helm-it
 
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
+        with:
+          node-version: '22'
+
+      # The default plugins.image resolves to the bundle tagged with the
+      # chart's appVersion. Build that bundle from this checkout (unsigned)
+      # under exactly that name, so the default install exercises the
+      # connectors this change would ship rather than a registry image.
+      - name: Build connector bundle as the chart's default plugins image
+        run: |
+          set -euo pipefail
+          appver=$(grep '^appVersion:' helm/observability-mcp/Chart.yaml | awk '{print $2}' | tr -d '"')
+          img="ghcr.io/thotischner/observability-mcp-plugins:${appver}"
+          sh connectors/build-bundle.sh /tmp/bundle
+          docker build -t "$img" -f /tmp/bundle/Dockerfile.bundle /tmp/bundle
+          kind load docker-image "$img" --name helm-it
+          rendered=$(helm template obs ./helm/observability-mcp | grep -A2 'name: extract-plugins' | awk '/image:/{print $2}' | tr -d '"')
+          [ "$rendered" = "$img" ] || { echo "::error::chart default plugins image is $rendered, expected $img"; exit 1; }
+
       - name: Lint chart
         run: helm lint helm/observability-mcp
 
@@ -81,12 +103,14 @@ jobs:
       - name: Assert plugins bundle extracted (init-container path)
         run: |
           pod=$(kubectl get pod -l app.kubernetes.io/name=observability-mcp -o jsonpath='{.items[0].metadata.name}')
-          # The default chart pulls the official signed bundle image; its
-          # init-container must have populated /app/plugins.
+          # The default chart resolves to the appVersion-tagged bundle (built
+          # from this checkout above); its read-only init container must have
+          # populated /app/plugins.
           got=$(kubectl exec "$pod" -- sh -c 'ls /app/plugins' | tr '\n' ' ')
           echo "plugins: $got"
           echo "$got" | grep -q datadog
           echo "$got" | grep -q grafana
+          echo "$got" | grep -q gcp
 
       - name: Uninstall (default)
         run: helm uninstall obs

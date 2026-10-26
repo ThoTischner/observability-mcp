@@ -107,12 +107,12 @@ The pain point of airgapped setups is **no `npm install` at runtime**, no GitHub
 
 Three supported workflows:
 
-- **Bundled image.** CI publishes an official multi-connector image — `ghcr.io/thotischner/observability-mcp-plugins:latest` (`.github/workflows/connector-bundle-image.yml`; connectors signed with the same key as the hub tarballs). Operators just reference or mirror it — no hand-built image.
+- **Bundled image.** CI publishes an official multi-connector image — `ghcr.io/thotischner/observability-mcp-plugins`, tagged with every server release version (e.g. `:3.9.16`) plus a moving `:latest` (`.github/workflows/connector-bundle-image.yml`; connectors signed with the same key as the hub tarballs). Operators just reference or mirror it — no hand-built image.
 
 - **Mounted volume (k8s).** The Helm chart accepts:
   ```yaml
   plugins:
-    image: ghcr.io/thotischner/observability-mcp-plugins:latest   # official signed bundle (or a mirror)
+    image: ghcr.io/thotischner/observability-mcp-plugins   # official signed bundle (or a mirror); untagged = the chart's appVersion
     paths:
       - prometheus
       - loki

@@ -90,7 +90,7 @@ cosign verify ghcr.io/thotischner/charts/observability-mcp:2.0.0 \
 | `anomalyHistory.enabled: true` | TSDB-backed anomaly history sink | [anomaly-history.md](anomaly-history.md) |
 | `redis.enabled: true` | Shared session store for multi-replica HA | [horizontal-scaling.md](horizontal-scaling.md) |
 | `serviceMonitor.enabled: true` | Prometheus Operator scrape config | [self-observability.md](self-observability.md) |
-| `plugins.image: ghcr.io/thotischner/observability-mcp-plugins:latest` (default) | Bundled signed connectors | [plugin-architecture.md](plugin-architecture.md) |
+| `plugins.image: ghcr.io/thotischner/observability-mcp-plugins` (default, pinned to the bundle tagged with the chart's appVersion) | Bundled signed connectors | [plugin-architecture.md](plugin-architecture.md) |
 | `plugins.uiInstall: true` | Web UI / API plugin install endpoints | [plugin-architecture.md](plugin-architecture.md) |
 
 ## Upgrade

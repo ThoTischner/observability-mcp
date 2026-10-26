@@ -48,6 +48,20 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
 {{/*
+Connector bundle image. An untagged reference is pinned to the bundle
+built for this release (connector-bundle-image.yml tags every v* release
+with its version); an explicit :tag or @digest is used as given.
+*/}}
+{{- define "observability-mcp.pluginsImage" -}}
+{{- $img := .Values.plugins.image -}}
+{{- if or (contains "@" $img) (contains ":" (last (splitList "/" $img))) -}}
+{{- $img -}}
+{{- else -}}
+{{- printf "%s:%s" $img .Chart.AppVersion -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Mount a trust-root Secret only when the operator has actually
 provided one (inline PEM or existingSecret reference). Since v2.0
 plugins.verify.enabled is default-on; without a PEM the loader

@@ -333,7 +333,9 @@ plugins:
   # stay inert until a matching source is configured). For airgapped
   # clusters mirror this image and override with the mirror. Set to ""
   # to disable the init container entirely (builtin Prometheus/Loki only).
-  image: "ghcr.io/thotischner/observability-mcp-plugins:latest"
+  # Without a tag the chart pins the bundle built for its appVersion
+  # (e.g. :3.9.16); an explicit :tag or @sha256 digest is used as given.
+  image: "ghcr.io/thotischner/observability-mcp-plugins"
   imagePullPolicy: IfNotPresent
   # Subdirectories of /plugins to extract. Empty = copy everything.
   paths: []
