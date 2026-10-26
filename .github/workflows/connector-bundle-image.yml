@@ -10,12 +10,19 @@ name: Publish plugins bundle image
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Also tag the bundle with this release version (e.g. 3.9.15) — backfill only'
+        required: false
+        default: ''
   push:
     branches: [main]
     paths:
       - 'connectors/**'
       - '.github/workflows/connector-bundle-image.yml'
-    tags: ['connector-*']
+    # v* = server release: the chart pins plugins.image to the bundle
+    # tagged with its appVersion, so every release gets its own bundle.
+    tags: ['connector-*', 'v*']
 
 permissions:
   contents: read
@@ -31,6 +38,15 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
         with:
           node-version: '20'
+
+      - name: Validate backfill version
+        if: inputs.version != ''
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          # Must match Chart.yaml appVersion exactly (no leading "v").
+          echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' \
+            || { echo "::error::version must look like 3.9.15 (no leading v), got '$VERSION'"; exit 1; }
 
       - name: Image name (lowercase) + restore signing key
         id: prep
@@ -75,8 +91,13 @@ jobs:
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         with:
           images: ${{ steps.prep.outputs.image }}
+          # :latest only follows main (the rule below); a release tag build
+          # must not move it as a side effect of the semver rule.
+          flavor: latest=false
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=raw,value=${{ inputs.version }},enable=${{ inputs.version != '' }}
             type=sha
             type=raw,value=bundle
 

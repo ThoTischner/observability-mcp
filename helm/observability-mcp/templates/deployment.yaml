@@ -35,7 +35,7 @@ spec:
         # access — the airgapped "mounted volume" workflow from
         # docs/plugin-architecture.md.
         - name: extract-plugins
-          image: {{ .Values.plugins.image | quote }}
+          image: {{ include "observability-mcp.pluginsImage" . | quote }}
           imagePullPolicy: {{ .Values.plugins.imagePullPolicy }}
           # Only copies into the plugins emptyDir, never writes its own
           # filesystem — so it runs read-only regardless of the main
