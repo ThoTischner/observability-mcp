@@ -22,7 +22,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [javascript-typescript]
+        # `actions` analyses the workflows themselves (script injection via
+        # untrusted event fields, unsafe pull_request_target checkouts,
+        # over-broad token permissions).
+        language: [javascript-typescript, actions]
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

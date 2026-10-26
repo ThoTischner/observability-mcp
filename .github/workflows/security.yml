@@ -185,6 +185,37 @@ jobs:
           ignore-unfixed: true
           exit-code: '1'
 
+      # Misconfiguration scan (Dockerfiles, Helm chart, k8s manifests).
+      # The whole repo is reported to the Security tab; the gate covers
+      # what ships — the Helm chart and the server/bundle Dockerfiles —
+      # minus the reviewed exceptions in .trivyignore.yaml.
+      - name: Trivy config scan
+        if: always()
+        uses: aquasecurity/trivy-action@6abccf398f78b4c337599c0656f933d91efb91a0 # master
+        with:
+          scan-type: config
+          scan-ref: .
+          format: sarif
+          output: trivy-config.sarif
+          exit-code: '0'
+      - name: Upload Trivy config SARIF
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4
+        if: always()
+        with:
+          sarif_file: trivy-config.sarif
+          category: trivy-config
+      - name: Gate — shipped chart and Dockerfiles have no HIGH/CRITICAL misconfiguration
+        if: always()
+        uses: aquasecurity/trivy-action@6abccf398f78b4c337599c0656f933d91efb91a0 # master
+        with:
+          scan-type: config
+          scan-ref: .
+          skip-dirs: examples,tests,.github,mcp-server/playwright
+          trivyignores: .trivyignore.yaml
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: '1'
+
   base-image-freshness:
     # Trivy matches OS packages and npm lockfiles, not the Node runtime
     # baked into the base image — a digest pinned months ago ships an old

@@ -13,3 +13,7 @@ COPY plugins /plugins
 RUN set -eu; for d in /plugins/*/; do \
       [ -f "$d/manifest.json" ] || { echo "missing manifest in $d"; exit 1; }; \
     done; echo "bundled: $(ls -1 /plugins | tr '\n' ' ')"
+# Never run as root. The Helm chart's pod securityContext (runAsUser
+# 1000) overrides this anyway; it covers anyone running the image
+# directly. The tree stays world-readable, so cp works as any user.
+USER 65534
