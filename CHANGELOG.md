@@ -6,7 +6,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Fixed & Security
+## [3.9.17] — 2026-10-26
+
+Hardening release. **The Helm chart now runs the server with a read-only root
+filesystem**; Web UI edits keep working (see below). No API changes.
+
+### Security
 
 - **Helm: the server runs with a read-only root filesystem by default.**
   `/tmp` is an emptyDir and, without persistence, `/app/config` is an
@@ -15,13 +20,22 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `securityContext.readOnlyRootFilesystem: false`. The Helm integration test
   now asserts the root filesystem is read-only and that a settings save
   through the API lands in `sources.yaml` (emptyDir and PVC).
+- The demo example services and the CI test workload run non-root with a
+  read-only root filesystem; the example-service and Playwright images no
+  longer run as root.
+
+### Fixed
+
 - **Helm: `persistence.enabled` now actually persists Web UI edits.** On a
   fresh PVC there was no `sources.yaml` yet, so the server fell back to
   `$HOME/.observability-mcp/sources.yaml` inside the container and every
   change was lost on restart. The chart now always sets `CONFIG_PATH`.
-- The demo example services and the CI test workload run non-root with a
-  read-only root filesystem; the example-service and Playwright images no
-  longer run as root.
+
+### Changed
+
+- TypeScript 7.0 (native compiler) for the server, SDK, agent and example
+  services. The emitted JavaScript is byte-identical to the TypeScript 6
+  build; declaration files differ only in union-member order.
 
 ## [3.9.16] — 2026-10-26
 
