@@ -67,8 +67,10 @@ jobs:
       # (which is the app-version git tag like "v3.9.3") — see the resolve step.
       chart_version: ${{ steps.chartver.outputs.version }}
     permissions:
+      # chart-releaser creates the GitHub Release and pushes index.yaml
+      # to gh-pages. No `pages: write`: Pages is built and deployed by
+      # docs.yml, which this job only dispatches.
       contents: write
-      pages: write
       # Dispatching docs.yml (the Pages refresh, last step) needs this.
       actions: write
       # Required for the OCI publish step: helm push goes to ghcr.io,
