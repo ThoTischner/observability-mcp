@@ -110,6 +110,7 @@ import { isValidConnectorName, installTarball } from "./connectors/install.js";
 import { PluginVerificationError } from "./connectors/verify.js";
 import { selfRegistry, withToolMetrics, apiRequests, mcpActiveSessions, auditDlqDepth, recordInspectEvent } from "./metrics/self.js";
 import { initOtel } from "./observability/otel.js";
+import { installShutdown, isShuttingDown, onShutdown } from "./util/shutdown.js";
 import { WebSocketServerTransport } from "./transport/websocket.js";
 import { HookRegistry } from "./sdk/hooks.js";
 import { InspectStore, ModeController, bootMode, createInspectRecorder, createInspectEnforcer, buildFlowGraph, durationToSeconds, ProfileStore } from "./inspect/index.js";
@@ -1517,11 +1518,7 @@ async function main() {
     sinks: auditSinks,
   });
   await mgmtAudit.bootstrap();
-  process.on("SIGTERM", () => {
-    mgmtAudit
-      .flushSinks()
-      .catch((err) => console.warn("AuditLog flushSinks failed:", err));
-  });
+  onShutdown("audit sinks", () => mgmtAudit.flushSinks());
   const audit = (resource: string, action: string) =>
     buildAuditMiddleware({ audit: mgmtAudit, resource, action });
 
@@ -1632,9 +1629,7 @@ async function main() {
       "AnomalyHistory: TSDB sink enabled (OMCP_ANOMALY_HISTORY_REMOTE_WRITE set)",
     );
   }
-  process.on("SIGTERM", () => {
-    void anomalyHistory.stop().catch(() => undefined);
-  });
+  onShutdown("anomaly history", () => anomalyHistory.stop());
 
   // Federation registry — populated from OMCP_FEDERATION_UPSTREAMS at
   // boot. Each upstream connects, fetches tools/list, and exposes its
@@ -1666,11 +1661,7 @@ async function main() {
       federationRegistry.list().map((u) => `${u.name}=${u.url}`).join(", "),
     );
   }
-  process.on("SIGTERM", () => {
-    federationRegistry
-      .closeAll()
-      .catch((err) => console.warn("federation closeAll failed:", err));
-  });
+  onShutdown("federation upstreams", () => federationRegistry.closeAll());
 
   // Service catalog: optional operator-curated ownership / criticality /
   // on-call metadata, keyed on the service name list_services returns.
@@ -1784,7 +1775,7 @@ async function main() {
     });
   });
   app.get("/readyz", (_req, res) => {
-    if (ready) return res.type("text").send("ok");
+    if (ready && !isShuttingDown()) return res.type("text").send("ok");
     return res.status(503).type("text").send("starting");
   });
 
@@ -3868,6 +3859,9 @@ async function main() {
         .map((c) => c.name)
         .join(", ")}`
     );
+    // No HTTP listener here, but the audit / history / federation hooks
+    // registered above still need flushing when the client stops us.
+    installShutdown();
     return;
   }
 
@@ -3953,11 +3947,7 @@ async function main() {
   // Flush on graceful shutdown so the debounce-window of pending
   // charges isn't dropped on `kubectl rollout restart` etc. The
   // process keeps running while we wait — the snapshot is small.
-  for (const sig of ["SIGTERM", "SIGINT"] as const) {
-    process.once(sig, () => {
-      void tokenBudget.flushNow().catch(() => { /* best-effort */ });
-    });
-  }
+  onShutdown("token budget", () => tokenBudget.flushNow());
 
   // Bearer/X-API-Key on every /mcp request; resolve the principal + its
   // coarse source allow-list into the RequestContext.
@@ -4274,6 +4264,7 @@ async function main() {
     console.log(`  Web UI: http://localhost:${PORT}`);
     console.log(`  Connectors: ${registry.getAll().map((c) => c.name).join(", ")}`);
   });
+  installShutdown({ server: httpServer });
 
   // Mount the WebSocket MCP transport. One McpServer instance per
   // accepted socket; per-connection state is carried in
