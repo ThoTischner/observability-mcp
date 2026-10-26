@@ -6,6 +6,21 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **OpenTelemetry stack upgraded as one set** — `@opentelemetry/api` 1.10,
+  `core` / `resources` 3.0, `sdk-node` / `exporter-trace-otlp-http` 0.300,
+  `auto-instrumentations-node` 0.82. The Dependabot production group could
+  no longer resolve (API 1.10 vs the `core` 2.x pin), so it never merged;
+  the `core` security floor moves to `^3.0.0`. A new end-to-end test boots
+  the server with tracing on and asserts HTTP spans reach an OTLP
+  receiver — init failures only log a warning, so before this an
+  incompatible upgrade would have switched tracing off silently.
+- **Node.js 22.15 or newer is now required** for the npm package
+  (`engines` set). The OpenTelemetry 3.x / 0.300 line dropped Node 20, which
+  reached end of life in April 2026. The Docker image (Node 26) and the Helm
+  chart are unaffected.
+
 ### Security
 
 - **SDK `@thotischner/observability-mcp-sdk` 3.2.2:** the `zod` dependency

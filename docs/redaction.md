@@ -91,7 +91,7 @@ Both levers default OFF — redaction is on out of the box.
 ## Verifying locally
 
 ```bash
-docker run --rm -w /app -v "$(pwd)/mcp-server:/app" node:20-alpine \
+docker run --rm -w /app -v "$(pwd)/mcp-server:/app" node:22-alpine \
   sh -c "npm i --silent && npx tsx --test src/policy/redact.test.ts"
 ```
 
