@@ -12,6 +12,7 @@
       "version": "1.0.0",
       "releasedAt": "2026-06-06",
       "serverCompat": ">=3.0.0",
+      "tarballUrl": "https://github.com/ThoTischner/observability-mcp/releases/download/connector-istio-1.0.0/istio-1.0.0.tgz",
       "integrity": "sha256-37TMXYn9X3PzhKkV8PrAZ5WHXymDVIZsK9wWnyIljzg=",
       "changelog": "Initial release: Istio service-mesh CALLS graph via istio_requests_total Prometheus metric. Snapshots memoized 30s. Auth via optional Bearer token."
     }

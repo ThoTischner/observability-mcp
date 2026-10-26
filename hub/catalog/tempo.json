@@ -12,6 +12,7 @@
       "version": "1.2.0",
       "releasedAt": "2026-06-06",
       "serverCompat": ">=3.0.0",
+      "tarballUrl": "https://github.com/ThoTischner/observability-mcp/releases/download/connector-tempo-1.2.0/tempo-1.2.0.tgz",
       "integrity": "sha256-QINzSd6usdgVwZUziQgssLHSmTreP0Vb+3dI6Wp5IX0=",
       "changelog": "Adds queryTraces capability so the gateway's `query_traces` MCP tool returns real ranked trace summaries against the Tempo backend. Builds a TraceQL query (default `{ resource.service.name=\"X\" }`, splices service-AND into caller-supplied filters), hits /api/search, then for the first 25 traces fetches /api/traces/:id to compute spanCount + hasError from OTLP status.code. Output matches gateway TraceResult shape exactly."
     },
@@ -26,7 +27,6 @@
       "version": "1.0.0",
       "releasedAt": "2026-05-18",
       "serverCompat": ">=1.4.0",
-      "tarballUrl": "https://github.com/ThoTischner/observability-mcp/releases/download/connector-tempo-1.0.0/tempo-1.0.0.tgz",
       "integrity": "sha256-Wpg5LcyUCuGxzM8OPGdVn/4/LmpP4iWrvbsCEp8kMdQ=",
       "changelog": "Initial release: trace-derived service latency via Tempo TraceQL search, service discovery from resource.service.name tag, optional Bearer auth."
     }
