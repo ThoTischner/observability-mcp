@@ -17,15 +17,23 @@ permissions:
 jobs:
   tag:
     runs-on: ubuntu-latest
+    # The tag is pushed with RELEASE_PAT, not GITHUB_TOKEN: GitHub does not
+    # start workflows for pushes made with GITHUB_TOKEN, so a tag pushed
+    # that way would never fan out to release/npm/docker/helm. Hence no
+    # write scope for GITHUB_TOKEN, and no silent fallback to it.
     permissions:
-      contents: write   # push the release tag
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
-          token: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
+          # The push below authenticates with RELEASE_PAT explicitly; a
+          # persisted GITHUB_TOKEN header would take precedence over it.
+          persist-credentials: false
 
       - name: Check commit message and create tag
+        env:
+          RELEASE_PAT: ${{ secrets.RELEASE_PAT }}
         run: |
           set -euo pipefail
           msg=$(git log -1 --pretty=%s)
@@ -53,6 +61,12 @@ jobs:
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Only real release commits need the PAT, so a missing secret
+          # can't redden ordinary pushes.
+          if [ -z "$RELEASE_PAT" ]; then
+            echo "::error::RELEASE_PAT is not set. A tag pushed with GITHUB_TOKEN would not trigger the release workflows."
+            exit 1
+          fi
           git tag -a "$version" -m "Release $version"
-          git push origin "$version"
+          git push "https://x-access-token:${RELEASE_PAT}@github.com/${GITHUB_REPOSITORY}.git" "$version"
           echo "pushed tag $version"
