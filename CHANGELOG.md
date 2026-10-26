@@ -12,10 +12,9 @@ Security-maintenance release. No API or behaviour changes.
 
 ### Security
 
-- **Cleared two high-severity transitive advisories that were failing
-  `npm audit` in CI** by raising the override floors: `body-parser` → 2.4.0
-  (GHSA-27r3-jxmh-p828, DoS via trailing bytes after a compressed request body)
-  and `zod` → 4.6.7 (GHSA-mrhx-c7xc-m3w5, memory exhaustion on oversized
+- **Cleared two high-severity advisories that were failing `npm audit` in
+  CI:** `body-parser` → 2.4.0 via a raised override floor (GHSA-27r3-jxmh-p828,
+  DoS via trailing bytes after a compressed request body) and `zod` → 4.6.7 (GHSA-mrhx-c7xc-m3w5, memory exhaustion on oversized
   constrained collections) — in the server via the production-deps bump (#651),
   in the example agent via a new override (#654).
 
