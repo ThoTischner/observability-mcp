@@ -6,6 +6,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.9.16] — 2026-10-26
+
+Maintenance and hardening release. **Node.js 22.15+ is now required** for
+the npm package (the Docker image and Helm chart are unaffected).
+
 ### Changed
 
 - **OpenTelemetry stack upgraded as one set** — `@opentelemetry/api` 1.10,
@@ -20,9 +25,22 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`engines` set). The OpenTelemetry 3.x / 0.300 line dropped Node 20, which
   reached end of life in April 2026. The Docker image (Node 26) and the Helm
   chart are unaffected.
+- **Helm: the connector bundle is pinned to the release.** `plugins.image`
+  defaulted to the mutable `observability-mcp-plugins:latest`; an untagged
+  value (the new default) now resolves to the bundle tagged with the chart's
+  `appVersion`, which CI builds on every release tag. An explicit `:tag` or
+  `@digest` is used unchanged.
+- **Helm: the `extract-plugins` init container runs with a read-only root
+  filesystem**, and the bundle image no longer runs as root.
+- Routine dependency updates: MCP SDK, AWS SDK in the aws connector, GitHub
+  Actions, connector bundle base image.
 
 ### Security
 
+- **Server image refreshed:** the pinned `node:26-alpine` digest had never
+  been updated and shipped Node 26.1.0; it now ships Node 26.12.1, and the
+  runtime stage upgrades every Alpine package at build time (picks up the
+  zlib and musl fixes that the OpenSSL-only upgrade missed).
 - **SDK `@thotischner/observability-mcp-sdk` 3.2.2:** the `zod` dependency
   floor is raised from `^4.4.3` to `^4.6.6`, so plugin authors can no longer
   resolve a `zod` affected by GHSA-mrhx-c7xc-m3w5 (memory exhaustion on
@@ -43,12 +61,29 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   immediately. The Helm chart adds a 5 s `preStop` sleep
   (`preStopSleepSeconds`) so the pod keeps serving while its endpoint
   leaves the Service.
+- **Six connectors were not installable from the hub.** aws, consul, gcp,
+  istio, linkerd and tempo had no published tarball for their latest catalog
+  version, so `omcp plugin install` failed. They are published now;
+  connector releases run automatically when a version lands on `main`, and
+  CI checks that every catalog version is downloadable.
+- **GCP connector 1.0.1:** its declared Google Cloud SDK versions never
+  existed on npm and Compute Engine discovery called a method the SDK
+  doesn't have; both fixed and covered by tests against the real SDK.
 - **SDK `create-connector` scaffold installs again.** Generated skeletons
   depended on `@thotischner/observability-mcp-sdk@^2.0.0`, a major that was
   never published, so `npm install` failed in every new connector. The
   scaffold now pins the SDK release that generated it, and an end-to-end test
   of the CLI runs in the PR security scan and against the built bin before
   every SDK publish.
+
+### CI
+
+- The security scan now audits every shipped lockfile (server, agent, SDK,
+  connectors), fails on fixable HIGH/CRITICAL findings in the image and the
+  repository, gates misconfigurations in the Helm chart and Dockerfiles,
+  checks that pinned Node base images are current, and runs CodeQL on the
+  workflows themselves. Token permissions were tightened where they weren't
+  needed.
 
 ## [3.9.15] — 2026-10-26
 
