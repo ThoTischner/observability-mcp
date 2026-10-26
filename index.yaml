@@ -5,6 +5,64 @@ entries:
       artifacthub.io/category: monitoring-logging
       artifacthub.io/changes: |
         - kind: changed
+          description: "appVersion → 3.9.17; chart points at the 3.9.17 image"
+        - kind: security
+          description: "The server container runs with a read-only root filesystem by default; /tmp is an emptyDir and /app/config an emptyDir seeded from the image (seed-writable init container) unless persistence is enabled. Opt out with securityContext.readOnlyRootFilesystem=false"
+        - kind: fixed
+          description: "persistence.enabled now persists Web UI edits: CONFIG_PATH is always set, so a fresh PVC no longer makes the server fall back to a path inside the container"
+      artifacthub.io/containsSecurityUpdates: "true"
+      artifacthub.io/images: |
+        - name: observability-mcp
+          image: ghcr.io/thotischner/observability-mcp:3.9.17
+          platforms:
+            - linux/amd64
+            - linux/arm64
+      artifacthub.io/license: Apache-2.0
+      artifacthub.io/links: |
+        - name: Source
+          url: https://github.com/ThoTischner/observability-mcp
+        - name: Container image
+          url: https://github.com/ThoTischner/observability-mcp/pkgs/container/observability-mcp
+        - name: npm
+          url: https://www.npmjs.com/package/@thotischner/observability-mcp
+        - name: Connector Hub
+          url: https://thotischner.github.io/observability-mcp/hub/
+      artifacthub.io/operator: "false"
+      artifacthub.io/prerelease: "false"
+      artifacthub.io/signKey: |
+        fingerprint: C240A58EC3B9D596C685FB0079826B0CB9A6329F
+        url: https://raw.githubusercontent.com/ThoTischner/observability-mcp/main/docs/helm-signing.pub.asc
+    apiVersion: v2
+    appVersion: 3.9.17
+    created: "2026-10-26T22:59:07.396608616Z"
+    description: Unified observability gateway for AI agents — one MCP server for
+      Prometheus, Loki, and any backend
+    digest: c36ee216803994e589882aecd7bd454679685da9fc8798f93c84276578123c91
+    home: https://github.com/ThoTischner/observability-mcp
+    icon: https://raw.githubusercontent.com/ThoTischner/observability-mcp/main/docs/logo.svg
+    keywords:
+    - mcp
+    - model-context-protocol
+    - observability
+    - prometheus
+    - loki
+    - sre
+    - monitoring
+    - ai-agents
+    maintainers:
+    - name: ThoTischner
+      url: https://github.com/ThoTischner
+    name: observability-mcp
+    sources:
+    - https://github.com/ThoTischner/observability-mcp
+    type: application
+    urls:
+    - https://github.com/ThoTischner/observability-mcp/releases/download/observability-mcp-2.9.18/observability-mcp-2.9.18.tgz
+    version: 2.9.18
+  - annotations:
+      artifacthub.io/category: monitoring-logging
+      artifacthub.io/changes: |
+        - kind: changed
           description: "appVersion → 3.9.16; chart points at the 3.9.16 image"
         - kind: changed
           description: "plugins.image now defaults to the connector bundle tagged with the chart's appVersion instead of the mutable :latest; an explicit :tag or @digest is used unchanged"
@@ -3537,4 +3595,4 @@ entries:
     urls:
     - https://github.com/ThoTischner/observability-mcp/releases/download/observability-mcp-0.3.0/observability-mcp-0.3.0.tgz
     version: 0.3.0
-generated: "2026-10-26T21:56:25.715044123Z"
+generated: "2026-10-26T22:59:07.396773546Z"
