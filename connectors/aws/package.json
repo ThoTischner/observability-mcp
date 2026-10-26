@@ -15,8 +15,8 @@
     "test": "node --test index.test.mjs"
   },
   "dependencies": {
-    "@aws-sdk/client-ec2": "^3.658.0",
-    "@aws-sdk/client-ecs": "^3.658.0",
-    "@aws-sdk/client-eks": "^3.658.0"
+    "@aws-sdk/client-ec2": "^3.1156.0",
+    "@aws-sdk/client-ecs": "^3.1156.0",
+    "@aws-sdk/client-eks": "^3.1156.0"
   }
 }
