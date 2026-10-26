@@ -30,7 +30,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
         with:
-          node-version: '20'
+          node-version: '22'  # the gcp connector's Google Cloud SDK majors need >=22
       - name: Build CLI
         working-directory: ./mcp-server
         run: npm ci && npm run build
@@ -43,6 +43,27 @@ jobs:
             name=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$d/package.json')).observabilityMcp.name)")
             echo "=== install-it: $name ==="
             sh connectors/install-it.sh "$name"
+          done
+      - name: Connector dependencies install + tests against the real SDK
+        # The unit tests run repo-wide without per-connector installs and
+        # fake the cloud clients, so they can't notice a dependency range
+        # that doesn't exist on npm or a method the real SDK lacks (both
+        # shipped in gcp 1.0.0). Install each connector that declares
+        # dependencies from its lockfile — required, so npm audit has
+        # something to read — and rerun its tests with the SDK present.
+        # node_modules is removed again so the loader smoke below still
+        # exercises the SDK-missing path.
+        run: |
+          for d in connectors/*/; do
+            d=${d%/}
+            [ -f "$d/package.json" ] || continue
+            ndeps=$(node -e "console.log(Object.keys(JSON.parse(require('fs').readFileSync('$d/package.json')).dependencies||{}).length)")
+            [ "$ndeps" -gt 0 ] || continue
+            echo "=== $d ($ndeps dependencies) ==="
+            [ -f "$d/package-lock.json" ] || { echo "::error file=$d/package.json::$d declares dependencies but has no package-lock.json"; exit 1; }
+            (cd "$d" && npm ci --ignore-scripts --no-audit --no-fund)
+            node --test "$d"/*.test.mjs
+            rm -rf "$d/node_modules"
           done
       - name: Loader functional smoke (connectors load & are callable)
         # The install-it scenario exercises the source path where

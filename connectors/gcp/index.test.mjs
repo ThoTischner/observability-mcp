@@ -3,12 +3,20 @@ import assert from "node:assert/strict";
 
 import create, { GcpConnector } from "./index.js";
 
+// Mirrors InstancesClient.aggregatedListAsync(): an async iterable of
+// [scope, InstancesScopedList] pairs.
+async function* aggregated(byZone = {}) {
+  for (const entry of Object.entries(byZone)) yield entry;
+}
+
 // Build fake GCP SDK clients. Each method returns a plain JS shape
 // matching the real client surface enough to drive _buildSnapshot.
+// "real SDK exposes every method the connector calls" (below) pins
+// these method names to the installed SDK.
 function fakeClients({ instances = {}, services = [], clusters = [] } = {}) {
   return {
     _compute: {
-      aggregatedList: async () => instances,
+      aggregatedListAsync: () => aggregated(instances),
       list: async () => [[], {}],
     },
     _run: {
@@ -72,7 +80,7 @@ test("healthCheck down when SDK throws", async () => {
   await c.connect({
     name: "gcp",
     project: "p",
-    _compute: { list: async () => { throw new Error("permission denied"); }, aggregatedList: async () => ({}) },
+    _compute: { list: async () => { throw new Error("permission denied"); }, aggregatedListAsync: () => aggregated() },
     _run: { listServices: async () => [[]] },
     _container: { listClusters: async () => ({ clusters: [] }) },
   });
@@ -170,7 +178,7 @@ test("snapshot cached for TTL", async () => {
   const c = create();
   await c.connect({
     name: "gcp", project: "p",
-    _compute: { aggregatedList: async () => { calls++; return {}; }, list: async () => [[]] },
+    _compute: { aggregatedListAsync: () => { calls++; return aggregated(); }, list: async () => [[]] },
     _run: { listServices: async () => [[]] },
     _container: { listClusters: async () => ({ clusters: [] }) },
   });
@@ -188,4 +196,28 @@ test("malformed Cloud Run service name (no /services/<n>) is skipped", async () 
   // Only the well-formed entry survives
   assert.equal(snap.resources.length, 1);
   assert.equal(snap.resources[0].name, "payment");
+});
+
+// Runs only where the connector's dependencies are installed (CI's
+// connector-install-it does `npm ci` here first). The fakes above can't
+// catch a method that doesn't exist on the real client — this can.
+let realSdk = null;
+try {
+  realSdk = {
+    compute: await import("@google-cloud/compute"),
+    run: await import("@google-cloud/run"),
+    container: await import("@google-cloud/container"),
+  };
+} catch { /* SDK not installed — skip */ }
+
+test("real SDK exposes every method the connector calls", { skip: !realSdk && "SDK not installed" }, () => {
+  const surface = [
+    [realSdk.compute.InstancesClient, ["list", "aggregatedListAsync"]],
+    [realSdk.run.ServicesClient, ["listServices"]],
+    [realSdk.container.ClusterManagerClient, ["listClusters"]],
+  ];
+  for (const [Client, methods] of surface) {
+    assert.equal(typeof Client, "function");
+    for (const m of methods) assert.equal(typeof Client.prototype[m], "function", `${Client.name}.${m}`);
+  }
 });
