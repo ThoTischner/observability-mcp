@@ -47,6 +47,13 @@ jobs:
           diff -q mcp-server/src/sdk/hooks.ts packages/sdk/src/hooks.ts
           diff -q mcp-server/src/sdk/manifest-schema.ts packages/sdk/src/manifest-schema.ts
 
+      - name: Scaffold smoke test against the built bin
+        # Same test the PR security scan runs against the TS source, but
+        # here against dist/ — the exact file `npx` will execute.
+        env:
+          SDK_CLI: packages/sdk/dist/cli/create-connector.js
+        run: node --test scripts/sdk-scaffold.test.mjs
+
       - name: Pack
         working-directory: packages/sdk
         run: npm pack

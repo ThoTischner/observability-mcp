@@ -81,6 +81,8 @@ jobs:
         run: node --test scripts/verify-audit.test.mjs
       - name: npm-audit CI wrapper (end-to-end)
         run: node --test scripts/npm-audit-ci.test.mjs
+      - name: SDK connector scaffold (end-to-end)
+        run: node --test scripts/sdk-scaffold.test.mjs
       - name: IP-enrich CSV converter CLI (end-to-end)
         run: node --test scripts/build-ip-enrich-csv.test.mjs
       - name: Connectors (tests + manifest/catalog integrity in sync)
