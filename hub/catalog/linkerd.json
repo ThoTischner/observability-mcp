@@ -12,6 +12,7 @@
       "version": "1.0.0",
       "releasedAt": "2026-06-06",
       "serverCompat": ">=3.0.0",
+      "tarballUrl": "https://github.com/ThoTischner/observability-mcp/releases/download/connector-linkerd-1.0.0/linkerd-1.0.0.tgz",
       "integrity": "sha256-pUNPXuokuF3T02cJ8r3wf1qt3wYtKFd/iEUX1ydWpOU=",
       "changelog": "Initial release: Linkerd service-mesh CALLS graph via response_total. 30s snapshot TTL. Optional Bearer auth."
     }
