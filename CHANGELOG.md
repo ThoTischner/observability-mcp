@@ -6,6 +6,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+
+- **SDK `@thotischner/observability-mcp-sdk` 3.2.2:** the `zod` dependency
+  floor is raised from `^4.4.3` to `^4.6.6`, so plugin authors can no longer
+  resolve a `zod` affected by GHSA-mrhx-c7xc-m3w5 (memory exhaustion on
+  oversized constrained collections). No API change.
+
 ## [3.9.15] — 2026-10-26
 
 Security-maintenance release. No API or behaviour changes.
