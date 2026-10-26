@@ -9,6 +9,13 @@
   "signalTypes": ["topology"],
   "versions": [
     {
+      "version": "1.0.1",
+      "releasedAt": "2026-10-26",
+      "serverCompat": ">=3.0.0",
+      "integrity": "sha256-IIoExQiC7dB+O++jOjyTQXFn8zgrWdCGAlhGHS5+ZbU=",
+      "changelog": "Fix: the declared SDK versions (@google-cloud/compute ^4.13.0, @google-cloud/run ^1.6.0) were never published, so installing the connector's dependencies failed; now compute ^7.9.0, run ^4.2.0, container ^7.3.0 with a committed lockfile. Compute Engine discovery used InstancesClient.aggregatedList(), which the SDK doesn't have — it now iterates aggregatedListAsync(). The new SDK majors require Node.js >=22 (the server image ships Node 26)."
+    },
+    {
       "version": "1.0.0",
       "releasedAt": "2026-06-06",
       "serverCompat": ">=3.0.0",

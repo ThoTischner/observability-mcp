@@ -196,29 +196,25 @@ export class GcpConnector {
     const edges = [];
 
     // --- Compute Engine instances (aggregated across zones) -----------
-    const aggResp = await this._compute.aggregatedList({ project });
-    // The aggregatedList iterator yields [zone, payload] pairs OR
-    // (in unit tests) returns an array shape — accept both.
-    const aggIter = Array.isArray(aggResp) ? aggResp[0] : aggResp;
-    const aggObj = typeof aggIter?.[Symbol.asyncIterator] === "function" ? null : aggIter;
-    if (aggObj && typeof aggObj === "object") {
-      for (const [zoneKey, payload] of Object.entries(aggObj)) {
-        const zone = zoneKey.replace(/^zones\//, "");
-        for (const inst of payload?.instances || []) {
-          resources.push({
-            id: id.gce(project, zone, inst.name),
-            kind: "cloud_node",
-            name: inst.name,
-            source: this.name,
-            labels: {
-              project,
-              zone,
-              machineType: (inst.machineType || "").split("/").pop(),
-              status: inst.status || "unknown",
-            },
-            attributes: { provider: "gcp", service: "gce" },
-          });
-        }
+    // InstancesClient has no plain aggregatedList(); the paginated
+    // aggregatedListAsync() yields [scope, InstancesScopedList] pairs,
+    // where scope is "zones/<zone>" and empty zones carry no instances.
+    for await (const [zoneKey, payload] of this._compute.aggregatedListAsync({ project })) {
+      const zone = zoneKey.replace(/^zones\//, "");
+      for (const inst of payload?.instances || []) {
+        resources.push({
+          id: id.gce(project, zone, inst.name),
+          kind: "cloud_node",
+          name: inst.name,
+          source: this.name,
+          labels: {
+            project,
+            zone,
+            machineType: (inst.machineType || "").split("/").pop(),
+            status: inst.status || "unknown",
+          },
+          attributes: { provider: "gcp", service: "gce" },
+        });
       }
     }
 
