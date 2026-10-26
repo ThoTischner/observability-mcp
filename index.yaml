@@ -5,6 +5,70 @@ entries:
       artifacthub.io/category: monitoring-logging
       artifacthub.io/changes: |
         - kind: changed
+          description: "appVersion → 3.9.16; chart points at the 3.9.16 image"
+        - kind: changed
+          description: "plugins.image now defaults to the connector bundle tagged with the chart's appVersion instead of the mutable :latest; an explicit :tag or @digest is used unchanged"
+        - kind: added
+          description: "preStopSleepSeconds (default 5) keeps the pod serving while its endpoint leaves the Service during shutdown"
+        - kind: fixed
+          description: "The server now exits on SIGTERM after draining and flushing (it used to wait for SIGKILL at the end of the grace period)"
+        - kind: security
+          description: "Image ships Node 26.12.1 (was 26.1.0) with all Alpine packages upgraded at build time; the extract-plugins init container runs with a read-only root filesystem"
+        - kind: changed
+          description: "npm package requires Node.js 22.15+ (OpenTelemetry 3.x); the image is unaffected"
+      artifacthub.io/containsSecurityUpdates: "true"
+      artifacthub.io/images: |
+        - name: observability-mcp
+          image: ghcr.io/thotischner/observability-mcp:3.9.16
+          platforms:
+            - linux/amd64
+            - linux/arm64
+      artifacthub.io/license: Apache-2.0
+      artifacthub.io/links: |
+        - name: Source
+          url: https://github.com/ThoTischner/observability-mcp
+        - name: Container image
+          url: https://github.com/ThoTischner/observability-mcp/pkgs/container/observability-mcp
+        - name: npm
+          url: https://www.npmjs.com/package/@thotischner/observability-mcp
+        - name: Connector Hub
+          url: https://thotischner.github.io/observability-mcp/hub/
+      artifacthub.io/operator: "false"
+      artifacthub.io/prerelease: "false"
+      artifacthub.io/signKey: |
+        fingerprint: C240A58EC3B9D596C685FB0079826B0CB9A6329F
+        url: https://raw.githubusercontent.com/ThoTischner/observability-mcp/main/docs/helm-signing.pub.asc
+    apiVersion: v2
+    appVersion: 3.9.16
+    created: "2026-10-26T21:56:25.714810083Z"
+    description: Unified observability gateway for AI agents — one MCP server for
+      Prometheus, Loki, and any backend
+    digest: 3b90f60e649cbdb2c42f5f6b4935ad62f4fd729e0b1bcff18a67fbebfae23875
+    home: https://github.com/ThoTischner/observability-mcp
+    icon: https://raw.githubusercontent.com/ThoTischner/observability-mcp/main/docs/logo.svg
+    keywords:
+    - mcp
+    - model-context-protocol
+    - observability
+    - prometheus
+    - loki
+    - sre
+    - monitoring
+    - ai-agents
+    maintainers:
+    - name: ThoTischner
+      url: https://github.com/ThoTischner
+    name: observability-mcp
+    sources:
+    - https://github.com/ThoTischner/observability-mcp
+    type: application
+    urls:
+    - https://github.com/ThoTischner/observability-mcp/releases/download/observability-mcp-2.9.17/observability-mcp-2.9.17.tgz
+    version: 2.9.17
+  - annotations:
+      artifacthub.io/category: monitoring-logging
+      artifacthub.io/changes: |
+        - kind: changed
           description: "appVersion → 3.9.15; chart points at the 3.9.15 image"
         - kind: security
           description: "Patched transitive dependencies flagged by npm audit: body-parser 2.4.0 (GHSA-27r3-jxmh-p828), zod 4.6.7 (GHSA-mrhx-c7xc-m3w5)."
@@ -3473,4 +3537,4 @@ entries:
     urls:
     - https://github.com/ThoTischner/observability-mcp/releases/download/observability-mcp-0.3.0/observability-mcp-0.3.0.tgz
     version: 0.3.0
-generated: "2026-10-26T13:07:19.921743143Z"
+generated: "2026-10-26T21:56:25.715044123Z"
