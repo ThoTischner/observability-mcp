@@ -1,7 +1,7 @@
 # Pinned Playwright image already contains Chromium + system deps.
 # Stays bit-for-bit reproducible across local + CI runs.
 # Digest-pinned for OpenSSF Scorecard PinnedDependenciesID.
-FROM mcr.microsoft.com/playwright:v1.49.1-jammy@sha256:019b822658965bf5f6d509472802797554360f2940e677b2afb0f17748d0d0e3
+FROM mcr.microsoft.com/playwright:v1.64.1-jammy@sha256:6075bd984554db82aee96bcdde53197f091dfe8c4b89322c61da77b86308b810
 
 WORKDIR /work
 

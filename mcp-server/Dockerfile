@@ -1,7 +1,7 @@
 # --- Build stage -----------------------------------------------------------
 # Installs deps + compiles TS. Everything here is throwaway; only the
 # artefacts under /app are copied into the runtime stage.
-FROM node:26-alpine@sha256:e71ac5e964b9201072425d59d2e876359efa25dc96bb1768cb73295728d6e4ea AS builder
+FROM node:26-alpine@sha256:40cd011b55415bc894e45b02fdd5a5dfde056921b7d23a64c74f80497af48797 AS builder
 
 WORKDIR /app
 COPY package.json package-lock.json* ./
@@ -20,14 +20,15 @@ RUN npm prune --omit=dev
 # transitive deps (e.g. ip-address) that surface as CVEs even though the
 # server never invokes npm at runtime. Removing it shrinks the image and
 # silences false-positive scans like the one ArtifactHub reported.
-FROM node:26-alpine@sha256:e71ac5e964b9201072425d59d2e876359efa25dc96bb1768cb73295728d6e4ea
+FROM node:26-alpine@sha256:40cd011b55415bc894e45b02fdd5a5dfde056921b7d23a64c74f80497af48797
 
-# Patch base-image OS packages that lag the pinned digest snapshot. The
-# digest carries libcrypto3/libssl3 3.5.6-r0 (a batch of OpenSSL CVEs);
-# the Alpine repo already ships the 3.5.7-r0 fix. Upgrade just those two
-# packages at build time so Trivy's image scan is clean without waiting
-# for a new base digest. --no-cache leaves no apk index behind.
-RUN apk upgrade --no-cache libcrypto3 libssl3
+# Patch base-image OS packages that lag the pinned digest snapshot.
+# Alpine ships fixes (OpenSSL, zlib, musl, ...) between base-image
+# rebuilds; upgrading every installed package at build time keeps the
+# image clean without waiting for a new digest. Upgrading only a named
+# few (as before) let zlib and musl fixes slip past. --no-cache leaves
+# no apk index behind.
+RUN apk upgrade --no-cache
 
 ARG GIT_COMMIT=""
 ARG BUILD_DATE=""
