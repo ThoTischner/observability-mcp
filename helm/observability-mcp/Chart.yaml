@@ -59,9 +59,11 @@ annotations:
     - kind: changed
       description: "appVersion → 3.9.15; chart points at the 3.9.15 image"
     - kind: security
-      description: "Patched transitive dependencies flagged by npm audit: fast-uri 3.1.8 (GHSA-qw65-cvwx-89v3), @grpc/grpc-js 1.14.5 (GHSA-m9gg-hp2v-232j, GHSA-f596-whhp-79r4), brace-expansion 5.0.12 (GHSA-q2hr-2g5m-vwhr), hono 4.13.13 (GHSA-hxh3-vqpv-xpqv), ip-address 10.7.2 (GHSA-j6r3-76f7-8jcv, GHSA-h3mg-xc3c-68pw)."
+      description: "Patched transitive dependencies flagged by npm audit: body-parser 2.4.0 (GHSA-27r3-jxmh-p828), zod 4.6.7 (GHSA-mrhx-c7xc-m3w5)."
       links:
-        - name: "PR #637"
-          url: https://github.com/ThoTischner/observability-mcp/pull/637
+        - name: "PR #654"
+          url: https://github.com/ThoTischner/observability-mcp/pull/654
+        - name: "PR #651"
+          url: https://github.com/ThoTischner/observability-mcp/pull/651
     - kind: changed
-      description: "Routine dependency updates (@modelcontextprotocol/sdk, zod, tsx, GitHub Actions). No behaviour change."
+      description: "Routine dependency updates (production-deps group, GitHub Actions). No behaviour change."

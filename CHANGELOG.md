@@ -6,6 +6,102 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.9.15] — 2026-10-26
+
+Security-maintenance release. No API or behaviour changes.
+
+### Security
+
+- **Cleared two high-severity transitive advisories that were failing
+  `npm audit` in CI** by raising the override floors: `body-parser` → 2.4.0
+  (GHSA-27r3-jxmh-p828, DoS via trailing bytes after a compressed request body)
+  and `zod` → 4.6.7 (GHSA-mrhx-c7xc-m3w5, memory exhaustion on oversized
+  constrained collections) — in the server via the production-deps bump (#651),
+  in the example agent via a new override (#654).
+
+### Changed
+
+- Routine dependency updates (production-deps group, GitHub Actions).
+
+## [3.9.14] — 2026-10-19
+
+### Changed
+
+- Dependency maintenance: `@modelcontextprotocol/sdk`, production-deps group,
+  GitHub Actions.
+
+## [3.9.13] — 2026-10-12
+
+### Security
+
+- `@modelcontextprotocol/sdk` → 1.32.1 (GHSA-6qxp-vccf-f47h) (#642) and
+  `proxy-addr` override floor → 2.0.8 (GHSA-jqcg-44mw-7w3h) (#641).
+
+## [3.9.12] — 2026-10-04
+
+### Security
+
+- Raised override floors for `fast-uri`, `@grpc/grpc-js`, `brace-expansion`
+  and `hono`; `ip-address` → 10.7.2. (#637, #631, #632)
+
+## [3.9.11] — 2026-09-28
+
+### Changed
+
+- Dependency maintenance: `zod`, GitHub Actions.
+
+## [3.9.10] — 2026-09-21
+
+### Changed
+
+- Dependency maintenance: `zod`, GitHub Actions.
+
+## [3.9.9] — 2026-09-13
+
+### Fixed
+
+- **Loki `aggregate` no longer fails on non-JSON log lines.** (#612)
+
+### Changed
+
+- CI runs every connector test file instead of a hand-picked subset (#613);
+  dependency maintenance.
+
+## [3.9.8] — 2026-09-07
+
+### Fixed
+
+- npm registry outages no longer turn the security scan red (#603).
+
+### Changed
+
+- Dependency maintenance: `qs`, `zod`, GitHub Actions.
+
+## [3.9.7] — 2026-08-31
+
+### Fixed
+
+- Helm chart: corrected the stale `artifacthub.io/changes` annotation and made
+  the release workflow keep it in sync (#593).
+
+## [3.9.6] — 2026-08-27
+
+### Security
+
+- Raised override floors to clear the four open `npm audit` advisories (#591).
+
+## [3.9.5] — 2026-08-02
+
+### Fixed
+
+- Helm release: the post-publish check now polls the chart version instead of
+  the app-version tag, ending false-red releases (#569).
+
+### Changed
+
+- Dependency maintenance: `@modelcontextprotocol/sdk`, production-deps group,
+  GitHub Actions.
+
 ## [3.9.4] — 2026-07-27
 
 Security-maintenance release. No API or behaviour changes.
