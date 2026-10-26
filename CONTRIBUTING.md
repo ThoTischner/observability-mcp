@@ -38,7 +38,7 @@ The agent + example-services are demo material. They will be moved under `exampl
    ```bash
    docker-compose up --build       # full stack
    # unit tests
-   docker run --rm -w /app -v "$(pwd)/mcp-server:/app" node:20-alpine \
+   docker run --rm -w /app -v "$(pwd)/mcp-server:/app" node:22-alpine \
      sh -c "npm install --silent && npx tsx --test src/analysis/*.test.ts src/config/*.test.ts"
    # helm chart
    docker run --rm -v "$(pwd)/helm/observability-mcp:/chart" alpine/helm:latest lint /chart

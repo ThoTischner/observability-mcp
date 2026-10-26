@@ -40,7 +40,7 @@ docker exec observability-mcp-k3s-1 \
 
 ### Run Unit Tests
 ```bash
-docker run --rm -w /app -v "$(pwd)/mcp-server:/app" node:20-alpine \
+docker run --rm -w /app -v "$(pwd)/mcp-server:/app" node:22-alpine \
   sh -c "npm install --silent && npx tsx --test src/analysis/*.test.ts"
 ```
 

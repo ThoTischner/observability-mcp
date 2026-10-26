@@ -237,7 +237,7 @@ the noise floor of the hard tier. The suite is deterministic and a detector
 regression fails CI. Reproduce locally:
 
 ```bash
-docker run --rm -w /app -v "$(pwd)/mcp-server:/app" node:20-alpine \
+docker run --rm -w /app -v "$(pwd)/mcp-server:/app" node:22-alpine \
   sh -c "npm i --silent && npx tsx --test src/analysis/backtest.test.ts"
 ```
 
@@ -553,11 +553,11 @@ In the docker-compose demo: Prometheus on `:9090`, Loki on `:3100`. The three ex
 
 ## Tech Stack
 
-TypeScript + Node 20, `@modelcontextprotocol/sdk` (Streamable HTTP), Express, Zod, js-yaml, prom-client (example services), Prometheus, Loki, Promtail, Docker Compose, optional Ollama.
+TypeScript + Node 22.15+, `@modelcontextprotocol/sdk` (Streamable HTTP), Express, Zod, js-yaml, prom-client (example services), Prometheus, Loki, Promtail, Docker Compose, optional Ollama.
 
 ## Requirements
 
-- **Standalone:** Node 20+ (or just `npx`)
+- **Standalone:** Node 22.15+ (or just `npx`)
 - **Docker demo:** Docker + Compose, 4 GB+ RAM (8 GB+ with Ollama)
 - **Optional:** Ollama on the host for the agent's LLM analysis
 

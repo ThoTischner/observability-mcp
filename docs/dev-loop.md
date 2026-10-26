@@ -43,7 +43,7 @@ edits.
    in most existing test files — crib it.
 5. Run locally:
    ```bash
-   docker run --rm -w /app -v "$(pwd)/mcp-server:/app" node:20-alpine \
+   docker run --rm -w /app -v "$(pwd)/mcp-server:/app" node:22-alpine \
      sh -c "npm install --silent && npx tsx --test src/tools/<your-tool>.test.ts"
    ```
 
@@ -79,7 +79,7 @@ the live `/mcp` endpoint. CI runs the same target on every PR.
 ## Run the full test suite
 
 ```bash
-docker run --rm -w /app -v "$(pwd)/mcp-server:/app" node:20-alpine \
+docker run --rm -w /app -v "$(pwd)/mcp-server:/app" node:22-alpine \
   sh -c "npm install --silent && find src -name '*.test.ts' -print0 | xargs -0 npx tsx --test"
 ```
 
