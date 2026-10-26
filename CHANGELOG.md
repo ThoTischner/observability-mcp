@@ -17,6 +17,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The server exits on SIGTERM again.** Several components registered
+  flush-only SIGTERM handlers and none of them exited, so `docker stop` and
+  every Kubernetes rollout waited out the grace period and SIGKILLed the
+  process, sometimes mid-flush. Shutdown is now centralised (HTTP and stdio
+  transports): readiness flips to 503, the listener stops accepting,
+  in-flight requests drain (up to 3 s), audit sinks / anomaly history /
+  federation upstreams / token budget / OTel are flushed in parallel
+  (bounded at 10 s), and the process exits 0. A second signal exits
+  immediately. The Helm chart adds a 5 s `preStop` sleep
+  (`preStopSleepSeconds`) so the pod keeps serving while its endpoint
+  leaves the Service.
 - **SDK `create-connector` scaffold installs again.** Generated skeletons
   depended on `@thotischner/observability-mcp-sdk@^2.0.0`, a major that was
   never published, so `npm install` failed in every new connector. The

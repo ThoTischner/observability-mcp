@@ -16,6 +16,7 @@
 // startup hot path when otel is disabled.
 
 import { hostname } from "node:os";
+import { onShutdown } from "../util/shutdown.js";
 
 export interface OtelInitResult {
   enabled: boolean;
@@ -113,15 +114,9 @@ export async function initOtel(
 
     sdk.start();
 
-    // Best-effort flush on shutdown so in-flight spans reach the
-    // collector during a rolling restart.
-    process.on("SIGTERM", () => {
-      sdk
-        .shutdown()
-        .catch((err: unknown) =>
-          console.warn("OTel SDK shutdown failed:", err),
-        );
-    });
+    // Flush on shutdown so in-flight spans reach the collector during a
+    // rolling restart.
+    onShutdown("otel sdk", () => sdk.shutdown());
 
     result = { enabled: true, endpoint, serviceName };
     console.log(

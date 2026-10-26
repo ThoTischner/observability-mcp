@@ -62,6 +62,14 @@ spec:
         - name: mcp-server
           image: "{{ .Values.image.repository }}:{{ include "observability-mcp.imageTag" . }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- if gt (int .Values.preStopSleepSeconds) 0 }}
+          # Keep serving while the endpoint removal propagates; the server
+          # stops accepting the moment SIGTERM arrives.
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "{{ int .Values.preStopSleepSeconds }}"]
+          {{- end }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           ports:

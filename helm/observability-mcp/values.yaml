@@ -424,6 +424,13 @@ podSecurityContext:
   seccompProfile:
     type: RuntimeDefault
 
+# Seconds the pod keeps serving after Kubernetes starts terminating it,
+# while its endpoint is removed from Services. The server stops accepting
+# as soon as SIGTERM arrives, then drains (3s) and flushes (<=10s) — keep
+# preStop + 13s under the default 30s terminationGracePeriodSeconds.
+# 0 disables the hook.
+preStopSleepSeconds: 5
+
 securityContext:
   allowPrivilegeEscalation: false
   capabilities:
