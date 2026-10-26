@@ -16,6 +16,7 @@
           "version": "1.0.0",
           "releasedAt": "2026-06-06",
           "serverCompat": ">=3.0.0",
+          "tarballUrl": "https://github.com/ThoTischner/observability-mcp/releases/download/connector-aws-1.0.0/aws-1.0.0.tgz",
           "integrity": "sha256-uK8e+cOg8ZwgFFZP/HYTg/RNH/v/NJumnrBLWqawf+U=",
           "changelog": "Initial release: EC2 + ECS + EKS topology discovery. Snapshots memoized for 30s. Watch-mode delivers initial resync + periodic poll. Standard AWS SDK credential chain (env, IAM role, profile)."
         }
@@ -36,6 +37,7 @@
           "version": "1.0.0",
           "releasedAt": "2026-06-06",
           "serverCompat": ">=3.0.0",
+          "tarballUrl": "https://github.com/ThoTischner/observability-mcp/releases/download/connector-consul-1.0.0/consul-1.0.0.tgz",
           "integrity": "sha256-geQNh5aLx62zb+wyORpjYin1aZmB/9yxcvVq7sXYE8k=",
           "changelog": "Initial release: Consul Connect topology via /v1/catalog/services + /v1/connect/intentions/match. Instance counts via /v1/health/service/<name> (capped at 50 services). 30s snapshot TTL. Optional X-Consul-Token auth."
         }
@@ -100,6 +102,7 @@
           "version": "1.0.1",
           "releasedAt": "2026-10-26",
           "serverCompat": ">=3.0.0",
+          "tarballUrl": "https://github.com/ThoTischner/observability-mcp/releases/download/connector-gcp-1.0.1/gcp-1.0.1.tgz",
           "integrity": "sha256-IIoExQiC7dB+O++jOjyTQXFn8zgrWdCGAlhGHS5+ZbU=",
           "changelog": "Fix: the declared SDK versions (@google-cloud/compute ^4.13.0, @google-cloud/run ^1.6.0) were never published, so installing the connector's dependencies failed; now compute ^7.9.0, run ^4.2.0, container ^7.3.0 with a committed lockfile. Compute Engine discovery used InstancesClient.aggregatedList(), which the SDK doesn't have — it now iterates aggregatedListAsync(). The new SDK majors require Node.js >=22 (the server image ships Node 26)."
         },
@@ -149,6 +152,7 @@
           "version": "1.0.0",
           "releasedAt": "2026-06-06",
           "serverCompat": ">=3.0.0",
+          "tarballUrl": "https://github.com/ThoTischner/observability-mcp/releases/download/connector-istio-1.0.0/istio-1.0.0.tgz",
           "integrity": "sha256-37TMXYn9X3PzhKkV8PrAZ5WHXymDVIZsK9wWnyIljzg=",
           "changelog": "Initial release: Istio service-mesh CALLS graph via istio_requests_total Prometheus metric. Snapshots memoized 30s. Auth via optional Bearer token."
         }
@@ -188,6 +192,7 @@
           "version": "1.0.0",
           "releasedAt": "2026-06-06",
           "serverCompat": ">=3.0.0",
+          "tarballUrl": "https://github.com/ThoTischner/observability-mcp/releases/download/connector-linkerd-1.0.0/linkerd-1.0.0.tgz",
           "integrity": "sha256-pUNPXuokuF3T02cJ8r3wf1qt3wYtKFd/iEUX1ydWpOU=",
           "changelog": "Initial release: Linkerd service-mesh CALLS graph via response_total. 30s snapshot TTL. Optional Bearer auth."
         }
@@ -248,6 +253,7 @@
           "version": "1.2.0",
           "releasedAt": "2026-06-06",
           "serverCompat": ">=3.0.0",
+          "tarballUrl": "https://github.com/ThoTischner/observability-mcp/releases/download/connector-tempo-1.2.0/tempo-1.2.0.tgz",
           "integrity": "sha256-QINzSd6usdgVwZUziQgssLHSmTreP0Vb+3dI6Wp5IX0=",
           "changelog": "Adds queryTraces capability so the gateway's `query_traces` MCP tool returns real ranked trace summaries against the Tempo backend. Builds a TraceQL query (default `{ resource.service.name=\"X\" }`, splices service-AND into caller-supplied filters), hits /api/search, then for the first 25 traces fetches /api/traces/:id to compute spanCount + hasError from OTLP status.code. Output matches gateway TraceResult shape exactly."
         },
@@ -262,7 +268,6 @@
           "version": "1.0.0",
           "releasedAt": "2026-05-18",
           "serverCompat": ">=1.4.0",
-          "tarballUrl": "https://github.com/ThoTischner/observability-mcp/releases/download/connector-tempo-1.0.0/tempo-1.0.0.tgz",
           "integrity": "sha256-Wpg5LcyUCuGxzM8OPGdVn/4/LmpP4iWrvbsCEp8kMdQ=",
           "changelog": "Initial release: trace-derived service latency via Tempo TraceQL search, service discovery from resource.service.name tag, optional Bearer auth."
         }

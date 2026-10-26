@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { validate, buildIndex, loadEntries } from "./build-catalog.mjs";
+import { validate, buildIndex, loadEntries, distributionErrors, officialTarballUrl } from "./build-catalog.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const schema = JSON.parse(readFileSync(join(HERE, "catalog-schema.json"), "utf8"));
@@ -52,6 +52,24 @@ test("rejects missing required field and bad date", () => {
       (m) => m.includes("date")
     )
   );
+});
+
+test("latest version of a non-builtin connector must be installable", () => {
+  const url = officialTarballUrl("tempo", "1.0.0");
+  const withUrl = { ...good, versions: [{ ...good.versions[0], tarballUrl: url }] };
+  assert.deepEqual(distributionErrors(withUrl, "1.0.0"), []);
+  assert.ok(distributionErrors(good, "1.0.0").some((m) => m.includes("missing tarballUrl")));
+  assert.deepEqual(distributionErrors({ ...good, builtin: true }, undefined), []);
+});
+
+test("official tarballUrl must point at the connector-publish release asset", () => {
+  const official = { ...good, tier: "official", versions: [{ ...good.versions[0], tarballUrl: "https://example.com/x.tgz" }] };
+  assert.ok(distributionErrors(official).some((m) => m.includes(officialTarballUrl("tempo", "1.0.0"))));
+});
+
+test("catalog latest must match the in-repo manifest version", () => {
+  const withUrl = { ...good, versions: [{ ...good.versions[0], tarballUrl: officialTarballUrl("tempo", "1.0.0") }] };
+  assert.ok(distributionErrors(withUrl, "1.1.0").some((m) => m.includes("manifest.json is 1.1.0")));
 });
 
 test("all committed catalog entries are valid", () => {

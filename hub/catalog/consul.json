@@ -12,6 +12,7 @@
       "version": "1.0.0",
       "releasedAt": "2026-06-06",
       "serverCompat": ">=3.0.0",
+      "tarballUrl": "https://github.com/ThoTischner/observability-mcp/releases/download/connector-consul-1.0.0/consul-1.0.0.tgz",
       "integrity": "sha256-geQNh5aLx62zb+wyORpjYin1aZmB/9yxcvVq7sXYE8k=",
       "changelog": "Initial release: Consul Connect topology via /v1/catalog/services + /v1/connect/intentions/match. Instance counts via /v1/health/service/<name> (capped at 50 services). 30s snapshot TTL. Optional X-Consul-Token auth."
     }

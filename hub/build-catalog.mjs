@@ -81,6 +81,38 @@ export function validate(node, schema, path = "") {
   return errs;
 }
 
+// Official connectors are installed by URL (`omcp plugin install <name>`
+// fails on a version without tarballUrl), and connector-publish.yml puts
+// each tarball at this fixed release-asset location. Six connectors once
+// shipped catalog versions nobody ever published; this keeps the latest
+// version installable, and in step with the in-repo manifest.
+const RELEASES = "https://github.com/ThoTischner/observability-mcp/releases/download";
+export const officialTarballUrl = (name, version) =>
+  `${RELEASES}/connector-${name}-${version}/${name}-${version}.tgz`;
+
+export function distributionErrors(entry, manifestVersion) {
+  if (entry.builtin === true) return [];
+  const errs = [];
+  const latest = entry.versions[0];
+  if (!latest.tarballUrl) {
+    errs.push(`versions[0] (${latest.version}): missing tarballUrl — the latest version must be installable`);
+  } else if (entry.tier === "official" && latest.tarballUrl !== officialTarballUrl(entry.name, latest.version)) {
+    errs.push(`versions[0].tarballUrl: expected ${officialTarballUrl(entry.name, latest.version)}`);
+  }
+  if (manifestVersion !== undefined && manifestVersion !== latest.version) {
+    errs.push(`versions[0] is ${latest.version} but connectors/${entry.name}/manifest.json is ${manifestVersion}`);
+  }
+  return errs;
+}
+
+function repoManifestVersion(name) {
+  try {
+    return JSON.parse(readFileSync(join(HERE, "..", "connectors", name, "manifest.json"), "utf8")).version;
+  } catch {
+    return undefined;
+  }
+}
+
 export function buildIndex(entries) {
   const connectors = entries
     .map((e) => ({
@@ -107,6 +139,7 @@ export function loadEntries() {
   for (const f of files) {
     const entry = JSON.parse(readFileSync(join(CATALOG_DIR, f), "utf8"));
     const errs = validate(entry, schema);
+    if (!errs.length) errs.push(...distributionErrors(entry, repoManifestVersion(entry.name)));
     if (f !== `${entry.name}.json`) {
       errs.push(`<root>: filename must be "${entry.name}.json"`);
     }

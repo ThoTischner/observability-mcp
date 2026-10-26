@@ -14,6 +14,18 @@ on:
   workflow_dispatch:
   push:
     tags: ['connector-*']
+    # Publish as soon as a connector version bump lands. This used to be
+    # dispatch-only, nobody dispatched it after May, and six catalog
+    # versions pointed at tarballs that didn't exist.
+    branches: [main]
+    paths:
+      - 'connectors/*/manifest.json'
+      - 'hub/catalog/*.json'
+      - '.github/workflows/connector-publish.yml'
+
+concurrency:
+  group: connector-publish
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -62,10 +74,15 @@ jobs:
             fi
             tag="connector-${name}-${ver}"
             asset="dist-connectors/${name}-${ver}.tgz"
-            if gh release view "$tag" >/dev/null 2>&1; then
-              gh release upload "$tag" "$asset" --clobber
+            # Released tarballs are immutable: an existing asset is never
+            # replaced (re-packing changes its bytes), only missing ones
+            # are added. Ship a change by bumping the connector version.
+            if gh release view "$tag" --json assets --jq '.assets[].name' 2>/dev/null | grep -qx "${name}-${ver}.tgz"; then
+              echo "$tag: already published, skipping"
+            elif gh release view "$tag" >/dev/null 2>&1; then
+              gh release upload "$tag" "$asset"
             else
-              gh release create "$tag" "$asset" \
+              gh release create "$tag" "$asset" --target "$GITHUB_SHA" \
                 --title "connector: ${name} ${ver}" \
                 --notes "Signed connector tarball for \`omcp plugin install ${name}\`. Verify with docs/plugin-signing.pub.pem."
             fi
@@ -74,3 +91,17 @@ jobs:
       - name: Wipe signing key
         if: always()
         run: shred -u /tmp/plugin-signing.key 2>/dev/null || rm -f /tmp/plugin-signing.key
+      - name: Every catalog tarballUrl is downloadable
+        # `omcp plugin install` fetches exactly these URLs; prove each one
+        # resolves now that publishing is done.
+        run: |
+          set -euo pipefail
+          urls=$(node -e '
+            const idx = require("./hub/catalog/index.json");
+            for (const c of idx.connectors) for (const v of c.versions) if (v.tarballUrl) console.log(v.tarballUrl);
+          ')
+          bad=0
+          for u in $urls; do
+            if curl -fsSL -o /dev/null --retry 3 --retry-delay 5 "$u"; then echo "ok   $u"; else echo "::error::not downloadable: $u"; bad=1; fi
+          done
+          exit $bad
