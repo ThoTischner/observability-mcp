@@ -85,6 +85,24 @@ init container only needs to seed a read-only emptyDir.
 {{- if or .Values.plugins.uiInstall.enabled .Values.plugins.persistence.enabled -}}true{{- end -}}
 {{- end -}}
 
+{{/*
+The root filesystem is read-only, so everything the server writes lives on
+a volume. Without persistence, /app/config is an emptyDir seeded from the
+image (it ships the default sources.yaml the Web UI edits in place).
+*/}}
+{{- define "observability-mcp.seedConfig" -}}
+{{- if not .Values.persistence.enabled -}}true{{- end -}}
+{{- end -}}
+
+{{/*
+UI-installed connectors need a writable /app/plugins. When neither the
+bundle image nor a PVC provides one, seed an emptyDir from the image so
+the builtin plugin dirs stay visible.
+*/}}
+{{- define "observability-mcp.seedPlugins" -}}
+{{- if and .Values.plugins.uiInstall.enabled (not .Values.plugins.image) (not .Values.plugins.persistence.enabled) -}}true{{- end -}}
+{{- end -}}
+
 {{- define "observability-mcp.authSecretName" -}}
 {{- if .Values.auth.existingSecret -}}
 {{- .Values.auth.existingSecret -}}

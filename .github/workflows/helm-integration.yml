@@ -112,6 +112,23 @@ jobs:
           echo "$got" | grep -q grafana
           echo "$got" | grep -q gcp
 
+      - name: Read-only root; seeded /app/config is writable through the API
+        run: |
+          set -euo pipefail
+          pod=$(kubectl get pod -l app.kubernetes.io/name=observability-mcp -o jsonpath='{.items[0].metadata.name}')
+          if kubectl exec "$pod" -- touch /app/.rofs-probe 2>/dev/null; then
+            echo "::error::root filesystem is writable"; exit 1
+          fi
+          kubectl exec "$pod" -- test -s /app/config/sources.yaml
+          # The Web UI's save path: PUT /api/settings rewrites sources.yaml.
+          kubectl exec "$pod" -- node -e '
+            fetch("http://localhost:3000/api/settings", {
+              method: "PUT",
+              headers: { "content-type": "application/json", authorization: "Bearer ci" },
+              body: JSON.stringify({ checkIntervalSeconds: 61 }),
+            }).then(async (r) => { if (!r.ok) { console.error(r.status, await r.text()); process.exit(1); } });'
+          kubectl exec "$pod" -- grep -q "checkIntervalSeconds: 61" /app/config/sources.yaml
+
       - name: Uninstall (default)
         run: helm uninstall obs
 
@@ -140,6 +157,22 @@ jobs:
 
       - name: helm test (full matrix)
         run: helm test obs --timeout 180s
+
+      - name: Read-only root; persisted /app/config is writable through the API
+        run: |
+          set -euo pipefail
+          pod=$(kubectl get pod -l app.kubernetes.io/name=observability-mcp -o jsonpath='{.items[0].metadata.name}')
+          if kubectl exec "$pod" -- touch /app/.rofs-probe 2>/dev/null; then
+            echo "::error::root filesystem is writable"; exit 1
+          fi
+          # The Web UI's save path: PUT /api/settings rewrites sources.yaml.
+          kubectl exec "$pod" -- node -e '
+            fetch("http://localhost:3000/api/settings", {
+              method: "PUT",
+              headers: { "content-type": "application/json", authorization: "Bearer testtoken" },
+              body: JSON.stringify({ checkIntervalSeconds: 62 }),
+            }).then(async (r) => { if (!r.ok) { console.error(r.status, await r.text()); process.exit(1); } });'
+          kubectl exec "$pod" -- grep -q "checkIntervalSeconds: 62" /app/config/sources.yaml
 
       - name: Dump logs on failure
         if: failure()

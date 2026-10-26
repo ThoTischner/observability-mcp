@@ -9,4 +9,7 @@ COPY package.json ./
 # add noise without security gain for a single-dep tree.
 RUN npm install --no-audit --no-fund
 COPY . .
-CMD ["sh", "-c", "npx tsx src/${SERVICE_NAME}.ts"]
+# Run unprivileged, and call tsx directly: npx would want a writable npm
+# cache in $HOME, which a read-only root filesystem doesn't have.
+USER node
+CMD ["sh", "-c", "exec node_modules/.bin/tsx src/${SERVICE_NAME}.ts"]

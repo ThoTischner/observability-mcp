@@ -28,8 +28,38 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if .Values.plugins.image }}
+      {{- if or .Values.plugins.image (include "observability-mcp.seedConfig" .) (include "observability-mcp.seedPlugins" .) }}
       initContainers:
+        {{- if or (include "observability-mcp.seedConfig" .) (include "observability-mcp.seedPlugins" .) }}
+        # Copies the image's writable defaults onto volumes, so the main
+        # container can run with a read-only root filesystem.
+        - name: seed-writable
+          image: "{{ .Values.image.repository }}:{{ include "observability-mcp.imageTag" . }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml (merge (dict "readOnlyRootFilesystem" true) (deepCopy .Values.securityContext)) | nindent 12 }}
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              {{- if include "observability-mcp.seedConfig" . }}
+              cp -R /app/config/. /seed/config/
+              {{- end }}
+              {{- if include "observability-mcp.seedPlugins" . }}
+              cp -R /app/plugins/. /seed/plugins/
+              {{- end }}
+          volumeMounts:
+            {{- if include "observability-mcp.seedConfig" . }}
+            - name: config-rw
+              mountPath: /seed/config
+            {{- end }}
+            {{- if include "observability-mcp.seedPlugins" . }}
+            - name: plugins
+              mountPath: /seed/plugins
+            {{- end }}
+        {{- end }}
+        {{- if .Values.plugins.image }}
         # Copies connector plugins out of a dedicated OCI image into a
         # shared emptyDir. The main container then needs no registry
         # access — the airgapped "mounted volume" workflow from
@@ -57,6 +87,7 @@ spec:
           volumeMounts:
             - name: plugins
               mountPath: /shared
+        {{- end }}
       {{- end }}
       containers:
         - name: mcp-server
@@ -77,10 +108,12 @@ spec:
               containerPort: 3000
               protocol: TCP
           env:
-            {{- if .Values.sources.config }}
+            # Always explicit: without it the server falls back to
+            # $HOME/.observability-mcp when /app/config/sources.yaml doesn't
+            # exist yet (a fresh PVC), and Web UI edits never reached the
+            # volume.
             - name: CONFIG_PATH
               value: /app/config/sources.yaml
-            {{- end }}
             {{- if .Values.sources.prometheusUrl }}
             - name: PROMETHEUS_URL
               value: {{ .Values.sources.prometheusUrl | quote }}
@@ -242,6 +275,12 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            {{- if include "observability-mcp.seedConfig" . }}
+            - name: config-rw
+              mountPath: /app/config
+            {{- end }}
             {{- if .Values.sources.config }}
             - name: sources-config
               mountPath: /app/config/sources.yaml
@@ -252,7 +291,7 @@ spec:
             - name: data
               mountPath: /app/config
             {{- end }}
-            {{- if or .Values.plugins.image .Values.plugins.persistence.enabled }}
+            {{- if or .Values.plugins.image .Values.plugins.persistence.enabled (include "observability-mcp.seedPlugins" .) }}
             - name: plugins
               mountPath: /app/plugins
               readOnly: {{ if include "observability-mcp.pluginsWritable" . }}false{{ else }}true{{ end }}
@@ -263,6 +302,12 @@ spec:
               readOnly: true
             {{- end }}
       volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- if include "observability-mcp.seedConfig" . }}
+        - name: config-rw
+          emptyDir: {}
+        {{- end }}
         {{- if .Values.sources.config }}
         - name: sources-config
           configMap:
@@ -273,7 +318,7 @@ spec:
           persistentVolumeClaim:
             claimName: {{ include "observability-mcp.fullname" . }}
         {{- end }}
-        {{- if or .Values.plugins.image .Values.plugins.persistence.enabled }}
+        {{- if or .Values.plugins.image .Values.plugins.persistence.enabled (include "observability-mcp.seedPlugins" .) }}
         - name: plugins
           {{- if .Values.plugins.persistence.enabled }}
           persistentVolumeClaim:

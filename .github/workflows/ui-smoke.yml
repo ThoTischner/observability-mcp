@@ -44,6 +44,10 @@ jobs:
 
       - name: Run UI smoke against http://localhost:3000
         run: |
+          # The runner image runs as the unprivileged pwuser; a bind-mount
+          # directory created by Docker would be root-owned.
+          mkdir -p mcp-server/playwright/test-results
+          chmod 777 mcp-server/playwright/test-results
           docker run --rm \
             --network=host \
             -e OMCP_UI_BASE=http://localhost:3000 \

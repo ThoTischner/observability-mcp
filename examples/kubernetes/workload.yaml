@@ -41,10 +41,25 @@ spec:
         app: api-gateway
         tier: frontend
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: app
           image: example-service:demo
           imagePullPolicy: Never
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            # tsx keeps its compile cache in the OS temp dir.
+            - name: tmp
+              mountPath: /tmp
           env:
             - name: SERVICE_NAME
               value: api-gateway
@@ -63,6 +78,9 @@ spec:
             requests:
               cpu: 20m
               memory: 32Mi
+      volumes:
+        - name: tmp
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
@@ -101,10 +119,25 @@ spec:
         app: payment-service
         tier: backend
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: app
           image: example-service:demo
           imagePullPolicy: Never
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            # tsx keeps its compile cache in the OS temp dir.
+            - name: tmp
+              mountPath: /tmp
           env:
             - name: SERVICE_NAME
               value: payment-service
@@ -123,6 +156,9 @@ spec:
             requests:
               cpu: 20m
               memory: 32Mi
+      volumes:
+        - name: tmp
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
@@ -161,10 +197,25 @@ spec:
         app: order-service
         tier: backend
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: app
           image: example-service:demo
           imagePullPolicy: Never
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            # tsx keeps its compile cache in the OS temp dir.
+            - name: tmp
+              mountPath: /tmp
           env:
             - name: SERVICE_NAME
               value: order-service
@@ -183,6 +234,9 @@ spec:
             requests:
               cpu: 20m
               memory: 32Mi
+      volumes:
+        - name: tmp
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

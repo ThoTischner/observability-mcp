@@ -6,6 +6,23 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed & Security
+
+- **Helm: the server runs with a read-only root filesystem by default.**
+  `/tmp` is an emptyDir and, without persistence, `/app/config` is an
+  emptyDir seeded from the image by a `seed-writable` init container, so the
+  Web UI can still save sources and settings. Opt out with
+  `securityContext.readOnlyRootFilesystem: false`. The Helm integration test
+  now asserts the root filesystem is read-only and that a settings save
+  through the API lands in `sources.yaml` (emptyDir and PVC).
+- **Helm: `persistence.enabled` now actually persists Web UI edits.** On a
+  fresh PVC there was no `sources.yaml` yet, so the server fell back to
+  `$HOME/.observability-mcp/sources.yaml` inside the container and every
+  change was lost on restart. The chart now always sets `CONFIG_PATH`.
+- The demo example services and the CI test workload run non-root with a
+  read-only root filesystem; the example-service and Playwright images no
+  longer run as root.
+
 ## [3.9.16] — 2026-10-26
 
 Maintenance and hardening release. **Node.js 22.15+ is now required** for

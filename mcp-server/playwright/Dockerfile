@@ -22,6 +22,10 @@ COPY inspect.spec.mjs ./inspect.spec.mjs
 COPY governance.spec.mjs ./governance.spec.mjs
 COPY entitlement-locks.spec.mjs ./entitlement-locks.spec.mjs
 
+# Run as the image's unprivileged user (Chromium sandboxing expects it too).
+RUN chown -R pwuser:pwuser /work
+USER pwuser
+
 # When run with --network=host (Linux) OMCP_UI_BASE defaults to localhost.
 # In a compose network pass OMCP_UI_BASE=http://mcp-server:3000 explicitly.
 ENV CI=1
