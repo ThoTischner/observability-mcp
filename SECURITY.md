@@ -56,7 +56,8 @@ Out of scope (report to the respective upstream):
 
 The server is built with the following defaults:
 
-- `npm audit --audit-level=high` is enforced in CI; transitive vulnerabilities
+- `npm audit --audit-level=high` is enforced in CI for the server, the SDK and
+  the connectors that ship npm dependencies; transitive vulnerabilities
   in the MCP SDK are pinned via `npm overrides` (see [`project_cve_strategy`](docs/plugin-architecture.md) for the strategy).
 - Container runs as a non-root user, no privilege escalation, all capabilities
   dropped, `seccompProfile: RuntimeDefault` via the Helm chart.
@@ -93,8 +94,9 @@ docker image inspect ghcr.io/thotischner/observability-mcp:latest \
   --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}'
 ```
 
-CI scans every image with Trivy before publishing; high-severity CVEs block
-the release.
+CI scans the image with Trivy on every PR, on every push to `main` and
+nightly; any CRITICAL or HIGH CVE that has a fix available fails the
+required `trivy` check, so it can't be merged or released.
 
 **Keyless cosign signing.** Every image is signed via Sigstore keyless OIDC
 (no operator-managed key material). Verify against the GitHub Actions

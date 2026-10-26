@@ -1,4 +1,4 @@
-FROM node:26-alpine@sha256:e71ac5e964b9201072425d59d2e876359efa25dc96bb1768cb73295728d6e4ea
+FROM node:26-alpine@sha256:40cd011b55415bc894e45b02fdd5a5dfde056921b7d23a64c74f80497af48797
 WORKDIR /app
 COPY package.json package-lock.json ./
 # `npm ci` over `npm install` so the install is locked to the

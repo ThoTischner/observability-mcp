@@ -44,7 +44,7 @@ The agent + example-services are demo material. They will be moved under `exampl
    docker run --rm -v "$(pwd)/helm/observability-mcp:/chart" alpine/helm:latest lint /chart
    ```
 5. **Open the PR.** Title in the imperative — *"add fast-uri override"*, not *"added fast-uri override"*. Body says what + why; the code shows how.
-6. **Required checks.** main is branch-protected: `smoke`, `unit-tests`, `npm-audit (mcp-server)`, `npm-audit (agent)`, `trivy`, `analyze (javascript-typescript)` all have to be green. Patch + minor PRs auto-merge once they are.
+6. **Required checks.** main is branch-protected: `smoke`, `unit-tests`, `npm-audit (mcp-server)`, `npm-audit (agent)`, `npm-audit (sdk)`, `npm-audit (connector-aws)`, `npm-audit (connector-gcp)`, `trivy`, `analyze (javascript-typescript)` all have to be green. Patch + minor PRs auto-merge once they are.
 
 ## Code style
 

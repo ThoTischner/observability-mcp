@@ -44,3 +44,42 @@ updates:
     schedule:
       interval: weekly
       day: monday
+
+  # Published outside the server image: the plugin SDK on npm and the
+  # connectors with their own npm dependencies (security.yml audits the
+  # same lockfiles).
+  - package-ecosystem: npm
+    directories:
+      - /packages/sdk
+      - /connectors/aws
+      - /connectors/gcp
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      published-deps:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  # Demo + CI-only images and test tooling. The Playwright test runner
+  # and its base image must stay on the same version — ui-smoke fails if
+  # one PR moves without the other, so merge them together.
+  - package-ecosystem: npm
+    directories:
+      - /examples/example-services
+      - /mcp-server/playwright
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: docker
+    directories:
+      - /connectors
+      - /examples/agent
+      - /examples/example-services
+      - /mcp-server/playwright
+    schedule:
+      interval: weekly
+      day: monday

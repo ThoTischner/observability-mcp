@@ -7,6 +7,7 @@ on:
   merge_group:
   schedule:
     - cron: '0 6 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -15,15 +16,26 @@ jobs:
   npm-audit:
     runs-on: ubuntu-latest
     strategy:
+      # One red package must not cancel the others: a fail-fast cancel
+      # hides whether the sibling lockfiles are clean too.
+      fail-fast: false
       matrix:
         # Branch protection requires job-name 'npm-audit (mcp-server)' and
         # 'npm-audit (agent)' — keep the short names stable across repo
         # refactors by mapping a friendly name to its path.
+        # Every lockfile that ships to users is listed: the server, the
+        # published SDK and the connectors with npm dependencies.
         include:
           - name: mcp-server
             path: mcp-server
           - name: agent
             path: examples/agent
+          - name: sdk
+            path: packages/sdk
+          - name: connector-aws
+            path: connectors/aws
+          - name: connector-gcp
+            path: connectors/gcp
     name: npm-audit (${{ matrix.name }})
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -149,3 +161,53 @@ jobs:
         with:
           sarif_file: trivy-fs.sarif
           category: trivy-fs
+      # The SARIF steps above report everything (incl. unfixed) to the
+      # Security tab but never fail. These gates do: any HIGH/CRITICAL
+      # finding that already has a fix — in the shipped image or in any
+      # lockfile in the repo — turns the job red.
+      - name: Gate — image has no fixable HIGH/CRITICAL
+        if: always()
+        uses: aquasecurity/trivy-action@6abccf398f78b4c337599c0656f933d91efb91a0 # master
+        with:
+          image-ref: observability-mcp:scan
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
+      - name: Gate — repository has no fixable HIGH/CRITICAL
+        if: always()
+        uses: aquasecurity/trivy-action@6abccf398f78b4c337599c0656f933d91efb91a0 # master
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
+
+  base-image-freshness:
+    # Trivy matches OS packages and npm lockfiles, not the Node runtime
+    # baked into the base image — a digest pinned months ago ships an old
+    # Node silently (it sat on 26.1.0 while 26.12.1 was current). Compare
+    # the Node version in every pinned base image with what its tag
+    # serves today. Nightly only: upstream releases must not block PRs.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Pinned node base images match their tag's current Node
+        run: |
+          for f in $(git ls-files '*Dockerfile*'); do
+            grep -oE '^FROM node:[^@ ]+@sha256:[0-9a-f]{64}' "$f" | sed 's/^FROM //' | sort -u | while read -r ref; do
+              tag=${ref%@*}
+              pinned=$(docker run --rm "$ref" node -v)
+              current=$(docker run --rm --pull always "$tag" node -v)
+              if [ "$pinned" = "$current" ]; then
+                echo "ok    $f: $tag $pinned"
+              else
+                echo "::error file=$f::$tag is pinned to Node $pinned, the tag now serves $current — refresh the digest"
+                echo stale >> /tmp/stale
+              fi
+            done
+          done
+          [ ! -s /tmp/stale ]

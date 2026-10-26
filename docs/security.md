@@ -10,10 +10,11 @@ The repo runs a self-driving security pipeline so issues get caught and patched 
 
 | Mechanism | What it does | Cadence |
 |-----------|--------------|---------|
-| **Dependabot** | Grouped PRs for npm (mcp-server, agent), GitHub Actions, and Docker base images | Weekly, Monday |
+| **Dependabot** | Grouped PRs for npm (mcp-server, agent, SDK, connectors, demo services, Playwright), GitHub Actions, and every Docker base image | Weekly, Monday |
 | **CodeQL** | Static analysis with `security-extended` + quality queries; results in the Security tab | PR + weekly |
-| **Trivy** | Docker image and filesystem scans for CRITICAL/HIGH CVEs (SARIF upload) | PR + daily |
-| **npm audit** | Fails CI on `--audit-level=high` | PR + daily |
+| **Trivy** | Docker image and filesystem scans; all findings go to the Security tab (SARIF), and any CRITICAL/HIGH with an available fix fails CI | PR + daily |
+| **npm audit** | Fails CI on `--audit-level=high` for every shipped lockfile: server, agent, SDK, and connectors with npm dependencies | PR + daily |
+| **Base-image freshness** | Fails when a digest-pinned `node:` base image ships an older Node than its tag now serves (Trivy can't see the runtime itself) | Daily |
 | **OSSF Scorecard** | Repo posture analysis published to the Security tab | Weekly |
 | **Auto-merge sweeper** | Merges Dependabot PRs ≥ 72 h old when checks pass; majors stay manual | Daily |
 | **Auto-release** | Patch-bumps + tags if commits landed since the last release; triggers npm + GHCR + GitHub Release | Weekly, Sunday |
