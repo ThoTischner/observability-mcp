@@ -5,7 +5,7 @@
 #
 # Build context is the staged tree produced by connectors/build-bundle.sh
 # (plugins/<name>/{index.js,package.json,manifest.json,manifest.json.sig}).
-FROM busybox:1.38@sha256:fd7dc98638c8e305f4dc34e979f1c0fdfdcaeb0fbf8fcff77ae834b6da3d7e6e
+FROM busybox:1.38@sha256:a46257e06c82ad85242d0d38077d0a52d9896389ca60a1a59d3463db586e5fa4
 LABEL org.opencontainers.image.source="https://github.com/ThoTischner/observability-mcp" \
       org.opencontainers.image.description="observability-mcp connectors (signed) for the Helm chart plugins.image / airgapped mounts"
 COPY plugins /plugins
