@@ -4,11 +4,11 @@ description: Unified observability gateway for AI agents — one MCP server for 
 type: application
 
 # Chart version (this chart). Bumped on chart changes.
-version: 2.9.18
+version: 2.9.19
 
 # App version (the mcp-server image tag the chart defaults to).
 # Update with each release of the mcp-server image.
-appVersion: "3.9.17"
+appVersion: "3.9.18"
 
 home: https://github.com/ThoTischner/observability-mcp
 sources:
@@ -51,13 +51,13 @@ annotations:
     url: https://raw.githubusercontent.com/ThoTischner/observability-mcp/main/docs/helm-signing.pub.asc
   artifacthub.io/images: |
     - name: observability-mcp
-      image: ghcr.io/thotischner/observability-mcp:3.9.17
+      image: ghcr.io/thotischner/observability-mcp:3.9.18
       platforms:
         - linux/amd64
         - linux/arm64
   artifacthub.io/changes: |
     - kind: changed
-      description: "appVersion → 3.9.17; chart points at the 3.9.17 image"
+      description: "appVersion → 3.9.18; chart points at the 3.9.18 image"
     - kind: security
       description: "The server container runs with a read-only root filesystem by default; /tmp is an emptyDir and /app/config an emptyDir seeded from the image (seed-writable init container) unless persistence is enabled. Opt out with securityContext.readOnlyRootFilesystem=false"
     - kind: fixed
