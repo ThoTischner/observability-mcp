@@ -1,7 +1,7 @@
 # --- Build stage -----------------------------------------------------------
 # Installs deps + compiles TS. Everything here is throwaway; only the
 # artefacts under /app are copied into the runtime stage.
-FROM node:26-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94 AS builder
+FROM node:26-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS builder
 
 WORKDIR /app
 COPY package.json package-lock.json* ./
@@ -20,7 +20,7 @@ RUN npm prune --omit=dev
 # transitive deps (e.g. ip-address) that surface as CVEs even though the
 # server never invokes npm at runtime. Removing it shrinks the image and
 # silences false-positive scans like the one ArtifactHub reported.
-FROM node:26-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94
+FROM node:26-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5
 
 # Patch base-image OS packages that lag the pinned digest snapshot.
 # Alpine ships fixes (OpenSSL, zlib, musl, ...) between base-image

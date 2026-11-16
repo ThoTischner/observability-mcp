@@ -9,7 +9,7 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Security
 
 - Base images (server, demo agent, example services) refreshed to the current
-  `node:26-alpine` digest, Node 26.13.0. The nightly base-image-freshness
+  `node:26-alpine` digest, Node 26.13.1. The nightly base-image-freshness
   check flagged the stale pin.
 
 ## [3.9.17] — 2026-10-26
