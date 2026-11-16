@@ -15,7 +15,7 @@
     "test": "node --test index.test.mjs"
   },
   "dependencies": {
-    "@google-cloud/compute": "^7.9.0",
+    "@google-cloud/compute": "^7.10.0",
     "@google-cloud/run": "^4.2.0",
     "@google-cloud/container": "^7.3.0"
   }
